@@ -1,0 +1,109 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Outfit:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+@import 'tailwindcss';
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 4px);
+}
+
+:root {
+  --background: #FAFAF8;
+  --foreground: #0D1F14;
+  --card: #FFFFFF;
+  --card-foreground: #0D1F14;
+  --primary: #0D2B1E;
+  --primary-foreground: #F5F0E8;
+  --secondary: #EFF4F0;
+  --secondary-foreground: #1A3D28;
+  --muted: #F0EDE8;
+  --muted-foreground: #6B7A6E;
+  --accent: #C4922A;
+  --accent-foreground: #FFFFFF;
+  --border: #DDD9D3;
+  --ring: #0D2B1E;
+  --radius: 6px;
+
+  --font-display: "DM Serif Display", Georgia, serif;
+  --font-body: "Outfit", system-ui, sans-serif;
+  --font-mono: "DM Mono", "Courier New", monospace;
+}
+
+.dark {
+  --background: #0A1A10;
+  --foreground: #EFF4F0;
+  --card: #111F17;
+  --card-foreground: #EFF4F0;
+  --primary: #4ADE80;
+  --primary-foreground: #0A1A10;
+  --secondary: #1A3D28;
+  --secondary-foreground: #EFF4F0;
+  --muted: #1A2E1F;
+  --muted-foreground: #8BA892;
+  --accent: #D4A945;
+  --accent-foreground: #0A1A10;
+  --border: #1F3527;
+  --ring: #4ADE80;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+*:hover {
+  scrollbar-color: var(--border) transparent;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+.font-mono-data {
+  font-family: var(--font-mono);
+}
+
+.plot-canvas-cell {
+  transition: opacity 0.12s ease, transform 0.1s ease;
+  cursor: pointer;
+}
+.plot-canvas-cell:hover {
+  opacity: 0.85;
+  transform: scale(1.08);
+}
+.plot-canvas-cell.selected {
+  stroke: #C4922A;
+  stroke-width: 2;
+}
+
+input, select, textarea {
+  outline: none;
+}
+input:focus, select:focus, textarea:focus {
+  box-shadow: 0 0 0 2px var(--ring);
+}

@@ -1,0 +1,10 @@
+{
+  "description": "Enables secure property discovery, purchase, and management for Nigerian local and diaspora investors with real-time plot data and flexible payments.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
