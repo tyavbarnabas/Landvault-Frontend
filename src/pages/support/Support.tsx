@@ -117,9 +117,8 @@ function ChatPanel({ userName }: { userName: string }) {
         <div className="w-8 h-8 rounded-full bg-[var(--primary)] flex items-center justify-center text-white text-sm font-semibold">LV</div>
         <div>
           <div className="text-sm font-semibold">LandVault Support</div>
-          <div className="text-xs text-emerald-600 flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            Online · typically replies in &lt;2 min
+          <div className="text-xs text-[var(--muted-foreground)]">
+            Automated assistant — ask to be connected to a person
           </div>
         </div>
         <button onClick={handleWhatsApp} className="ml-auto flex items-center gap-1.5 text-xs px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
@@ -291,7 +290,7 @@ function DisputesPanel({ initialPlotId, tickets, onCreated }: { initialPlotId: s
 
       {submitted && (
         <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">
-          ✓ Dispute submitted. You'll receive a reference number and first response within 1 business day.
+          ✓ Dispute submitted. You'll receive a reference number, and our team will review it as soon as possible.
         </div>
       )}
 
@@ -310,7 +309,7 @@ function DisputesPanel({ initialPlotId, tickets, onCreated }: { initialPlotId: s
               <p className="text-xs text-[var(--muted-foreground)] leading-relaxed">{t.description}</p>
               {t.status === "in_review" && (
                 <div className="mt-3 pt-3 border-t border-[var(--border)] text-xs text-[var(--muted-foreground)]">
-                  ↳ Under review by our disputes team. Expected response: 2 business days.
+                  ↳ Under review by our disputes team — we'll update this ticket once there's movement.
                 </div>
               )}
             </div>

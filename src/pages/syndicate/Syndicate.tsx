@@ -352,8 +352,7 @@ export function SyndicateDetail() {
 
   const estate = estates.find((e) => e.id === syn.estateId)!;
   const totalPaid = syn.members.filter((m) => m.status === "joined").reduce((s, m) => s + m.contributed, 0);
-  const pct = Math.round((totalPaid / syn.totalPrice) * 100);
-  const saleProceeds = syn.totalPrice * 1.45;
+  const pct = syn.totalPrice > 0 ? Math.round((totalPaid / syn.totalPrice) * 100) : 0;
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -402,7 +401,6 @@ export function SyndicateDetail() {
                   <th className="text-left px-4 py-2.5 text-xs font-medium text-[var(--muted-foreground)]">Member</th>
                   <th className="text-right px-4 py-2.5 text-xs font-medium text-[var(--muted-foreground)]">Share</th>
                   <th className="text-right px-4 py-2.5 text-xs font-medium text-[var(--muted-foreground)]">Contributed</th>
-                  <th className="text-right px-4 py-2.5 text-xs font-medium text-[var(--muted-foreground)]">On sale proceeds</th>
                   <th className="text-right px-4 py-2.5 text-xs font-medium text-[var(--muted-foreground)]">Status</th>
                 </tr>
               </thead>
@@ -415,9 +413,6 @@ export function SyndicateDetail() {
                     </td>
                     <td className="px-4 py-3 text-right font-mono-data font-medium">{m.pct}%</td>
                     <td className="px-4 py-3 text-right font-mono-data text-xs">{formatAmount(m.contributed, currency)}</td>
-                    <td className="px-4 py-3 text-right font-mono-data text-xs text-emerald-700">
-                      {formatAmount(saleProceeds * (m.pct / 100), currency)}
-                    </td>
                     <td className="px-4 py-3 text-right">
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${m.status === "joined" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
                         {m.status}
@@ -427,9 +422,6 @@ export function SyndicateDetail() {
                 ))}
               </tbody>
             </table>
-            <div className="px-4 py-3 bg-[var(--muted)] text-xs text-[var(--muted-foreground)]">
-              ★ Proceeds split assumes illustrative resale at 45% appreciation. Actual returns not guaranteed.
-            </div>
           </div>
         </div>
 

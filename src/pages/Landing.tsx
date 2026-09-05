@@ -1,6 +1,22 @@
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
+import { fetchListings, fromPrice, type Listing } from "../services/marketplaceService";
+import { formatCurrency } from "../data/mockData";
 
 export default function Landing() {
+  const [listings, setListings] = useState<Listing[] | null>(null); // null = loading
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchListings().then((data) => { if (!cancelled) setListings(data); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const loading = listings === null;
+  const previews = (listings ?? []).slice(0, 3);
+  const plotsAvailable = (listings ?? []).reduce((sum, l) => sum + l.priceTiers.reduce((s, t) => s + t.plotsRemaining, 0), 0);
+  const titleTypeCount = new Set((listings ?? []).map((l) => l.titleType)).size;
+  const statesCovered = Array.from(new Set((listings ?? []).map((l) => l.state)));
   return (
     <div className="min-h-full bg-[var(--background)] font-body">
       {/* Nav */}
@@ -22,7 +38,7 @@ export default function Landing() {
           <div>
             <div className="inline-flex items-center gap-2 text-xs font-mono-data bg-[var(--secondary)] text-[var(--secondary-foreground)] px-3 py-1.5 rounded-full mb-6 border border-[var(--border)]">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              FCT & Abuja — Verified Titles
+              Verified Titles — Nationwide
             </div>
             <h1 className="font-display text-5xl lg:text-6xl leading-[1.1] text-[var(--foreground)] mb-6">
               Own land in<br />
@@ -41,12 +57,14 @@ export default function Landing() {
               </Link>
             </div>
 
-            {/* Trust indicators */}
+            {/* Trust indicators — derived from the real published catalogue,
+                never invented. No "plots sold" tile: this app has no
+                transaction-volume data to derive one from. */}
             <div className="flex flex-wrap gap-6 mt-10">
               {[
-                { label: "Verified titles", value: "C of O & R of O" },
-                { label: "Estates active", value: "3 estates" },
-                { label: "Plots sold", value: "1,400+" },
+                { label: "Verified title types", value: loading ? "—" : `${titleTypeCount}` },
+                { label: "Estates active", value: loading ? "—" : `${listings!.length} estates` },
+                { label: "Plots available", value: loading ? "—" : plotsAvailable.toLocaleString() },
               ].map((t) => (
                 <div key={t.label}>
                   <div className="text-xl font-semibold text-[var(--foreground)]">{t.value}</div>
@@ -122,36 +140,57 @@ export default function Landing() {
           <div className="flex items-end justify-between mb-8">
             <div>
               <h2 className="font-display text-3xl text-[var(--foreground)] mb-1">Current estates</h2>
-              <p className="text-[var(--muted-foreground)] text-sm">3 active developments across FCT Abuja</p>
+              <p className="text-[var(--muted-foreground)] text-sm">
+                {loading
+                  ? "Loading current developments…"
+                  : statesCovered.length > 0
+                    ? `Active developments across ${statesCovered.join(", ")}`
+                    : "No developments published yet."}
+              </p>
             </div>
-            <Link to="/estates" className="text-sm text-[var(--accent)] font-medium hover:underline hidden sm:block">Browse all →</Link>
+            <Link to="/marketplace" className="text-sm text-[var(--accent)] font-medium hover:underline hidden sm:block">Browse all →</Link>
           </div>
-          <div className="grid md:grid-cols-3 gap-5">
-            {ESTATE_PREVIEWS.map((e) => (
-              <Link to="/register" key={e.name} className="group block bg-[var(--card)] rounded-xl overflow-hidden border border-[var(--border)] hover:border-[var(--accent)] transition-colors">
-                <div className="aspect-video overflow-hidden bg-[var(--muted)]">
-                  <img src={e.img} alt={e.name} className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300" />
-                </div>
-                <div className="p-4">
-                  <div className="flex items-start justify-between gap-2 mb-1">
-                    <div className="font-semibold text-sm text-[var(--foreground)]">{e.name}</div>
-                    <span className="text-xs font-mono-data text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full whitespace-nowrap">{e.title}</span>
-                  </div>
-                  <div className="text-xs text-[var(--muted-foreground)]">{e.location}</div>
-                  <div className="mt-3 pt-3 border-t border-[var(--border)] flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-[var(--muted-foreground)]">From</div>
-                      <div className="text-sm font-semibold font-mono-data text-[var(--foreground)]">{e.price}</div>
+          {loading ? (
+            <div className="text-center py-16 text-[var(--muted-foreground)] text-sm">Loading estates…</div>
+          ) : previews.length === 0 ? (
+            <div className="text-center py-16 text-[var(--muted-foreground)] text-sm border border-dashed border-[var(--border)] rounded-xl">No published estates yet — check back soon.</div>
+          ) : (
+            <div className="grid md:grid-cols-3 gap-5">
+              {previews.map((listing) => {
+                const remaining = listing.priceTiers.reduce((s, t) => s + t.plotsRemaining, 0);
+                return (
+                  <Link to={`/marketplace/${listing.id}`} key={listing.id} className="group block bg-[var(--card)] rounded-xl overflow-hidden border border-[var(--border)] hover:border-[var(--accent)] transition-colors">
+                    <div className="aspect-video overflow-hidden bg-[var(--muted)]">
+                      {listing.imageUrl ? (
+                        <img src={listing.imageUrl} alt={listing.name} className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-[var(--muted-foreground)]/40">
+                          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 3L3 5v16l6-2 6 2 6-2V5l-6 2-6-2Z" /><path d="M9 3v16M15 5v16" /></svg>
+                        </div>
+                      )}
                     </div>
-                    <div className="text-right">
-                      <div className="text-xs text-[var(--muted-foreground)]">Available</div>
-                      <div className="text-sm font-semibold font-mono-data text-[var(--foreground)]">{e.available}</div>
+                    <div className="p-4">
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <div className="font-semibold text-sm text-[var(--foreground)]">{listing.name}</div>
+                        <span className="text-xs font-mono-data text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full whitespace-nowrap">{listing.titleType}</span>
+                      </div>
+                      <div className="text-xs text-[var(--muted-foreground)]">{listing.area}, {listing.city}</div>
+                      <div className="mt-3 pt-3 border-t border-[var(--border)] flex items-center justify-between">
+                        <div>
+                          <div className="text-xs text-[var(--muted-foreground)]">From</div>
+                          <div className="text-sm font-semibold font-mono-data text-[var(--foreground)]">{formatCurrency(fromPrice(listing))}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs text-[var(--muted-foreground)]">Available</div>
+                          <div className="text-sm font-semibold font-mono-data text-[var(--foreground)]">{remaining} plots</div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </div>
       </section>
 
@@ -192,10 +231,4 @@ const PERSONAS = [
   { emoji: "🇬🇧", name: "Emeka Okonkwo", tag: "Diaspora investor · London", desc: "Wants an Abuja corner plot without flying in. Pays in GBP, reviews title badges, and tracks installments from his phone." },
   { emoji: "🏠", name: "Aisha Aliyu", tag: "First-time buyer · Abuja", desc: "Buying a residential plot on a 12-month plan. Checks the AGIS overlay for encroachments and monitors her equity progress." },
   { emoji: "📈", name: "Tunde Adeyemi", tag: "Commercial investor · Lagos", desc: "Buys investment-flagged plots, reviews ROI projections, and lists on the secondary market when the time is right." },
-];
-
-const ESTATE_PREVIEWS = [
-  { name: "Peaceland", location: "Lekki, Lagos", title: "C of O", price: "₦28M", available: "142 plots", img: "https://images.unsplash.com/photo-1486325212027-8081e485255e?w=500&h=280&fit=crop&auto=format" },
-  { name: "Sunrise Gardens", location: "Maitama Extension, Abuja", title: "Gov. Consent", price: "₦30M", available: "95 plots", img: "https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=500&h=280&fit=crop&auto=format" },
-  { name: "Golden Acres", location: "Sagamu Interchange, Sagamu", title: "R of O", price: "₦11M", available: "201 plots", img: "https://images.unsplash.com/photo-1590424693420-1d68e1fd46b5?w=500&h=280&fit=crop&auto=format" },
 ];

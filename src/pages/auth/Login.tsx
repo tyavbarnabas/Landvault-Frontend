@@ -141,12 +141,10 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
           className="w-full h-full object-cover opacity-40"
         />
         <div className="absolute inset-0 flex flex-col justify-end p-12">
-          <blockquote className="text-white">
-            <p className="font-display text-2xl leading-relaxed mb-4 italic">
-              "I bought my Peaceland plot from London. The title badge and document vault meant I never had to second-guess myself."
-            </p>
-            <footer className="text-white/60 text-sm">— Emeka O., Diaspora investor</footer>
-          </blockquote>
+          <div className="text-white">
+            <p className="font-display text-2xl leading-relaxed mb-3">Verified titles. Live plot maps. One record, start to finish.</p>
+            <p className="text-white/60 text-sm">Every reservation, payment, and document is tracked from allocation through to title transfer.</p>
+          </div>
         </div>
       </div>
     </div>

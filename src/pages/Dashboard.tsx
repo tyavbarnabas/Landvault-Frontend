@@ -1,23 +1,28 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../contexts/AppContext";
-import { formatAmount, type OwnedPlot, type Estate } from "../data/mockData";
+import { formatAmount, type OwnedPlot, type Estate, type Document } from "../data/mockData";
 import { fetchOwnedPlots } from "../services/portfolioService";
 import { fetchEstates } from "../services/estatesService";
+import { fetchDocuments } from "../services/documentsService";
 import PlotStatusBadge from "../components/portfolio/PlotStatusBadge";
+import { DOCUMENT_TYPE_ICONS } from "../components/documents/DocumentCard";
+import { urgencyRank, groupPlotsByCurrency } from "./portfolio/Portfolio";
 
 export default function Dashboard() {
-  const { user, currency } = useApp();
+  const { user, currency, wishlist } = useApp();
   const [ownedPlots, setOwnedPlots] = useState<OwnedPlot[]>([]);
   const [estates, setEstates] = useState<Estate[]>([]);
+  const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchOwnedPlots(), fetchEstates()]).then(([plots, ests]) => {
+    Promise.all([fetchOwnedPlots(), fetchEstates(), fetchDocuments()]).then(([plots, ests, docs]) => {
       if (cancelled) return;
       setOwnedPlots(plots);
       setEstates(ests);
+      setDocuments(docs);
       setLoading(false);
     });
     return () => { cancelled = true; };
@@ -25,9 +30,14 @@ export default function Dashboard() {
 
   if (loading) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Loading dashboard…</div>;
 
-  const totalPortfolioValue = ownedPlots.reduce((s, p) => s + p.totalPrice, 0);
-  const totalPaid = ownedPlots.reduce((s, p) => s + p.paidAmount, 0);
   const activePlots = ownedPlots.filter((p) => p.status === "installment_active" || p.status === "in_arrears").length;
+  const byCurrency = groupPlotsByCurrency(ownedPlots);
+  const totalAvailablePlots = estates.reduce((s, e) => s + e.availablePlots, 0);
+  const upcomingPayments = ownedPlots
+    .filter((p) => p.nextDueDate && p.nextDueAmount !== undefined)
+    .sort((a, b) => urgencyRank(a) - urgencyRank(b))
+    .slice(0, 3);
+  const recentDocuments = [...documents].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 3);
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -49,20 +59,48 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Stats */}
+      {/* Stats — grouped per currency actually held, never summed across
+          currencies (same rule/logic as Portfolio.tsx). Today's fixtures are
+          all NGN, so this renders one group in practice. */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {[
-          { label: "Portfolio value", value: formatAmount(totalPortfolioValue, currency), sub: "across all plots" },
-          { label: "Total paid", value: formatAmount(totalPaid, currency), sub: `${Math.round((totalPaid / totalPortfolioValue) * 100)}% of total` },
-          { label: "Plots owned", value: ownedPlots.length.toString(), sub: `${activePlots} with active plan` },
-          { label: "Saved plots", value: "2", sub: "view wishlist" },
-        ].map((s) => (
-          <div key={s.label} className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
-            <div className="text-xs text-[var(--muted-foreground)] mb-1">{s.label}</div>
-            <div className="font-semibold text-xl font-mono-data text-[var(--foreground)]">{s.value}</div>
-            <div className="text-xs text-[var(--muted-foreground)] mt-0.5">{s.sub}</div>
+        {byCurrency.size === 0 && (
+          <>
+            <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
+              <div className="text-xs text-[var(--muted-foreground)] mb-1">Portfolio value</div>
+              <div className="font-semibold text-xl font-mono-data text-[var(--foreground)]">{formatAmount(0, currency)}</div>
+              <div className="text-xs text-[var(--muted-foreground)] mt-0.5">across all plots</div>
+            </div>
+            <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
+              <div className="text-xs text-[var(--muted-foreground)] mb-1">Total paid</div>
+              <div className="font-semibold text-xl font-mono-data text-[var(--foreground)]">{formatAmount(0, currency)}</div>
+              <div className="text-xs text-[var(--muted-foreground)] mt-0.5">—</div>
+            </div>
+          </>
+        )}
+        {Array.from(byCurrency.entries()).map(([cur, g]) => (
+          <div key={cur} className="contents">
+            <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
+              <div className="text-xs text-[var(--muted-foreground)] mb-1">Portfolio value{byCurrency.size > 1 ? ` (${cur})` : ""}</div>
+              <div className="font-semibold text-xl font-mono-data text-[var(--foreground)]">{formatAmount(g.totalValue, cur)}</div>
+              <div className="text-xs text-[var(--muted-foreground)] mt-0.5">across all plots</div>
+            </div>
+            <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
+              <div className="text-xs text-[var(--muted-foreground)] mb-1">Total paid{byCurrency.size > 1 ? ` (${cur})` : ""}</div>
+              <div className="font-semibold text-xl font-mono-data text-[var(--foreground)]">{formatAmount(g.totalPaid, cur)}</div>
+              <div className="text-xs text-[var(--muted-foreground)] mt-0.5">{g.totalValue > 0 ? `${Math.round((g.totalPaid / g.totalValue) * 100)}% of total` : "—"}</div>
+            </div>
           </div>
         ))}
+        <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
+          <div className="text-xs text-[var(--muted-foreground)] mb-1">Plots owned</div>
+          <div className="font-semibold text-xl font-mono-data text-[var(--foreground)]">{ownedPlots.length}</div>
+          <div className="text-xs text-[var(--muted-foreground)] mt-0.5">{activePlots} with active plan</div>
+        </div>
+        <Link to="/wishlist" className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5 hover:border-[var(--accent)]/50 transition-colors">
+          <div className="text-xs text-[var(--muted-foreground)] mb-1">Saved plots</div>
+          <div className="font-semibold text-xl font-mono-data text-[var(--foreground)]">{wishlist.length}</div>
+          <div className="text-xs text-[var(--accent)] mt-0.5">view wishlist</div>
+        </Link>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
@@ -74,7 +112,7 @@ export default function Dashboard() {
           </div>
 
           {ownedPlots.map((plot) => {
-            const pct = Math.round((plot.paidAmount / plot.totalPrice) * 100);
+            const pct = plot.totalPrice > 0 ? Math.round((plot.paidAmount / plot.totalPrice) * 100) : 0;
             return (
               <Link
                 key={plot.id}
@@ -91,7 +129,7 @@ export default function Dashboard() {
                 <div className="mb-2">
                   <div className="flex items-center justify-between text-xs mb-1">
                     <span className="text-[var(--muted-foreground)]">Equity paid</span>
-                    <span className="font-mono-data font-medium">{formatAmount(plot.paidAmount, currency)} / {formatAmount(plot.totalPrice, currency)} ({pct}%)</span>
+                    <span className="font-mono-data font-medium">{formatAmount(plot.paidAmount, plot.currency)} / {formatAmount(plot.totalPrice, plot.currency)} ({pct}%)</span>
                   </div>
                   <div className="h-1.5 bg-[var(--muted)] rounded-full overflow-hidden">
                     <div className="h-full bg-[var(--primary)] rounded-full transition-all" style={{ width: `${pct}%` }} />
@@ -99,28 +137,35 @@ export default function Dashboard() {
                 </div>
                 {plot.nextDueDate && (
                   <div className="text-xs text-[var(--muted-foreground)] mt-2">
-                    Next: <span className="font-mono-data font-medium text-[var(--foreground)]">{formatAmount(plot.nextDueAmount!, currency)}</span> due {plot.nextDueDate}
+                    Next: <span className="font-mono-data font-medium text-[var(--foreground)]">{plot.nextDueAmount !== undefined ? formatAmount(plot.nextDueAmount, plot.currency) : "—"}</span> due {plot.nextDueDate}
                   </div>
                 )}
               </Link>
             );
           })}
 
-          {/* Upcoming payments */}
+          {/* Upcoming payments — real plots with a real next due date,
+              ordered by the same urgency rank Portfolio.tsx uses. */}
           <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
             <h3 className="font-semibold text-sm mb-4">Upcoming payments</h3>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <div>
-                  <div className="font-medium">Peaceland — Installment 7</div>
-                  <div className="text-xs text-[var(--muted-foreground)] font-mono-data">Due 15 Sep 2026</div>
-                </div>
-                <div className="text-right">
-                  <div className="font-mono-data font-semibold">{formatAmount(3_200_000, currency)}</div>
-                  <Link to="/portfolio/op-001" className="text-xs text-[var(--accent)] hover:underline">Pay now</Link>
-                </div>
+            {upcomingPayments.length === 0 ? (
+              <p className="text-sm text-[var(--muted-foreground)]">No payments due right now.</p>
+            ) : (
+              <div className="space-y-3">
+                {upcomingPayments.map((plot) => (
+                  <div key={plot.id} className="flex items-center justify-between text-sm">
+                    <div>
+                      <div className="font-medium">{plot.estate} — {plot.plotLabel}</div>
+                      <div className="text-xs text-[var(--muted-foreground)] font-mono-data">Due {plot.nextDueDate}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-mono-data font-semibold">{plot.nextDueAmount !== undefined ? formatAmount(plot.nextDueAmount, plot.currency) : "—"}</div>
+                      <Link to={`/portfolio/${plot.id}`} className="text-xs text-[var(--accent)] hover:underline">Pay now</Link>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -129,7 +174,7 @@ export default function Dashboard() {
           {/* Discover */}
           <div className="bg-[var(--primary)] rounded-xl p-5 text-white">
             <h3 className="font-semibold mb-1">Browse estates</h3>
-            <p className="text-white/70 text-xs leading-relaxed mb-4">3 estates open. 438 plots available.</p>
+            <p className="text-white/70 text-xs leading-relaxed mb-4">{estates.length} estate{estates.length !== 1 ? "s" : ""} open. {totalAvailablePlots.toLocaleString()} plots available.</p>
             <Link to="/estates" className="inline-block text-xs font-medium bg-white/15 hover:bg-white/20 text-white px-4 py-2 rounded-md transition-colors">
               Explore plots →
             </Link>
@@ -141,21 +186,21 @@ export default function Dashboard() {
               <h3 className="font-semibold text-sm">Recent documents</h3>
               <Link to="/documents" className="text-xs text-[var(--accent)] hover:underline">Vault</Link>
             </div>
-            <div className="space-y-2">
-              {[
-                { title: "Payment Receipt — Installment 6", date: "15 Aug 2026", icon: "🧾" },
-                { title: "Allocation Letter — Peaceland", date: "16 Aug 2024", icon: "📄" },
-                { title: "Deed of Assignment — Golden Acres", date: "3 Jul 2023", icon: "📜" },
-              ].map((d) => (
-                <div key={d.title} className="flex items-center gap-3 text-sm py-1.5">
-                  <span className="text-base">{d.icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="truncate text-xs font-medium text-[var(--foreground)]">{d.title}</div>
-                    <div className="text-xs text-[var(--muted-foreground)] font-mono-data">{d.date}</div>
+            {recentDocuments.length === 0 ? (
+              <p className="text-sm text-[var(--muted-foreground)]">No documents yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {recentDocuments.map((d) => (
+                  <div key={d.id} className="flex items-center gap-3 text-sm py-1.5">
+                    <span className="text-base" aria-hidden="true">{DOCUMENT_TYPE_ICONS[d.type]}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate text-xs font-medium text-[var(--foreground)]">{d.title}</div>
+                      <div className="text-xs text-[var(--muted-foreground)] font-mono-data">{d.date}</div>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Estates thumbnail */}

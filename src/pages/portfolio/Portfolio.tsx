@@ -2,13 +2,14 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { formatAmount, type Currency, type OwnedPlot } from "../../data/mockData";
 import { fetchOwnedPlots } from "../../services/portfolioService";
-import { useApp } from "../../contexts/AppContext";
 import PlotStatusBadge from "../../components/portfolio/PlotStatusBadge";
 import ArrearsBanner from "../../components/portfolio/ArrearsBanner";
 
 // Lower = more urgent. Arrears first, then anything due within a week, then
-// ordinary in-progress plans, then anything already settled last.
-function urgencyRank(plot: OwnedPlot): number {
+// ordinary in-progress plans, then anything already settled last. Exported so
+// Dashboard.tsx's "Upcoming payments" orders by the same urgency, rather than
+// a second, possibly-diverging copy of this logic.
+export function urgencyRank(plot: OwnedPlot): number {
   if (plot.status === "in_arrears") return 0;
   if (plot.nextDueDate) {
     const daysUntilDue = Math.round((new Date(plot.nextDueDate).getTime() - Date.now()) / 86_400_000);
@@ -18,8 +19,28 @@ function urgencyRank(plot: OwnedPlot): number {
   return 2;
 }
 
+// Never sum across currencies — group totals per currency actually present on
+// the buyer's plots. Exported so Dashboard.tsx's summary tiles use the exact
+// same grouping instead of a second copy that could drift out of sync.
+export interface CurrencyTotals {
+  totalValue: number;
+  totalPaid: number;
+  count: number;
+}
+
+export function groupPlotsByCurrency(plots: OwnedPlot[]): Map<Currency, CurrencyTotals> {
+  const byCurrency = new Map<Currency, CurrencyTotals>();
+  for (const p of plots) {
+    const g = byCurrency.get(p.currency) ?? { totalValue: 0, totalPaid: 0, count: 0 };
+    g.totalValue += p.totalPrice;
+    g.totalPaid += p.paidAmount;
+    g.count += 1;
+    byCurrency.set(p.currency, g);
+  }
+  return byCurrency;
+}
+
 export default function Portfolio() {
-  const { currency } = useApp();
   const [ownedPlots, setOwnedPlots] = useState<OwnedPlot[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -67,17 +88,9 @@ export default function Portfolio() {
     );
   }
 
-  // Never sum across currencies — group totals per currency actually present
-  // on the buyer's plots. Today's fixtures are all NGN, so this renders one
-  // group in practice, but it stays correct the moment that's no longer true.
-  const byCurrency = new Map<Currency, { totalValue: number; totalPaid: number; count: number }>();
-  for (const p of ownedPlots) {
-    const g = byCurrency.get(p.currency) ?? { totalValue: 0, totalPaid: 0, count: 0 };
-    g.totalValue += p.totalPrice;
-    g.totalPaid += p.paidAmount;
-    g.count += 1;
-    byCurrency.set(p.currency, g);
-  }
+  // Today's fixtures are all NGN, so this renders one group in practice, but
+  // it stays correct the moment that's no longer true.
+  const byCurrency = groupPlotsByCurrency(ownedPlots);
 
   const sortedPlots = [...ownedPlots].sort((a, b) => urgencyRank(a) - urgencyRank(b));
 
@@ -116,7 +129,7 @@ export default function Portfolio() {
           </div>
         ))}
         {byCurrency.size > 1 && (
-          <p className="text-xs text-[var(--muted-foreground)]">Displayed as {currency} for your context, but figures are never combined across currencies — each group above is one currency's own total.</p>
+          <p className="text-xs text-[var(--muted-foreground)]">Each group above shows that currency's own total — figures are never converted or combined across currencies.</p>
         )}
       </div>
 
