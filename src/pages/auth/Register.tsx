@@ -1,13 +1,17 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
+import type { Currency } from "../../data/mockData";
 import { AuthShell } from "./Login";
+import { completePendingWishlistIntent } from "../../lib/pendingWishlist";
+import { consumePendingIntent } from "../../lib/pendingIntent";
 
 type Step = "details" | "country" | "otp";
 
 export default function Register() {
   const navigate = useNavigate();
-  const { login } = useApp();
+  const [searchParams] = useSearchParams();
+  const { register, toggleWishlistItem } = useApp();
   const [step, setStep] = useState<Step>("details");
   const [form, setForm] = useState({ name: "", email: "", phone: "", password: "", country: "NG", currency: "NGN" });
   const [otp, setOtp] = useState("");
@@ -37,8 +41,34 @@ export default function Register() {
     setLoading(true);
     setTimeout(async () => {
       try {
-        await login(form.email);
-        navigate("/onboarding/kyc");
+        await register({ name: form.name, email: form.email, phone: form.phone, country: form.country, currency: form.currency as Currency });
+
+        // Complete a pending wishlist intent (see WishlistButton.tsx) before
+        // returning the user to wherever they were. KYC belongs at purchase,
+        // not signup — see below when there's no returnUrl to honor.
+        await completePendingWishlistIntent(toggleWishlistItem);
+
+        // Resume a Reserve/Inspect/Enquire/Make-an-offer intent (see
+        // pendingIntent.ts) by jumping straight to the target action, not
+        // just back to the listing.
+        const pendingAction = consumePendingIntent();
+        if (pendingAction) {
+          if (pendingAction.action === "reserve") { navigate(`/marketplace/checkout/${pendingAction.listingId}/${pendingAction.plotId}`); return; }
+          if (pendingAction.action === "inspect") { navigate(`/inspections/new?listingId=${pendingAction.listingId}&plotId=${pendingAction.plotId}`); return; }
+          if (pendingAction.action === "enquire") {
+            const returnUrl = searchParams.get("returnUrl");
+            navigate(`${returnUrl ?? `/marketplace/${pendingAction.listingId}`}${returnUrl?.includes("?") ? "&" : "?"}enquire=1`);
+            return;
+          }
+          if (pendingAction.action === "resale_offer") {
+            const returnUrl = searchParams.get("returnUrl");
+            navigate(`${returnUrl ?? `/marketplace/resale/${pendingAction.listingId}`}${returnUrl?.includes("?") ? "&" : "?"}offer=1`);
+            return;
+          }
+        }
+
+        const returnUrl = searchParams.get("returnUrl");
+        navigate(returnUrl || "/marketplace?welcome=1");
       } catch {
         setLoading(false);
         setError("Registration failed. Please try again.");

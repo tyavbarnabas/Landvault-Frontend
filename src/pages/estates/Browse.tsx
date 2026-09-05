@@ -74,7 +74,7 @@ export default function Browse() {
             <Link key={estate.id} to={`/estates/${estate.id}`} className="group block bg-[var(--card)] rounded-xl border border-[var(--border)] overflow-hidden hover:border-[var(--accent)]/50 hover:shadow-md transition-all">
               <div className="aspect-video overflow-hidden bg-[var(--muted)] relative">
                 <img
-                  src={`https://images.unsplash.com/${estate.imageId}?w=500&h=280&fit=crop&auto=format`}
+                  src={estate.imageUrl}
                   alt={estate.name}
                   className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
                 />

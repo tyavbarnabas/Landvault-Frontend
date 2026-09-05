@@ -1,114 +1,138 @@
-import { useState, useRef } from "react";
-import type { Plot, Estate } from "../data/mockData";
-import { formatAmount, BLOCK_ROWS, BLOCK_COLS, getPlotBlockLabel } from "../data/mockData";
-import { useApp } from "../contexts/AppContext";
+// The ONE plot-selection canvas, for both /estates and /marketplace — merged
+// from what used to be two components (this file, and
+// components/marketplace/PlotCanvas.tsx, now deleted). Base is this file's
+// old block/street layout and AGIS overlay; folded in from the marketplace
+// version: zoom, click-drag panning, keyboard access, the size-tier filter
+// chip row, and the `mode` prop. See landvault-catalogue-unification-plan in
+// project memory.
+//
+// Renders ListingPlot data (marketplacePlotsService.ts) — the one canonical
+// plot shape both surfaces now share, converted from mockData's internal
+// Plot at the service boundary (or directly via toListingPlot() when a
+// caller already has a full Estate, like EstateDetail.tsx).
+//
+// TODO (backend): Leaflet/Mapbox is the eventual target once real plot
+// geometry (PostGIS polygons) exists. This is a clean SVG/CSS grid rendering
+// behind the same component interface in the meantime — swapping the
+// renderer later shouldn't require touching callers.
 
-interface Props {
-  estate: Estate;
-  onSelectPlot?: (plot: Plot | null) => void;
+import { useRef, useState } from "react";
+import { useApp } from "../contexts/AppContext";
+import { formatAmount } from "../data/mockData";
+import { CAPABILITIES } from "../lib/capabilities";
+import { AGIS_LAYER_LABELS, AGIS_LAYER_COLORS, isAffected, type AGISLayer } from "../services/agisService";
+import { plotLabel, type ListingPlot, type PlotStatus } from "../services/marketplacePlotsService";
+import type { PriceTier } from "../services/marketplaceService";
+
+export type PlotCanvasMode = "browse" | "select" | "readonly";
+
+interface PlotCanvasProps {
+  // Which canonical estate these plots belong to — keys the AGIS overlay
+  // (agisService.ts) and the per-plot "saved" star-ring (AppContext's
+  // savedPlots, keyed `${estateId}:${plotId}`).
+  estateId: string;
+  plots: ListingPlot[];
+  tiers: PriceTier[];
+  cornerPremiumPct: number;
   selectedPlotId?: string;
-  highlightedPlotIds?: string[];
+  onSelectPlot?: (plot: ListingPlot | null) => void;
+  selectedSizeSqm?: number | null;
+  // Presence shows the clickable size-tier filter chip row above the
+  // legend — omit when a caller already has its own tier selector (e.g.
+  // EstateDetail.tsx's PriceTierTable) and only wants dimming, not a second
+  // way to change the size filter.
+  onSelectSizeSqm?: (sqm: number) => void;
+  mode?: PlotCanvasMode;
+  // Only /estates passes true — the AGIS overlay is estate-inventory detail,
+  // not part of the cross-company marketplace browse experience. Still
+  // gated behind CAPABILITIES.agisOverlay regardless (fabricated data — see
+  // agisService.ts).
   showAgisControls?: boolean;
 }
 
-const STATUS_COLORS: Record<string, string> = {
+const STATUS_COLORS: Record<PlotStatus, string> = {
   "available-dev": "#16A34A",
   "available-inv": "#2563EB",
   reserved: "#D97706",
-  sold: "#9CA3AF",
+  sold: "#DC2626",
 };
 
-const STATUS_LABELS: Record<string, string> = {
+const STATUS_LABELS: Record<PlotStatus, string> = {
   "available-dev": "Available — development",
   "available-inv": "Available — investment",
   reserved: "Reserved / pending",
   sold: "Sold / allocated",
 };
 
-// ─── Layout geometry: plots grouped into blocks, separated by streets ──────
-
-const CELL_SIZE = 24;
+const CELL_SIZE = 22;
 const GAP = 3;
-const STREET_WIDTH = 16;
+const BLOCK_ROWS = 4;
+const BLOCK_COLS = 4;
+const STREET_WIDTH = 15;
 const TOP_MARGIN = 18;
 const SIDE_MARGIN = 6;
-
 const BLOCK_W = BLOCK_COLS * (CELL_SIZE + GAP) + GAP;
 const BLOCK_H = BLOCK_ROWS * (CELL_SIZE + GAP) + GAP;
-
 const STREET_COLOR = "#9CA0A6";
 const STREET_LINE_COLOR = "#F4E7BE";
 const BLOCK_GROUND_COLOR = "rgba(255,255,255,0.55)";
+
+const ZOOM_MIN = 0.6;
+const ZOOM_MAX = 2.2;
+const ZOOM_STEP = 0.2;
 
 function plotXY(row: number, col: number) {
   const br = Math.floor(row / BLOCK_ROWS);
   const bc = Math.floor(col / BLOCK_COLS);
   const withinRow = row % BLOCK_ROWS;
   const withinCol = col % BLOCK_COLS;
-  const x = SIDE_MARGIN + bc * (BLOCK_W + STREET_WIDTH) + withinCol * (CELL_SIZE + GAP) + GAP;
-  const y = TOP_MARGIN + br * (BLOCK_H + STREET_WIDTH) + withinRow * (CELL_SIZE + GAP) + GAP;
-  return { x, y, br, bc };
+  return {
+    x: SIDE_MARGIN + bc * (BLOCK_W + STREET_WIDTH) + withinCol * (CELL_SIZE + GAP) + GAP,
+    y: TOP_MARGIN + br * (BLOCK_H + STREET_WIDTH) + withinRow * (CELL_SIZE + GAP) + GAP,
+  };
 }
 
-type AGISLayer = "roads" | "sewer" | "greenverge" | "setback";
+export default function PlotCanvas({
+  estateId, plots, tiers, cornerPremiumPct, selectedPlotId, onSelectPlot,
+  selectedSizeSqm = null, onSelectSizeSqm, mode = "select", showAgisControls = false,
+}: PlotCanvasProps) {
+  const { savedPlots, currency } = useApp();
+  // The AGIS overlay is fabricated (see agisService.ts) — never shown unless
+  // the capability is explicitly turned on, regardless of what the caller
+  // requests via showAgisControls.
+  const agisEnabled = showAgisControls && CAPABILITIES.agisOverlay;
 
-const AGIS_LAYER_LABELS: Record<AGISLayer, string> = {
-  roads: "Planned roads",
-  sewer: "Sewer lines",
-  greenverge: "Green verges",
-  setback: "Building setback zones",
-};
-
-const AGIS_LAYER_COLORS: Record<AGISLayer, string> = {
-  roads: "rgba(251,191,36,0.55)",
-  sewer: "rgba(59,130,246,0.45)",
-  greenverge: "rgba(34,197,94,0.45)",
-  setback: "rgba(239,68,68,0.35)",
-};
-
-// Deterministic "affected" cells per layer (seeded by position)
-function isAffected(layer: AGISLayer, row: number, col: number): boolean {
-  if (layer === "roads") return row === 4 || row === 10;
-  if (layer === "sewer") return col === 2 || col === 7;
-  if (layer === "greenverge") return (row === 0 || row === 1) && col % 3 === 0;
-  if (layer === "setback") return row === 0 || col === 0;
-  return false;
-}
-
-export default function PlotCanvas({ estate, onSelectPlot, selectedPlotId, highlightedPlotIds = [], showAgisControls = false }: Props) {
-  const { savedPlots } = useApp();
-  const { currency } = useApp();
-  const [hoveredPlot, setHoveredPlot] = useState<Plot | null>(null);
+  const [hovered, setHovered] = useState<ListingPlot | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
   const [agisOpen, setAgisOpen] = useState(false);
   const [activeLayers, setActiveLayers] = useState<Set<AGISLayer>>(new Set());
-  const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const dragState = useRef<{ startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
 
-  const numBlockRows = Math.ceil(estate.rows / BLOCK_ROWS);
-  const numBlockCols = Math.ceil(estate.cols / BLOCK_COLS);
+  if (plots.length === 0) {
+    return <div className="p-8 text-center text-sm text-[var(--muted-foreground)] border border-dashed border-[var(--border)] rounded-xl">No plot data available for this estate yet.</div>;
+  }
 
+  const maxRow = Math.max(...plots.map((p) => p.row));
+  const maxCol = Math.max(...plots.map((p) => p.col));
+  const numBlockRows = Math.floor(maxRow / BLOCK_ROWS) + 1;
+  const numBlockCols = Math.floor(maxCol / BLOCK_COLS) + 1;
   const svgWidth = SIDE_MARGIN * 2 + numBlockCols * BLOCK_W + (numBlockCols - 1) * STREET_WIDTH;
   const svgHeight = TOP_MARGIN + SIDE_MARGIN + numBlockRows * BLOCK_H + (numBlockRows - 1) * STREET_WIDTH;
 
-  // Blocks present, with the actual plot extent inside each (edge blocks may be smaller)
-  const blocks: { br: number; bc: number; label: string; w: number; h: number }[] = [];
-  for (let br = 0; br < numBlockRows; br++) {
-    for (let bc = 0; bc < numBlockCols; bc++) {
-      const rowsInBlock = Math.min(BLOCK_ROWS, estate.rows - br * BLOCK_ROWS);
-      const colsInBlock = Math.min(BLOCK_COLS, estate.cols - bc * BLOCK_COLS);
-      if (rowsInBlock <= 0 || colsInBlock <= 0) continue;
-      const blockIndex = br * numBlockCols + bc;
-      const label = blockIndex < 26
-        ? String.fromCharCode(65 + blockIndex)
-        : String.fromCharCode(65 + Math.floor(blockIndex / 26) - 1) + String.fromCharCode(65 + (blockIndex % 26));
-      blocks.push({
-        br, bc, label,
-        w: colsInBlock * (CELL_SIZE + GAP) + GAP,
-        h: rowsInBlock * (CELL_SIZE + GAP) + GAP,
-      });
-    }
+  const blocks: { br: number; bc: number; label: string }[] = [];
+  const seenBlocks = new Set<string>();
+  for (const p of plots) {
+    const br = Math.floor(p.row / BLOCK_ROWS);
+    const bc = Math.floor(p.col / BLOCK_COLS);
+    const key = `${br}-${bc}`;
+    if (seenBlocks.has(key)) continue;
+    seenBlocks.add(key);
+    blocks.push({ br, bc, label: p.block });
   }
-  const lastBlockLabel = blocks[blocks.length - 1]?.label ?? "A";
+
+  const availableCount = plots.filter((p) => p.status === "available-dev" || p.status === "available-inv").length;
 
   const toggleLayer = (l: AGISLayer) => {
     setActiveLayers((prev) => {
@@ -120,42 +144,91 @@ export default function PlotCanvas({ estate, onSelectPlot, selectedPlotId, highl
 
   const handleMouseMove = (e: React.MouseEvent<SVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    setTooltipPos({ x: e.clientX - rect.left + 12, y: e.clientY - rect.top - 8 });
+    setTooltipPos({ x: (e.clientX - rect.left) / zoom + 12, y: (e.clientY - rect.top) / zoom - 8 });
   };
+
+  const zoomIn = () => setZoom((z) => Math.min(ZOOM_MAX, +(z + ZOOM_STEP).toFixed(2)));
+  const zoomOut = () => setZoom((z) => Math.max(ZOOM_MIN, +(z - ZOOM_STEP).toFixed(2)));
+  const zoomReset = () => setZoom(1);
+  const handleWheel = (e: React.WheelEvent) => {
+    if (!e.ctrlKey && !e.metaKey) return; // plain wheel scrolls the container natively
+    e.preventDefault();
+    setZoom((z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, +(z - e.deltaY * 0.001).toFixed(2))));
+  };
+
+  // Desktop click-drag panning — touch devices already pan natively via the
+  // container's overflow:auto + touch-action.
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (!containerRef.current || e.pointerType === "touch") return;
+    dragState.current = { startX: e.clientX, startY: e.clientY, scrollLeft: containerRef.current.scrollLeft, scrollTop: containerRef.current.scrollTop };
+    (e.target as Element).setPointerCapture(e.pointerId);
+  };
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!dragState.current || !containerRef.current) return;
+    containerRef.current.scrollLeft = dragState.current.scrollLeft - (e.clientX - dragState.current.startX);
+    containerRef.current.scrollTop = dragState.current.scrollTop - (e.clientY - dragState.current.startY);
+  };
+  const handlePointerUp = () => { dragState.current = null; };
 
   return (
     <div className="relative">
-      {/* Top controls */}
+      {/* Size-tier filter — switch tiers without leaving the page. Only shown
+          when the caller wants this canvas to own size selection. */}
+      {onSelectSizeSqm && (
+        <div className="flex flex-wrap gap-2 mb-3" role="group" aria-label="Filter by plot size">
+          {tiers.map((t) => {
+            const active = t.sizeSqm === selectedSizeSqm;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                disabled={t.availability === "sold_out"}
+                onClick={() => onSelectSizeSqm(t.sizeSqm)}
+                aria-pressed={active}
+                className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${active ? "bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)]" : "border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
+              >
+                {t.sizeSqm} sqm
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Legend + AGIS toggle + zoom controls */}
       <div className="flex flex-wrap items-center gap-3 mb-3 justify-between">
-        {/* Legend */}
         <div className="flex flex-wrap gap-3">
-          {Object.entries(STATUS_LABELS).map(([k, v]) => (
+          {(Object.keys(STATUS_LABELS) as PlotStatus[]).map((k) => (
             <div key={k} className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
-              <span className="w-3 h-3 rounded-sm inline-block" style={{ backgroundColor: STATUS_COLORS[k] }} />
-              {v}
+              <span className="w-3 h-3 rounded-sm inline-block" style={{ backgroundColor: STATUS_COLORS[k] }} aria-hidden="true" />
+              {STATUS_LABELS[k]}
             </div>
           ))}
           <div className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
-            <span className="w-3 h-3 rounded-sm inline-block" style={{ backgroundColor: STREET_COLOR }} />
+            <span className="w-3 h-3 rounded-sm inline-block" style={{ backgroundColor: STREET_COLOR }} aria-hidden="true" />
             Street
           </div>
         </div>
 
-        {/* AGIS toggle */}
-        {showAgisControls && (
-          <button
-            onClick={() => setAgisOpen(!agisOpen)}
-            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border transition-colors ${agisOpen || activeLayers.size > 0 ? "bg-[var(--secondary)] border-[var(--primary)] text-[var(--primary)]" : "border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
-          >
-            <span>🗺</span>
-            AGIS overlay
-            {activeLayers.size > 0 && <span className="ml-0.5 bg-[var(--primary)] text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]">{activeLayers.size}</span>}
-          </button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {agisEnabled && (
+            <button
+              onClick={() => setAgisOpen(!agisOpen)}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border transition-colors ${agisOpen || activeLayers.size > 0 ? "bg-[var(--secondary)] border-[var(--primary)] text-[var(--primary)]" : "border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
+            >
+              <span aria-hidden="true">🗺</span> AGIS overlay
+              {activeLayers.size > 0 && <span className="ml-0.5 bg-[var(--primary)] text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]">{activeLayers.size}</span>}
+            </button>
+          )}
+          <div className="flex items-center gap-1" role="group" aria-label="Zoom controls">
+            <button type="button" onClick={zoomOut} aria-label="Zoom out" className="w-7 h-7 flex items-center justify-center rounded-md border border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)]">−</button>
+            <button type="button" onClick={zoomReset} aria-label="Reset zoom" className="text-xs px-2 h-7 rounded-md border border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] font-mono-data">{Math.round(zoom * 100)}%</button>
+            <button type="button" onClick={zoomIn} aria-label="Zoom in" className="w-7 h-7 flex items-center justify-center rounded-md border border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)]">+</button>
+          </div>
+        </div>
       </div>
 
       {/* AGIS layer picker */}
-      {showAgisControls && agisOpen && (
+      {agisEnabled && agisOpen && (
         <div className="mb-3 p-3 bg-[var(--card)] border border-[var(--border)] rounded-xl">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-[var(--foreground)]">FCT / AGIS municipal layers</span>
@@ -166,12 +239,7 @@ export default function PlotCanvas({ estate, onSelectPlot, selectedPlotId, highl
           <div className="grid grid-cols-2 gap-2">
             {(Object.keys(AGIS_LAYER_LABELS) as AGISLayer[]).map((l) => (
               <label key={l} className="flex items-center gap-2 text-xs cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={activeLayers.has(l)}
-                  onChange={() => toggleLayer(l)}
-                  className="rounded"
-                />
+                <input type="checkbox" checked={activeLayers.has(l)} onChange={() => toggleLayer(l)} className="rounded" />
                 <span className="w-3 h-3 rounded-sm inline-block" style={{ backgroundColor: AGIS_LAYER_COLORS[l].replace(/[\d.]+\)$/, "0.9)") }} />
                 {AGIS_LAYER_LABELS[l]}
               </label>
@@ -186,96 +254,84 @@ export default function PlotCanvas({ estate, onSelectPlot, selectedPlotId, highl
       )}
 
       {/* Canvas */}
-      <div className="overflow-auto rounded-lg border border-[var(--border)] p-3" style={{ backgroundColor: STREET_COLOR }}>
+      <div
+        ref={containerRef}
+        className="overflow-auto rounded-lg border border-[var(--border)] p-3 cursor-grab active:cursor-grabbing"
+        style={{ backgroundColor: STREET_COLOR, touchAction: "pan-x pan-y", maxHeight: 480 }}
+        onWheel={handleWheel}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
+      >
         <svg
-          ref={svgRef}
-          width={svgWidth}
-          height={svgHeight}
+          width={svgWidth * zoom}
+          height={svgHeight * zoom}
+          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
           onMouseMove={handleMouseMove}
-          onMouseLeave={() => setHoveredPlot(null)}
-          style={{ display: "block", minWidth: svgWidth }}
+          onMouseLeave={() => setHovered(null)}
+          style={{ display: "block" }}
+          role="img"
+          aria-label="Estate plot map"
         >
-          {/* Street base */}
           <rect x={0} y={0} width={svgWidth} height={svgHeight} fill={STREET_COLOR} />
 
-          {/* Dashed road center-lines between block rows/cols */}
           {Array.from({ length: numBlockRows - 1 }).map((_, i) => {
             const cy = TOP_MARGIN + (i + 1) * BLOCK_H + i * STREET_WIDTH + STREET_WIDTH / 2;
-            return <line key={`hline-${i}`} x1={0} y1={cy} x2={svgWidth} y2={cy} stroke={STREET_LINE_COLOR} strokeWidth={1.5} strokeDasharray="6 5" />;
+            return <line key={`h-${i}`} x1={0} y1={cy} x2={svgWidth} y2={cy} stroke={STREET_LINE_COLOR} strokeWidth={1.5} strokeDasharray="6 5" />;
           })}
           {Array.from({ length: numBlockCols - 1 }).map((_, i) => {
             const cx = SIDE_MARGIN + (i + 1) * BLOCK_W + i * STREET_WIDTH + STREET_WIDTH / 2;
-            return <line key={`vline-${i}`} x1={cx} y1={0} x2={cx} y2={svgHeight} stroke={STREET_LINE_COLOR} strokeWidth={1.5} strokeDasharray="6 5" />;
+            return <line key={`v-${i}`} x1={cx} y1={0} x2={cx} y2={svgHeight} stroke={STREET_LINE_COLOR} strokeWidth={1.5} strokeDasharray="6 5" />;
           })}
 
-          {/* Blocks — land parcels grouping plots, with a label */}
           {blocks.map((b) => {
             const bx = SIDE_MARGIN + b.bc * (BLOCK_W + STREET_WIDTH);
             const by = TOP_MARGIN + b.br * (BLOCK_H + STREET_WIDTH);
             return (
               <g key={`block-${b.label}`}>
-                <rect
-                  x={bx} y={by}
-                  width={b.w} height={b.h}
-                  rx={4}
-                  fill={BLOCK_GROUND_COLOR}
-                  stroke="rgba(255,255,255,0.6)"
-                  strokeWidth={1}
-                />
-                <text x={bx + 3} y={by - 5} fontSize={9} fontWeight={600} fill="var(--foreground)" opacity={0.75}>
-                  Block {b.label}
-                </text>
+                <rect x={bx} y={by} width={BLOCK_W} height={BLOCK_H} rx={4} fill={BLOCK_GROUND_COLOR} stroke="rgba(255,255,255,0.6)" strokeWidth={1} />
+                <text x={bx + 3} y={by - 5} fontSize={9} fontWeight={600} fill="var(--foreground)" opacity={0.75}>Block {b.label}</text>
               </g>
             );
           })}
 
-          {/* Plots */}
-          {estate.plots.map((plot) => {
+          {plots.map((plot) => {
             const { x, y } = plotXY(plot.row, plot.col);
             const isSelected = selectedPlotId === plot.id;
-            const isSaved = savedPlots.includes(`${estate.id}:${plot.id}`);
-            const isClickable = plot.status === "available-dev" || plot.status === "available-inv";
-
-            // Find which active AGIS layers affect this cell
-            const affectingLayers = Array.from(activeLayers).filter((l) => isAffected(l, plot.row, plot.col));
+            const isSaved = savedPlots.includes(`${estateId}:${plot.id}`);
+            const inSelectedTier = selectedSizeSqm == null || plot.sizeSqm === selectedSizeSqm;
+            const isClickable = mode !== "readonly" && inSelectedTier && (plot.status === "available-dev" || plot.status === "available-inv");
+            const affectingLayers = agisEnabled ? Array.from(activeLayers).filter((l) => isAffected(estateId, l, plot.row, plot.col)) : [];
 
             return (
-              <g key={plot.id}>
-                {/* Base plot cell */}
+              <g key={plot.id} opacity={inSelectedTier ? 1 : 0.28}>
                 <rect
                   x={x} y={y}
                   width={CELL_SIZE} height={CELL_SIZE}
                   rx={3}
                   fill={STATUS_COLORS[plot.status]}
-                  opacity={hoveredPlot?.id === plot.id ? 0.85 : 0.9}
+                  opacity={hovered?.id === plot.id ? 0.85 : 0.92}
                   stroke={isSelected ? "#C4922A" : isSaved ? "#8B5CF6" : "none"}
                   strokeWidth={isSelected ? 2.5 : isSaved ? 1.5 : 0}
                   style={{ cursor: isClickable ? "pointer" : "default", transition: "opacity 0.1s" }}
-                  onMouseEnter={() => setHoveredPlot(plot)}
-                  onMouseLeave={() => setHoveredPlot(null)}
+                  onMouseEnter={() => setHovered(plot)}
+                  onMouseLeave={() => setHovered(null)}
                   onClick={() => isClickable && onSelectPlot?.(isSelected ? null : plot)}
+                  role={isClickable ? "button" : undefined}
+                  aria-label={isClickable ? `${plotLabel(plot)}, ${plot.sizeSqm} sqm, ${plot.isCorner ? "corner plot" : "standard plot"}` : undefined}
+                  tabIndex={isClickable ? 0 : undefined}
+                  onKeyDown={(e) => { if (isClickable && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onSelectPlot?.(isSelected ? null : plot); } }}
                 />
 
-                {/* AGIS overlay layers (stacked semi-transparent) */}
                 {affectingLayers.map((l) => (
-                  <rect
-                    key={l}
-                    x={x} y={y}
-                    width={CELL_SIZE} height={CELL_SIZE}
-                    rx={3}
-                    fill={AGIS_LAYER_COLORS[l]}
-                    style={{ pointerEvents: "none" }}
-                  />
+                  <rect key={l} x={x} y={y} width={CELL_SIZE} height={CELL_SIZE} rx={3} fill={AGIS_LAYER_COLORS[l]} style={{ pointerEvents: "none" }} />
                 ))}
-
-                {/* AGIS warning dot */}
                 {affectingLayers.length > 0 && (
                   <circle cx={x + CELL_SIZE - 5} cy={y + 5} r={3} fill="#F59E0B" style={{ pointerEvents: "none" }} />
                 )}
-
-                {/* Corner piece marker */}
-                {plot.type === "corner" && affectingLayers.length === 0 && (
-                  <circle cx={x + CELL_SIZE - 4} cy={y + 4} r={2.5} fill="rgba(255,255,255,0.7)" />
+                {plot.isCorner && affectingLayers.length === 0 && (
+                  <circle cx={x + CELL_SIZE - 4} cy={y + 4} r={2.5} fill="rgba(255,255,255,0.7)" style={{ pointerEvents: "none" }} />
                 )}
               </g>
             );
@@ -284,36 +340,32 @@ export default function PlotCanvas({ estate, onSelectPlot, selectedPlotId, highl
       </div>
 
       {/* Tooltip */}
-      {hoveredPlot && (
-        <div
-          className="absolute z-20 pointer-events-none bg-[var(--foreground)] text-[var(--background)] text-xs rounded-md px-3 py-2 shadow-lg"
-          style={{ left: tooltipPos.x, top: tooltipPos.y, maxWidth: 220 }}
-        >
-          <div className="font-semibold mb-0.5">
-            {getPlotBlockLabel(estate, hoveredPlot).label}
-            {hoveredPlot.type === "corner" && <span className="ml-1 text-[var(--accent)]">★</span>}
+      {hovered && (() => {
+        const tier = tiers.find((t) => t.id === hovered.tierId);
+        const price = tier ? (hovered.isCorner ? tier.price * (1 + cornerPremiumPct / 100) : tier.price) : undefined;
+        const layers = agisEnabled ? Array.from(activeLayers).filter((l) => isAffected(estateId, l, hovered.row, hovered.col)) : [];
+        return (
+          <div
+            className="absolute z-20 pointer-events-none bg-[var(--foreground)] text-[var(--background)] text-xs rounded-md px-3 py-2 shadow-lg"
+            style={{ left: tooltipPos.x, top: tooltipPos.y, maxWidth: 220 }}
+          >
+            <div className="font-semibold mb-0.5">
+              {plotLabel(hovered)}
+              {hovered.isCorner && <span className="ml-1 text-[var(--accent)]">★ Corner (+{cornerPremiumPct}%)</span>}
+            </div>
+            <div className="text-white/70">{hovered.sizeSqm} sqm nominal · {hovered.actualAreaSqm} sqm surveyed · {hovered.orientation}</div>
+            {price !== undefined && <div className="font-mono-data mt-0.5">{formatAmount(price, currency)}</div>}
+            <div className="mt-0.5" style={{ color: STATUS_COLORS[hovered.status] }}>{STATUS_LABELS[hovered.status]}</div>
+            {layers.length > 0 && (
+              <div className="mt-1.5 pt-1.5 border-t border-white/20 text-amber-300">⚠ AGIS: {layers.map((l) => AGIS_LAYER_LABELS[l]).join(", ")}</div>
+            )}
           </div>
-          <div className="text-white/70">{hoveredPlot.sqm} sqm · {hoveredPlot.orientation}</div>
-          <div className="font-mono-data mt-0.5">{formatAmount(hoveredPlot.price, currency)}</div>
-          <div className="mt-0.5" style={{ color: STATUS_COLORS[hoveredPlot.status] }}>
-            {STATUS_LABELS[hoveredPlot.status]}
-          </div>
-          {/* AGIS warning in tooltip */}
-          {(() => {
-            const layers = Array.from(activeLayers).filter((l) => isAffected(l, hoveredPlot.row, hoveredPlot.col));
-            if (layers.length === 0) return null;
-            return (
-              <div className="mt-1.5 pt-1.5 border-t border-white/20 text-amber-300">
-                ⚠ AGIS: {layers.map((l) => AGIS_LAYER_LABELS[l]).join(", ")}
-              </div>
-            );
-          })()}
-        </div>
-      )}
+        );
+      })()}
 
       {/* Footer */}
       <div className="mt-2 text-xs text-[var(--muted-foreground)] font-mono-data">
-        Blocks A–{lastBlockLabel} · {estate.totalPlots} plots · {estate.availablePlots} available
+        {plots.length} plots · {availableCount} available{selectedSizeSqm != null ? ` · filtered to ${selectedSizeSqm} sqm` : ""} · drag to pan, Ctrl/⌘+scroll or the zoom buttons to zoom
       </div>
     </div>
   );

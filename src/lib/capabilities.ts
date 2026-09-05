@@ -12,6 +12,8 @@ export interface Capabilities {
   integrations: boolean;
   reputation: boolean;
   payouts: boolean;
+  constructionTracking: boolean;
+  agisOverlay: boolean;
 }
 
 export const CAPABILITIES: Capabilities = {
@@ -31,4 +33,17 @@ export const CAPABILITIES: Capabilities = {
   disputes: false,
   reputation: false,
   payouts: false,
+  // PlotView.tsx's Construction tab used to hardcode literal milestone
+  // percentages and stock photography — convincing-looking fabricated data a
+  // buyer could mistake for their actual estate's progress. constructionService.ts
+  // now exists (same mock-mode shape a real integration would have), but this
+  // stays false — and the tab hides entirely, not a placeholder — until an
+  // estate actually publishes real progress data.
+  constructionTracking: false,
+  // components/PlotCanvas.tsx's AGIS overlay ("planned roads", "sewer lines",
+  // etc.) is a positional formula (agisService.ts's isAffected()), not a real
+  // AGIS/municipal-GIS integration — it invents which plots are affected.
+  // Stays false, hiding the toggle entirely, until a real integration backs
+  // it. See landvault-catalogue-unification-plan in project memory.
+  agisOverlay: false,
 };

@@ -13,8 +13,8 @@ const NAV_SECTIONS = [
     label: "Main",
     items: [
       { path: "/dashboard", label: "Dashboard", icon: GridIcon, permission: "client.dashboard.view" },
+      { path: "/marketplace", label: "Marketplace", icon: TagIcon, permission: "client.marketplace.view" },
       { path: "/estates", label: "Estates", icon: MapIcon, permission: "client.estates.view" },
-      { path: "/resale", label: "Marketplace", icon: TagIcon, permission: "client.resale.view" },
     ],
   },
   {
@@ -22,6 +22,8 @@ const NAV_SECTIONS = [
     items: [
       { path: "/portfolio", label: "Portfolio", icon: BriefcaseIcon, permission: "client.portfolio.view" },
       { path: "/documents", label: "Vault", icon: FolderIcon, permission: "client.documents.view" },
+      { path: "/inspections", label: "Inspections", icon: CalendarIcon, permission: "client.inspections.view" },
+      { path: "/enquiries", label: "Enquiries", icon: ChatIcon, permission: "client.enquiries.view" },
       { path: "/syndicates", label: "Co-ownership", icon: UsersIcon, permission: "client.syndicates.view" },
     ],
   },
@@ -138,6 +140,23 @@ function UsersIcon() {
       <circle cx="9" cy="7" r="4" />
       <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  )
+}
+function CalendarIcon() {
+  return (
+    <svg
+      width="17"
+      height="17"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      viewBox="0 0 24 24"
+    >
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
     </svg>
   )
 }

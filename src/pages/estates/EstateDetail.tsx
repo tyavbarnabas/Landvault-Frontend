@@ -1,28 +1,58 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { formatAmount, getPlotBlockLabel, type Plot, type Estate } from "../../data/mockData";
-import { fetchEstateById } from "../../services/estatesService";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import { formatAmount, getPlotBlockLabel, type Estate, type Currency, type VerificationCheck } from "../../data/mockData";
+import { fetchEstateById, fetchPriceTiers, type PriceTier } from "../../services/estatesService";
+import { fetchListingById, type Listing } from "../../services/marketplaceService";
 import { fetchReviews } from "../../services/reviewsService";
+import { createInspection, type Inspection } from "../../services/inspectionService";
+import { toListingPlot, type ListingPlot } from "../../services/marketplacePlotsService";
 import { useApp } from "../../contexts/AppContext";
 import PlotCanvas from "../../components/PlotCanvas";
+import PlotDetailPanel from "../../components/marketplace/PlotDetailPanel";
+import EnquiryPanel from "../../components/marketplace/EnquiryPanel";
 import EstateReviews, { StarRating } from "../../components/EstateReviews";
+import TabBar from "../../components/TabBar";
+import PriceTierTable from "../../components/marketplace/PriceTierTable";
+import InspectionForm, { type InspectionFormValue } from "../../components/inspections/InspectionForm";
 import { TitleBadge } from "./Browse";
+
+type Tab = "map" | "details" | "projections";
+const TABS: { id: Tab; label: string }[] = [
+  { id: "map", label: "Plot map" },
+  { id: "details", label: "Estate details" },
+  { id: "projections", label: "Investment data" },
+];
 
 export default function EstateDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { currency, savedPlots, toggleSavedPlot } = useApp();
+  const { currency } = useApp();
   const [estate, setEstate] = useState<Estate | null | undefined>(undefined); // undefined = loading, null = not found
+  const [priceTiers, setPriceTiers] = useState<PriceTier[]>([]);
   const [avgRating, setAvgRating] = useState(0);
   const [reviewCount, setReviewCount] = useState(0);
-  const [selectedPlot, setSelectedPlot] = useState<Plot | null>(null);
+  const [selectedPlot, setSelectedPlot] = useState<ListingPlot | null>(null);
+  const [selectedSizeSqm, setSelectedSizeSqm] = useState<number | null>(null);
   const [showInspection, setShowInspection] = useState(false);
-  const [activeTab, setActiveTab] = useState<"map" | "details" | "projections">("map");
+  const [enquiryOpen, setEnquiryOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>("map");
+  // The estate's own public marketplace listing, when it has one — see
+  // marketplaceService.ts's projectListing() publication gate. Reused both
+  // for the "View on public marketplace" link and to power the shared
+  // reserve/inspect/enquire plot panel below (the same flow /marketplace
+  // uses), since that panel needs a Listing's seller/pricing shape, not the
+  // internal Estate shape. Null for an estate whose tenant isn't
+  // verified/active/entitled, or that hasn't opted in — the panel falls
+  // back to a plain message in that case rather than assuming this always
+  // resolves.
+  const [listing, setListing] = useState<Listing | null>(null);
 
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
     fetchEstateById(id).then((data) => { if (!cancelled) setEstate(data ?? null); });
+    fetchPriceTiers(id).then((tiers) => { if (!cancelled) setPriceTiers(tiers); });
+    fetchListingById(id).then((l) => { if (!cancelled) setListing(l ?? null); });
     fetchReviews(id).then((reviews) => {
       if (cancelled) return;
       setReviewCount(reviews.length);
@@ -34,15 +64,28 @@ export default function EstateDetail() {
   if (estate === undefined) return <div className="p-8 text-[var(--muted-foreground)]">Loading estate…</div>;
   if (estate === null) return <div className="p-8 text-[var(--muted-foreground)]">Estate not found.</div>;
 
-  const isSavedPlot = selectedPlot ? savedPlots.includes(`${estate.id}:${selectedPlot.id}`) : false;
+  const listingPlots = estate.plots.map((p) => toListingPlot(estate.id, p));
+
+  const handleSelectSize = (sizeSqm: number) => {
+    setSelectedSizeSqm(sizeSqm);
+    setSelectedPlot(null);
+    setActiveTab("map"); // jump straight to the filtered canvas — the whole point of Part 3
+  };
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {/* Breadcrumb */}
-      <nav className="text-xs text-[var(--muted-foreground)] mb-4 flex items-center gap-1.5">
-        <button onClick={() => navigate("/estates")} className="hover:text-[var(--foreground)]">Estates</button>
-        <span>/</span>
-        <span className="text-[var(--foreground)]">{estate.name}</span>
+      <nav className="text-xs text-[var(--muted-foreground)] mb-4 flex items-center justify-between gap-1.5">
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => navigate("/estates")} className="hover:text-[var(--foreground)]">Estates</button>
+          <span>/</span>
+          <span className="text-[var(--foreground)]">{estate.name}</span>
+        </div>
+        {listing ? (
+          <Link to={`/marketplace/${estate.id}`} className="text-[var(--accent)] hover:underline shrink-0">View on public marketplace →</Link>
+        ) : (
+          <span className="shrink-0">Not yet on the public marketplace</span>
+        )}
       </nav>
 
       {/* Header */}
@@ -98,81 +141,97 @@ export default function EstateDetail() {
 
         <div className="aspect-video rounded-xl overflow-hidden bg-[var(--muted)] relative">
           <img
-            src={`https://images.unsplash.com/${estate.imageId}?w=700&h=400&fit=crop&auto=format`}
+            src={estate.imageUrl}
             alt={estate.name}
             className="w-full h-full object-cover"
           />
           <button onClick={() => setShowInspection(true)} className="absolute bottom-4 right-4 bg-white/90 text-[var(--foreground)] text-xs font-medium px-3 py-1.5 rounded-md hover:bg-white transition-colors flex items-center gap-1.5">
-            📅 Book inspection
+            <span aria-hidden="true">📅</span> Book inspection
           </button>
         </div>
       </div>
 
+      {/* Price tier list — Part 3: the price menu at a glance, not buried in the canvas */}
+      <section className="mb-8">
+        <h2 className="text-sm font-semibold text-[var(--foreground)] mb-3">Plot sizes &amp; pricing</h2>
+        <PriceTierTable
+          tiers={priceTiers}
+          cornerPremiumPct={estate.cornerPremiumPct}
+          currency={currency}
+          selectedSizeSqm={selectedSizeSqm}
+          onSelectSize={handleSelectSize}
+        />
+      </section>
+
       {/* Tabs */}
       <div className="border-b border-[var(--border)] mb-6">
-        <div className="flex gap-0">
-          {(["map", "details", "projections"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setActiveTab(t)}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors capitalize ${activeTab === t ? "border-[var(--primary)] text-[var(--foreground)]" : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
-            >
-              {t === "map" ? "Plot map" : t === "details" ? "Estate details" : "Investment data"}
-            </button>
-          ))}
-        </div>
+        <TabBar tabs={TABS} active={activeTab} onActivate={setActiveTab} ariaLabel="Estate sections" />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Left — canvas or content */}
         <div className="lg:col-span-2">
           {activeTab === "map" && (
-            <div>
+            <div id="panel-map" role="tabpanel" aria-labelledby="tab-map">
               <PlotCanvas
-                estate={estate}
+                estateId={estate.id}
+                plots={listingPlots}
+                tiers={priceTiers}
+                cornerPremiumPct={estate.cornerPremiumPct}
                 onSelectPlot={setSelectedPlot}
                 selectedPlotId={selectedPlot?.id}
+                selectedSizeSqm={selectedSizeSqm}
                 showAgisControls={true}
               />
             </div>
           )}
           {activeTab === "details" && (
-            <div className="space-y-4">
+            <div id="panel-details" role="tabpanel" aria-labelledby="tab-details" className="space-y-4">
               <DetailSection title="Infrastructure" items={estate.amenities} />
-              <DetailSection title="Title documentation" items={[`${estate.titleType} — verified ${estate.lastVerified}`, "FCT AGIS registration confirmed", "No encroachment notices on file"]} />
-              <DetailSection title="Plot types available" items={[`Standard plots: ${estate.sqmFrom} sqm`, `Edge plots: ${estate.sqmFrom + 100} sqm`, `Corner pieces: ${estate.sqmTo} sqm (${formatAmount(estate.priceTo, currency)} — premium applies)`]} />
+              <VerificationSection estate={estate} />
             </div>
           )}
           {activeTab === "projections" && (
-            <ProjectionTable estate={estate} currency={currency} />
+            <div id="panel-projections" role="tabpanel" aria-labelledby="tab-projections">
+              <ProjectionTable estate={estate} currency={currency} />
+            </div>
           )}
         </div>
 
-        {/* Right — plot detail panel */}
+        {/* Right — plot detail panel: the same shared panel /marketplace
+            uses (Reserve / Book inspection / Enquire / Wishlist), plus the
+            investment-projection block when a plot has one. */}
         <div>
           {selectedPlot ? (
-            <PlotDetailPanel
-              plot={selectedPlot}
-              estate={estate}
-              currency={currency}
-              isSaved={isSavedPlot}
-              onToggleSave={() => toggleSavedPlot(`${estate.id}:${selectedPlot.id}`)}
-              onCheckout={() => navigate(`/checkout/${estate.id}/${selectedPlot.id}`)}
-              onClose={() => setSelectedPlot(null)}
-            />
+            listing ? (
+              <PlotDetailPanel
+                plot={selectedPlot}
+                listing={listing}
+                onClose={() => setSelectedPlot(null)}
+                onOpenEnquiry={() => setEnquiryOpen(true)}
+              />
+            ) : (
+              <div className="bg-[var(--muted)] rounded-xl border border-dashed border-[var(--border)] p-6 text-center text-sm text-[var(--muted-foreground)]">
+                This estate isn't on the shared reserve/inspect/enquire flow yet.
+              </div>
+            )
           ) : (
             <div className="bg-[var(--muted)] rounded-xl border border-dashed border-[var(--border)] p-6 text-center text-sm text-[var(--muted-foreground)]">
-              <div className="text-2xl mb-2">👆</div>
+              <div className="text-2xl mb-2" aria-hidden="true">👆</div>
               Click any available plot on the map to inspect its details and pricing.
             </div>
           )}
 
-          {/* Inspection modal */}
+          {/* Inspection modal — general estate visit, not tied to a plot */}
           {showInspection && (
-            <InspectionBooking onClose={() => setShowInspection(false)} estate={estate.name} />
+            <InspectionBooking onClose={() => setShowInspection(false)} estate={estate} />
           )}
         </div>
       </div>
+
+      {enquiryOpen && listing && (
+        <EnquiryPanel listing={listing} plot={selectedPlot ?? undefined} onClose={() => setEnquiryOpen(false)} />
+      )}
 
       {/* Ratings & reviews — visible directly on the estate page */}
       <div id="reviews" className="mt-8 scroll-mt-6">
@@ -189,7 +248,7 @@ function DetailSection({ title, items }: { title: string; items: string[] }) {
       <ul className="space-y-1.5">
         {items.map((item) => (
           <li key={item} className="flex items-start gap-2 text-sm text-[var(--muted-foreground)]">
-            <span className="text-emerald-600 mt-0.5 shrink-0">✓</span>
+            <span className="text-emerald-600 mt-0.5 shrink-0" aria-hidden="true">✓</span>
             {item}
           </li>
         ))}
@@ -198,8 +257,57 @@ function DetailSection({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-function ProjectionTable({ estate, currency }: { estate: Estate; currency: any }) {
+// Part 2: real, per-check verification state — never a blanket positive
+// claim. A check absent from the estate's own data renders nothing at all,
+// rather than silently implying it passed.
+// TODO (backend): backed by a real AGIS / state-registry integration once
+// one exists — see VerificationCheck in mockData.ts.
+const CHECK_STYLES: Record<VerificationCheck["status"], { icon: string; color: string; text: string }> = {
+  verified: { icon: "✓", color: "text-emerald-700", text: "verified" },
+  pending: { icon: "⏳", color: "text-amber-700", text: "verification pending" },
+  not_checked: { icon: "○", color: "text-[var(--muted-foreground)]", text: "not yet checked" },
+  failed: { icon: "✗", color: "text-red-700", text: "verification failed" },
+};
+
+function VerificationSection({ estate }: { estate: Estate }) {
+  const rows: { label: string; check: VerificationCheck }[] = [
+    { label: `${estate.titleType} instrument`, check: { status: estate.titleVerified ? "verified" : "pending", date: estate.lastVerified } },
+  ];
+  if (estate.agisRegistration) rows.push({ label: "FCT AGIS registration", check: estate.agisRegistration });
+  if (estate.encroachmentStatus) rows.push({ label: "Encroachment status", check: estate.encroachmentStatus });
+
+  return (
+    <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
+      <h3 className="font-semibold text-sm mb-3">Title &amp; verification</h3>
+      <ul className="space-y-2">
+        {rows.map(({ label, check }) => {
+          const style = CHECK_STYLES[check.status];
+          return (
+            <li key={label} className="flex items-start gap-2 text-sm">
+              <span className={`${style.color} mt-0.5 shrink-0`} aria-hidden="true">{style.icon}</span>
+              <span className="text-[var(--muted-foreground)]">
+                <span className="text-[var(--foreground)]">{label}</span> — <span className={style.color}>{style.text}{check.date ? ` ${check.date}` : ""}</span>
+                {check.note && <span className="block text-xs mt-0.5">{check.note}</span>}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function ProjectionTable({ estate, currency }: { estate: Estate; currency: Currency }) {
   const investmentPlots = estate.plots.filter((p) => p.status === "available-inv" && p.projectedROI).slice(0, 6);
+
+  if (investmentPlots.length === 0) {
+    return (
+      <div className="bg-[var(--card)] rounded-xl border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--muted-foreground)]">
+        No investment-flagged plots are currently available at this estate.
+      </div>
+    );
+  }
+
   return (
     <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] overflow-hidden">
       <div className="px-5 py-4 border-b border-[var(--border)]">
@@ -234,66 +342,48 @@ function ProjectionTable({ estate, currency }: { estate: Estate; currency: any }
   );
 }
 
-function PlotDetailPanel({ plot, estate, currency, isSaved, onToggleSave, onCheckout, onClose }: any) {
-  return (
-    <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] overflow-hidden">
-      <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between">
-        <h3 className="font-semibold text-sm">{getPlotBlockLabel(estate, plot).label}</h3>
-        <button onClick={onClose} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-lg leading-none">×</button>
-      </div>
-      <div className="p-5 space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          {[
-            { label: "Size", value: `${plot.sqm} sqm` },
-            { label: "Orientation", value: plot.orientation },
-            { label: "Type", value: plot.type === "corner" ? "Corner piece ★" : "Standard" },
-            { label: "Status", value: plot.status === "available-dev" ? "Available (Dev)" : "Available (Inv)" },
-          ].map((d) => (
-            <div key={d.label} className="bg-[var(--muted)] rounded-lg p-3">
-              <div className="text-xs text-[var(--muted-foreground)] mb-0.5">{d.label}</div>
-              <div className="text-sm font-medium">{d.value}</div>
-            </div>
-          ))}
-        </div>
+// Part 7: wired to the real inspection service (shared with the marketplace
+// buyer flow — an inspection is an account-level concept, not tied to which
+// browse surface it was booked from) instead of setting local state with no
+// request. Never promises a response time the system can't honour — the
+// agent is assigned immediately and shown, not "within 24 hours." Booked at
+// the estate level here (this button isn't tied to one specific plot), so a
+// placeholder plot reference is used — see plotId/plotLabel below.
+function InspectionBooking({ onClose, estate }: { onClose: () => void; estate: Estate }) {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [booked, setBooked] = useState<Inspection | null>(null);
 
-        <div className="pt-3 border-t border-[var(--border)]">
-          <div className="text-xs text-[var(--muted-foreground)] mb-0.5">Price</div>
-          <div className="font-display text-2xl text-[var(--foreground)]">{formatAmount(plot.price, currency)}</div>
-          {plot.type === "corner" && <div className="text-xs text-[var(--accent)] mt-0.5">Includes corner piece premium</div>}
-        </div>
+  const handleSubmit = async (value: InspectionFormValue) => {
+    setSubmitting(true);
+    setError("");
+    try {
+      const inspection = await createInspection({
+        listingId: estate.id,
+        listingName: estate.name,
+        plotId: "general",
+        plotLabel: "General estate visit",
+        sellerBranchName: estate.name,
+        type: value.type,
+        date: value.date,
+        timeSlot: value.timeSlot,
+        note: value.note || undefined,
+      });
+      setBooked(inspection);
+    } catch {
+      setError("Something went wrong booking your inspection. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-        {plot.projectedROI && (
-          <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-            <div className="text-xs font-medium text-blue-900 mb-1">Investment projection (estimate)</div>
-            <div className="text-sm text-blue-800">~{plot.projectedROI}% capital appreciation over {plot.holdingYears} years.</div>
-            <div className="text-xs text-blue-600 mt-1">Not a guarantee of returns.</div>
-          </div>
-        )}
-
-        <div className="flex flex-col gap-2 pt-2">
-          <button onClick={onCheckout} className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium hover:opacity-90 transition-opacity">
-            Reserve this plot
-          </button>
-          <button onClick={onToggleSave} className={`w-full py-2 text-sm rounded-md border transition-colors ${isSaved ? "border-[var(--accent)] text-[var(--accent)] bg-amber-50" : "border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}>
-            {isSaved ? "★ Saved" : "☆ Save plot"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function InspectionBooking({ onClose, estate }: { onClose: () => void; estate: string }) {
-  const [type, setType] = useState<"physical" | "virtual">("physical");
-  const [date, setDate] = useState("");
-  const [submitted, setSubmitted] = useState(false);
-
-  if (submitted) {
+  if (booked) {
     return (
       <div className="mt-4 bg-[var(--card)] rounded-xl border border-[var(--border)] p-5 text-center">
-        <div className="text-2xl mb-2">✅</div>
+        <div className="text-2xl mb-2" aria-hidden="true">✅</div>
         <div className="font-medium text-sm mb-1">Inspection booked</div>
-        <div className="text-xs text-[var(--muted-foreground)] mb-3">An agent will contact you within 24 hours to confirm your {date} {type} visit to {estate}.</div>
+        <div className="text-xs text-[var(--muted-foreground)] mb-1">{booked.type === "physical" ? "Physical visit" : "Virtual / drone tour"} on {booked.date} at {booked.timeSlot}.</div>
+        <div className="text-xs text-[var(--muted-foreground)] mb-3">Assigned agent: {booked.agent.name} · {booked.agent.phone}</div>
         <button onClick={onClose} className="text-xs text-[var(--accent)] hover:underline">Close</button>
       </div>
     );
@@ -303,24 +393,15 @@ function InspectionBooking({ onClose, estate }: { onClose: () => void; estate: s
     <div className="mt-4 bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-semibold text-sm">Book an inspection</h3>
-        <button onClick={onClose} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-lg">×</button>
+        <button onClick={onClose} aria-label="Close" className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-lg leading-none">×</button>
       </div>
-      <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-2">
-          {(["physical", "virtual"] as const).map((t) => (
-            <button key={t} onClick={() => setType(t)} className={`py-2 text-xs font-medium rounded-md border transition-colors capitalize ${type === t ? "border-[var(--primary)] bg-[var(--secondary)] text-[var(--foreground)]" : "border-[var(--border)] text-[var(--muted-foreground)]"}`}>
-              {t === "physical" ? "🏗 Physical visit" : "📷 Virtual / drone"}
-            </button>
-          ))}
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1">Preferred date</label>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} min={new Date().toISOString().split("T")[0]} className="w-full px-3 py-2 text-sm bg-[var(--card)] border border-[var(--border)] rounded-md" />
-        </div>
-        <button onClick={() => date && setSubmitted(true)} disabled={!date} className="w-full py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium disabled:opacity-40 hover:opacity-90 transition-opacity">
-          Confirm booking
-        </button>
+
+      <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
+        Plots at {estate.name} are not held during your inspection — save any plot you like from the map, then return to reserve it once you've decided.
       </div>
+
+      <InspectionForm onSubmit={handleSubmit} submitting={submitting} />
+      {error && <p role="alert" className="text-red-600 text-xs mt-2">{error}</p>}
     </div>
   );
 }

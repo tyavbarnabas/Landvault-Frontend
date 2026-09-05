@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { formatAmount, type Plot, type Estate } from "../../data/mockData";
-import { fetchEstates } from "../../services/estatesService";
+import { formatAmount, type Estate } from "../../data/mockData";
+import { fetchEstates, fetchPriceTiers, type PriceTier } from "../../services/estatesService";
+import { toListingPlot, priceForPlot, type ListingPlot } from "../../services/marketplacePlotsService";
 import { fetchSyndicates, fetchSyndicateById, createSyndicate, type Syndicate } from "../../services/syndicatesService";
 import { useApp } from "../../contexts/AppContext";
 import PlotCanvas from "../../components/PlotCanvas";
@@ -62,7 +63,7 @@ export function SyndicateList() {
               >
                 <div className="flex items-start gap-4 mb-3">
                   <div className="w-12 h-12 rounded-lg overflow-hidden bg-[var(--muted)] shrink-0">
-                    <img src={`https://images.unsplash.com/${estate.imageId}?w=100&h=100&fit=crop&auto=format`} alt={estate.name} className="w-full h-full object-cover" />
+                    <img src={estate.imageUrl} alt={estate.name} className="w-full h-full object-cover" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-[var(--foreground)]">{syn.name}</div>
@@ -114,7 +115,8 @@ export function CreateSyndicate() {
   const [step, setStep] = useState<"name" | "plot" | "members" | "done">("name");
   const [synName, setSynName] = useState("");
   const [selectedEstate, setSelectedEstate] = useState("");
-  const [selectedPlot, setSelectedPlot] = useState<Plot | null>(null);
+  const [selectedPlot, setSelectedPlot] = useState<ListingPlot | null>(null);
+  const [tiers, setTiers] = useState<PriceTier[]>([]);
   const [members, setMembers] = useState<{ email: string; pct: number }[]>([
     { email: "", pct: 0 },
   ]);
@@ -128,9 +130,18 @@ export function CreateSyndicate() {
     return () => { cancelled = true; };
   }, []);
 
+  useEffect(() => {
+    if (!selectedEstate) return;
+    let cancelled = false;
+    fetchPriceTiers(selectedEstate).then((t) => { if (!cancelled) setTiers(t); });
+    return () => { cancelled = true; };
+  }, [selectedEstate]);
+
   if (estates.length === 0) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Loading…</div>;
 
   const estate = estates.find((e) => e.id === selectedEstate)!;
+  const listingPlots = estate.plots.map((p) => toListingPlot(estate.id, p));
+  const selectedPlotPrice = selectedPlot ? priceForPlot(selectedPlot, tiers, estate.cornerPremiumPct).final : 0;
   const otherPct = members.reduce((s, m) => s + m.pct, 0);
   const totalPct = ownerPct + otherPct;
 
@@ -149,8 +160,8 @@ export function CreateSyndicate() {
         estateId: estate.id,
         plotId: selectedPlot.id,
         plotLabel: `Plot ${selectedPlot.row + 1}-${selectedPlot.col + 1}`,
-        sqm: selectedPlot.sqm,
-        totalPrice: selectedPlot.price,
+        sqm: selectedPlot.sizeSqm,
+        totalPrice: selectedPlotPrice,
         ownerPct,
         invitedMembers: members.filter((m) => m.email.trim()),
       });
@@ -199,7 +210,7 @@ export function CreateSyndicate() {
               {estates.map((e) => (
                 <button key={e.id} onClick={() => { setSelectedEstate(e.id); setSelectedPlot(null); }} className={`text-left p-3 rounded-lg border-2 transition-colors flex items-center gap-3 ${selectedEstate === e.id ? "border-[var(--primary)] bg-[var(--secondary)]" : "border-[var(--border)]"}`}>
                   <div className="w-10 h-10 rounded-lg overflow-hidden bg-[var(--muted)] shrink-0">
-                    <img src={`https://images.unsplash.com/${e.imageId}?w=80&h=80&fit=crop&auto=format`} alt={e.name} className="w-full h-full object-cover" />
+                    <img src={e.imageUrl} alt={e.name} className="w-full h-full object-cover" />
                   </div>
                   <div>
                     <div className="font-semibold text-sm">{e.name}</div>
@@ -213,11 +224,11 @@ export function CreateSyndicate() {
           {selectedEstate && (
             <div>
               <div className="text-xs font-medium text-[var(--muted-foreground)] mb-2">Select a plot</div>
-              <PlotCanvas estate={estate} onSelectPlot={setSelectedPlot} selectedPlotId={selectedPlot?.id} />
+              <PlotCanvas estateId={estate.id} plots={listingPlots} tiers={tiers} cornerPremiumPct={estate.cornerPremiumPct} onSelectPlot={setSelectedPlot} selectedPlotId={selectedPlot?.id} />
               {selectedPlot && (
                 <div className="mt-2 p-3 bg-[var(--secondary)] rounded-lg text-sm flex items-center justify-between">
-                  <span className="font-medium">Plot {selectedPlot.row + 1}-{selectedPlot.col + 1} · {selectedPlot.sqm} sqm</span>
-                  <span className="font-mono-data font-semibold">{formatAmount(selectedPlot.price, currency)}</span>
+                  <span className="font-medium">Plot {selectedPlot.row + 1}-{selectedPlot.col + 1} · {selectedPlot.sizeSqm} sqm</span>
+                  <span className="font-mono-data font-semibold">{formatAmount(selectedPlotPrice, currency)}</span>
                 </div>
               )}
             </div>
@@ -426,7 +437,7 @@ export function SyndicateDetail() {
           {/* Plot info */}
           <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] overflow-hidden">
             <div className="h-28 overflow-hidden bg-[var(--muted)]">
-              <img src={`https://images.unsplash.com/${estate.imageId}?w=300&h=180&fit=crop&auto=format`} alt={estate.name} className="w-full h-full object-cover" />
+              <img src={estate.imageUrl} alt={estate.name} className="w-full h-full object-cover" />
             </div>
             <div className="p-4">
               <div className="font-semibold text-sm mb-0.5">{estate.name}</div>

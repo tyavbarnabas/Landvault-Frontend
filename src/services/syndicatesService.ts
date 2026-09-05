@@ -38,7 +38,7 @@ const MOCK_SYNDICATES: Syndicate[] = [
   {
     id: "syn-001",
     name: "Abuja Diaspora Group",
-    estateId: "millbrook",
+    estateId: "peaceland",
     plotLabel: "Block E, Plot 3",
     sqm: 500,
     totalPrice: 65_000_000,

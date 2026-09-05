@@ -4,6 +4,7 @@ import { useApp } from "../contexts/AppContext";
 import { formatAmount, type OwnedPlot, type Estate } from "../data/mockData";
 import { fetchOwnedPlots } from "../services/portfolioService";
 import { fetchEstates } from "../services/estatesService";
+import PlotStatusBadge from "../components/portfolio/PlotStatusBadge";
 
 export default function Dashboard() {
   const { user, currency } = useApp();
@@ -26,7 +27,7 @@ export default function Dashboard() {
 
   const totalPortfolioValue = ownedPlots.reduce((s, p) => s + p.totalPrice, 0);
   const totalPaid = ownedPlots.reduce((s, p) => s + p.paidAmount, 0);
-  const activePlots = ownedPlots.filter((p) => p.status === "active").length;
+  const activePlots = ownedPlots.filter((p) => p.status === "installment_active" || p.status === "in_arrears").length;
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -85,7 +86,7 @@ export default function Dashboard() {
                     <div className="font-medium text-sm text-[var(--foreground)]">{plot.estate}</div>
                     <div className="text-xs text-[var(--muted-foreground)]">{plot.plotLabel} · {plot.sqm} sqm · {plot.location}</div>
                   </div>
-                  <StatusBadge status={plot.status} />
+                  <PlotStatusBadge status={plot.status} />
                 </div>
                 <div className="mb-2">
                   <div className="flex items-center justify-between text-xs mb-1">
@@ -111,7 +112,7 @@ export default function Dashboard() {
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm">
                 <div>
-                  <div className="font-medium">Millbrook Gardens — Installment 7</div>
+                  <div className="font-medium">Peaceland — Installment 7</div>
                   <div className="text-xs text-[var(--muted-foreground)] font-mono-data">Due 15 Sep 2026</div>
                 </div>
                 <div className="text-right">
@@ -143,8 +144,8 @@ export default function Dashboard() {
             <div className="space-y-2">
               {[
                 { title: "Payment Receipt — Installment 6", date: "15 Aug 2026", icon: "🧾" },
-                { title: "Allocation Letter — Millbrook", date: "16 Aug 2024", icon: "📄" },
-                { title: "Deed of Assignment — Emerald Park", date: "3 Jul 2023", icon: "📜" },
+                { title: "Allocation Letter — Peaceland", date: "16 Aug 2024", icon: "📄" },
+                { title: "Deed of Assignment — Golden Acres", date: "3 Jul 2023", icon: "📜" },
               ].map((d) => (
                 <div key={d.title} className="flex items-center gap-3 text-sm py-1.5">
                   <span className="text-base">{d.icon}</span>
@@ -164,7 +165,7 @@ export default function Dashboard() {
               {estates.map((e) => (
                 <Link key={e.id} to={`/estates/${e.id}`} className="flex items-center gap-3 group">
                   <div className="w-10 h-10 rounded-lg overflow-hidden bg-[var(--muted)] shrink-0">
-                    <img src={`https://images.unsplash.com/${e.imageId}?w=80&h=80&fit=crop&auto=format`} alt={e.name} className="w-full h-full object-cover" />
+                    <img src={e.imageUrl} alt={e.name} className="w-full h-full object-cover" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-medium text-[var(--foreground)] truncate group-hover:text-[var(--accent)] transition-colors">{e.name}</div>
@@ -177,20 +178,6 @@ export default function Dashboard() {
         </div>
       </div>
     </div>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    active: "bg-blue-50 text-blue-700 border-blue-200",
-    completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    defaulted: "bg-red-50 text-red-700 border-red-200",
-  };
-  const labels: Record<string, string> = { active: "Active plan", completed: "Paid off", defaulted: "Defaulted" };
-  return (
-    <span className={`text-xs font-medium px-2 py-0.5 rounded-full border whitespace-nowrap ${styles[status] || ""}`}>
-      {labels[status] || status}
-    </span>
   );
 }
 

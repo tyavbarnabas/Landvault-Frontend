@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { formatAmount, type Plot, type OwnedPlot, type Estate } from "../../data/mockData";
+import { formatAmount, type OwnedPlot, type Estate } from "../../data/mockData";
 import { fetchOwnedPlotById } from "../../services/portfolioService";
-import { fetchEstates } from "../../services/estatesService";
+import { fetchEstates, fetchPriceTiers, type PriceTier } from "../../services/estatesService";
+import { toListingPlot, priceForPlot, type ListingPlot } from "../../services/marketplacePlotsService";
 import { useApp } from "../../contexts/AppContext";
 import PlotCanvas from "../../components/PlotCanvas";
 
@@ -18,8 +19,9 @@ export default function Upgrade() {
   const [estatesLoading, setEstatesLoading] = useState(true);
   const [step, setStep] = useState<Step>("select");
   const [upgradeType, setUpgradeType] = useState<UpgradeType>("upgrade");
-  const [selectedNewPlot, setSelectedNewPlot] = useState<Plot | null>(null);
+  const [selectedNewPlot, setSelectedNewPlot] = useState<ListingPlot | null>(null);
   const [selectedNewEstate, setSelectedNewEstate] = useState<string>("");
+  const [targetTiers, setTargetTiers] = useState<PriceTier[]>([]);
   const [deltaPayment, setDeltaPayment] = useState<"outright" | "installment">("outright");
   const [requestStatus, setRequestStatus] = useState<"pending" | "approved" | "declined" | null>(null);
   const [loading, setLoading] = useState(false);
@@ -32,6 +34,15 @@ export default function Upgrade() {
     return () => { cancelled = true; };
   }, [id]);
 
+  useEffect(() => {
+    const targetId = upgradeType === "migrate" ? selectedNewEstate : ownedPlot?.estateId;
+    if (!targetId) { setTargetTiers([]); return; }
+    let cancelled = false;
+    fetchPriceTiers(targetId).then((t) => { if (!cancelled) setTargetTiers(t); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [upgradeType, selectedNewEstate, ownedPlot?.estateId]);
+
   if (ownedPlot === undefined || estatesLoading) return <div className="p-8 text-[var(--muted-foreground)]">Loading…</div>;
   if (!ownedPlot) return <div className="p-8">Plot not found.</div>;
 
@@ -39,8 +50,9 @@ export default function Upgrade() {
   const targetEstate = upgradeType === "migrate"
     ? estates.find((e) => e.id === selectedNewEstate) || null
     : currentEstate;
+  const targetListingPlots = targetEstate ? targetEstate.plots.map((p) => toListingPlot(targetEstate.id, p)) : [];
 
-  const newPlotPrice = selectedNewPlot?.price || 0;
+  const newPlotPrice = targetEstate && selectedNewPlot ? priceForPlot(selectedNewPlot, targetTiers, targetEstate.cornerPremiumPct).final : 0;
   const delta = Math.max(0, newPlotPrice - ownedPlot.paidAmount);
 
   const handleSubmit = () => {
@@ -122,7 +134,7 @@ export default function Upgrade() {
                     className={`text-left p-3 rounded-lg border-2 transition-colors flex items-center gap-3 ${selectedNewEstate === e.id ? "border-[var(--primary)] bg-[var(--secondary)]" : "border-[var(--border)]"}`}
                   >
                     <div className="w-12 h-12 rounded-lg overflow-hidden bg-[var(--muted)] shrink-0">
-                      <img src={`https://images.unsplash.com/${e.imageId}?w=100&h=100&fit=crop&auto=format`} alt={e.name} className="w-full h-full object-cover" />
+                      <img src={e.imageUrl} alt={e.name} className="w-full h-full object-cover" />
                     </div>
                     <div>
                       <div className="font-semibold text-sm">{e.name}</div>
@@ -141,7 +153,10 @@ export default function Upgrade() {
                 {upgradeType === "upgrade" ? "Select your new plot" : `Select a plot in ${targetEstate.name}`}
               </div>
               <PlotCanvas
-                estate={targetEstate}
+                estateId={targetEstate.id}
+                plots={targetListingPlots}
+                tiers={targetTiers}
+                cornerPremiumPct={targetEstate.cornerPremiumPct}
                 onSelectPlot={setSelectedNewPlot}
                 selectedPlotId={selectedNewPlot?.id}
                 showAgisControls={false}
@@ -150,9 +165,9 @@ export default function Upgrade() {
                 <div className="mt-3 p-3 bg-[var(--secondary)] rounded-lg text-sm flex items-center justify-between border border-[var(--border)]">
                   <div>
                     <span className="font-medium">Plot {selectedNewPlot.row + 1}-{selectedNewPlot.col + 1}</span>
-                    <span className="text-[var(--muted-foreground)] ml-2">{selectedNewPlot.sqm} sqm · {selectedNewPlot.type === "corner" ? "Corner ★" : "Standard"}</span>
+                    <span className="text-[var(--muted-foreground)] ml-2">{selectedNewPlot.sizeSqm} sqm · {selectedNewPlot.isCorner ? "Corner ★" : "Standard"}</span>
                   </div>
-                  <span className="font-mono-data font-semibold">{formatAmount(selectedNewPlot.price, currency)}</span>
+                  <span className="font-mono-data font-semibold">{formatAmount(newPlotPrice, currency)}</span>
                 </div>
               )}
             </div>
@@ -235,7 +250,7 @@ export default function Upgrade() {
             <div className="space-y-1.5 text-sm">
               <DeltaRow label="From" value={`${ownedPlot.estate} — ${ownedPlot.plotLabel}`} />
               <DeltaRow label="To" value={`${targetEstate?.name} — Plot ${selectedNewPlot.row + 1}-${selectedNewPlot.col + 1}`} />
-              <DeltaRow label="New size" value={`${selectedNewPlot.sqm} sqm (${selectedNewPlot.type})`} />
+              <DeltaRow label="New size" value={`${selectedNewPlot.sizeSqm} sqm (${selectedNewPlot.isCorner ? "corner" : "standard"})`} />
               <DeltaRow label="Delta to pay" value={formatAmount(delta, currency)} bold />
               <DeltaRow label="Payment method" value={delta === 0 ? "No payment required" : deltaPayment === "outright" ? "Outright" : "Modified installment"} />
             </div>

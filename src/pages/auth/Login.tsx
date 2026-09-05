@@ -1,10 +1,13 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
+import { completePendingWishlistIntent } from "../../lib/pendingWishlist";
+import { consumePendingIntent } from "../../lib/pendingIntent";
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login } = useApp();
+  const [searchParams] = useSearchParams();
+  const { login, toggleWishlistItem } = useApp();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [step, setStep] = useState<"credentials" | "otp">("credentials");
@@ -29,7 +32,30 @@ export default function Login() {
     setTimeout(async () => {
       try {
         const loggedInUser = await login(email, password);
-        navigate(loggedInUser.role === "super_admin" ? "/admin/dashboard" : "/dashboard");
+
+        await completePendingWishlistIntent(toggleWishlistItem);
+
+        // Resume a Reserve/Inspect/Enquire/Make-an-offer intent (see
+        // pendingIntent.ts) by jumping straight to the target action, not
+        // just back to the listing.
+        const pendingAction = consumePendingIntent();
+        if (pendingAction) {
+          if (pendingAction.action === "reserve") { navigate(`/marketplace/checkout/${pendingAction.listingId}/${pendingAction.plotId}`); return; }
+          if (pendingAction.action === "inspect") { navigate(`/inspections/new?listingId=${pendingAction.listingId}&plotId=${pendingAction.plotId}`); return; }
+          if (pendingAction.action === "enquire") {
+            const returnUrl = searchParams.get("returnUrl");
+            navigate(`${returnUrl ?? `/marketplace/${pendingAction.listingId}`}${returnUrl?.includes("?") ? "&" : "?"}enquire=1`);
+            return;
+          }
+          if (pendingAction.action === "resale_offer") {
+            const returnUrl = searchParams.get("returnUrl");
+            navigate(`${returnUrl ?? `/marketplace/resale/${pendingAction.listingId}`}${returnUrl?.includes("?") ? "&" : "?"}offer=1`);
+            return;
+          }
+        }
+
+        const returnUrl = searchParams.get("returnUrl");
+        navigate(returnUrl || (loggedInUser.role === "super_admin" ? "/admin/dashboard" : "/dashboard"));
       } catch {
         setLoading(false);
         setError("Sign-in failed. Please try again.");
@@ -117,7 +143,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
         <div className="absolute inset-0 flex flex-col justify-end p-12">
           <blockquote className="text-white">
             <p className="font-display text-2xl leading-relaxed mb-4 italic">
-              "I bought my Millbrook plot from London. The title badge and document vault meant I never had to second-guess myself."
+              "I bought my Peaceland plot from London. The title badge and document vault meant I never had to second-guess myself."
             </p>
             <footer className="text-white/60 text-sm">— Emeka O., Diaspora investor</footer>
           </blockquote>

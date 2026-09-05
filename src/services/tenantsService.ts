@@ -401,6 +401,60 @@ const MOCK_TENANTS: Tenant[] = [
       { id: "vd-nb-1", reviewerName: "Ada Nwosu", timestamp: "2025-11-05T14:00:00Z", decision: "approved", reason: "Documents and SCUML/LASRERA registrations verified." },
     ],
   },
+  // A small, single-branch, active-and-verified tenant — added specifically
+  // so the public marketplace (marketplaceService.ts) has a genuine second
+  // company. Neither Citadel Homes (not yet verified) nor Northbridge Estates
+  // (verified but account-suspended) actually qualifies for a public listing.
+  {
+    id: "crestview-homes",
+    status: "active",
+    plan: "growth",
+    entitlements: { marketplacePublishing: true, mlmModule: false, fxRails: false },
+    branches: [{ id: "crestview-main", name: "Crestview Homes", managerName: "Yemi Adeyinka", estateCount: 1 }],
+    createdDate: "2025-09-18",
+    identity: {
+      registeredName: "Crestview Homes Limited",
+      tradingName: "Crestview Homes",
+      rcNumber: "RC2233445",
+      companyType: "Limited Liability (Ltd)",
+      dateOfIncorporation: "2020-02-14",
+      registeredAddress: { street: "18 Herbert Macaulay Way", city: "Yaba", state: "Lagos" },
+      operatingAddress: { street: "18 Herbert Macaulay Way", city: "Yaba", state: "Lagos" },
+      statesOfOperation: ["Lagos"],
+    },
+    primaryContact: {
+      fullName: "Yemi Adeyinka",
+      roleTitle: "Managing Director",
+      workEmail: "yemi@crestviewhomes.ng",
+      phone: "+234 8099887766",
+      govIdType: "NIN",
+      govIdNumber: "66677788899",
+    },
+    presence: { companyEmail: "hello@crestviewhomes.ng", companyPhone: "+234 8199887766", website: "https://crestviewhomes.ng", socials: {} },
+    documents: [
+      { id: "doc-cv-1", type: "cac_certificate", fileName: "cac-certificate.pdf", size: 590_000, status: "verified", uploadedAt: "2025-09-15" },
+      { id: "doc-cv-2", type: "cac_status_report", fileName: "cac-status-report.pdf", size: 52_000, status: "verified", uploadedAt: "2025-09-15" },
+      { id: "doc-cv-3", type: "tin", fileName: "tin.pdf", size: 160_000, status: "verified", uploadedAt: "2025-09-15" },
+      { id: "doc-cv-4", type: "proof_of_address", fileName: "tenancy-agreement.pdf", size: 400_000, status: "verified", uploadedAt: "2025-09-15" },
+      { id: "doc-cv-5", type: "scuml_certificate", fileName: "scuml.pdf", size: 280_000, status: "verified", uploadedAt: "2025-09-15" },
+    ],
+    regulatory: { scumlNumber: "SCUML-2025-002211", stateRegulators: [{ id: "reg-cv-1", state: "Lagos", regulatorName: "LASRERA", regNumber: "LAS-REG-91004" }], additionalPermits: [] },
+    directors: [
+      { id: "dir-cv-1", fullName: "Yemi Adeyinka", role: "Managing Director", nationality: "Nigerian", idType: "NIN", idNumber: "66677788899", ownershipPct: 100, isBeneficialOwner: true },
+    ],
+    directorsAttestation: true,
+    financial: {
+      bankName: "Sterling Bank",
+      accountNumber: "0099887766",
+      accountName: "Crestview Homes Limited",
+      settlementCurrency: "NGN",
+      gateways: { Paystack: "connected" },
+    },
+    verificationState: "verified",
+    verificationHistory: [
+      { id: "vd-cv-1", reviewerName: "Ada Nwosu", timestamp: "2025-09-20T11:00:00Z", decision: "approved", reason: "Documents and SCUML/LASRERA registrations verified." },
+    ],
+  },
 ];
 
 // In-memory mock store so an onboarded/verified/suspended tenant reflects
@@ -417,6 +471,20 @@ function logAudit(entry: Omit<AuditLogEntry, "id" | "timestamp">) {
 export async function fetchTenants(): Promise<Tenant[]> {
   if (apiClient.isMockMode) return mockTenants;
   return apiClient.get<Tenant[]>("/api/admin/tenants");
+}
+
+// Mock-mode-only synchronous accessor — same convention as
+// marketplacePlotsService.ts's setPlotStatusMock. Used by marketplaceService.ts's
+// projectListing() to
+// check the publication gate (tenant verificationState/entitlements/status)
+// for every canonical estate at once without an async round trip per estate.
+// A real backend's projection job would read this from wherever tenant
+// verification state actually lives, same access a batched materialized-view
+// job would have — never exposed to the client beyond the narrow Seller
+// shape a published Listing carries. See landvault-catalogue-unification-plan
+// in project memory.
+export function fetchTenantByIdSync(id: string): Tenant | undefined {
+  return mockTenants.find((t) => t.id === id);
 }
 
 export async function fetchTenantById(id: string): Promise<Tenant | undefined> {

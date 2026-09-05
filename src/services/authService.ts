@@ -27,10 +27,13 @@ export interface AuthUser {
 
 const CLIENT_PERMISSIONS = [
   "client.dashboard.view",
+  "client.marketplace.view",
   "client.estates.view",
   "client.resale.view",
   "client.portfolio.view",
   "client.documents.view",
+  "client.inspections.view",
+  "client.enquiries.view",
   "client.syndicates.view",
   "client.support.view",
   "client.settings.view",
@@ -83,6 +86,41 @@ export async function login(email: string, password?: string): Promise<AuthUser>
       : MOCK_CLIENT_USER;
   }
   const { user, token } = await apiClient.post<{ user: AuthUser; token: string }>("/api/auth/login", { email, password });
+  setAuthToken(token);
+  return user;
+}
+
+export interface RegisterInput {
+  name: string;
+  email: string;
+  phone: string;
+  country: string;
+  currency: Currency;
+}
+
+// Deliberately distinct from login() above. A returning user signing back in
+// gets the pre-seeded, already-verified MOCK_CLIENT_USER — but a genuinely
+// new signup has never been through KYC. This is what makes the purchase-time
+// KYC gate (kycService.ts) actually reachable: sign IN with an existing
+// account and you're pre-verified; REGISTER fresh and you're not, and the
+// buyer type (kycService's local/diaspora split) is driven by the country
+// entered here, not chosen again later.
+export async function register(input: RegisterInput): Promise<AuthUser> {
+  if (apiClient.isMockMode) {
+    return {
+      name: input.name || "New Buyer",
+      email: input.email,
+      phone: input.phone,
+      country: input.country,
+      currency: input.currency,
+      kycStatus: "unsubmitted",
+      kycType: input.country === "NG" ? "local" : "diaspora",
+      twoFAEnabled: false,
+      role: "client",
+      permissions: CLIENT_PERMISSIONS,
+    };
+  }
+  const { user, token } = await apiClient.post<{ user: AuthUser; token: string }>("/api/auth/register", input);
   setAuthToken(token);
   return user;
 }

@@ -8,7 +8,7 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center gap-6">
           <span className="font-display text-xl text-[var(--foreground)]">LandVault</span>
           <div className="flex-1" />
-          <Link to="/estates" className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors hidden sm:block">Estates</Link>
+          <Link to="/marketplace" className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors hidden sm:block">Marketplace</Link>
           <Link to="/login" className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">Sign in</Link>
           <Link to="/register" className="text-sm px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:opacity-90 transition-opacity">
             Get started
@@ -36,8 +36,8 @@ export default function Landing() {
               <Link to="/register" className="px-6 py-3 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md font-medium hover:opacity-90 transition-opacity text-sm">
                 Start browsing plots
               </Link>
-              <Link to="/estates" className="px-6 py-3 border border-[var(--border)] text-[var(--foreground)] rounded-md font-medium hover:bg-[var(--muted)] transition-colors text-sm">
-                View estates
+              <Link to="/marketplace" className="px-6 py-3 border border-[var(--border)] text-[var(--foreground)] rounded-md font-medium hover:bg-[var(--muted)] transition-colors text-sm">
+                Browse the marketplace
               </Link>
             </div>
 
@@ -195,7 +195,7 @@ const PERSONAS = [
 ];
 
 const ESTATE_PREVIEWS = [
-  { name: "Millbrook Gardens", location: "Maitama Extension, Abuja", title: "C of O", price: "₦28M", available: "142 plots", img: "https://images.unsplash.com/photo-1486325212027-8081e485255e?w=500&h=280&fit=crop&auto=format" },
-  { name: "Sterling Court", location: "Apo Legislative Quarters", title: "Gov. Consent", price: "₦18.5M", available: "95 plots", img: "https://images.unsplash.com/photo-1590424693420-1d68e1fd46b5?w=500&h=280&fit=crop&auto=format" },
-  { name: "Emerald Park", location: "Lugbe District, Abuja", title: "R of O", price: "₦9.5M", available: "201 plots", img: "https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=500&h=280&fit=crop&auto=format" },
+  { name: "Peaceland", location: "Lekki, Lagos", title: "C of O", price: "₦28M", available: "142 plots", img: "https://images.unsplash.com/photo-1486325212027-8081e485255e?w=500&h=280&fit=crop&auto=format" },
+  { name: "Sunrise Gardens", location: "Maitama Extension, Abuja", title: "Gov. Consent", price: "₦30M", available: "95 plots", img: "https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=500&h=280&fit=crop&auto=format" },
+  { name: "Golden Acres", location: "Sagamu Interchange, Sagamu", title: "R of O", price: "₦11M", available: "201 plots", img: "https://images.unsplash.com/photo-1590424693420-1d68e1fd46b5?w=500&h=280&fit=crop&auto=format" },
 ];

@@ -17,20 +17,13 @@ import {
   type AttentionItem, type PlatformHealthMetrics, type MarketplacePulseMetrics, type RevenueMetrics, type SystemHealthMetrics, type MetricsPeriod,
 } from "../../services/platformMetricsService";
 import type { AuditLogEntry } from "../../services/tenantsService";
-import { formatAmount } from "../../data/mockData";
+import { formatCompactCurrency as compactCurrency } from "../../lib/formatCurrency";
 import AttentionPanel from "../../components/dashboard/AttentionPanel";
 import ActivityStream from "../../components/dashboard/ActivityStream";
 import ZoneSection, { PreviewDataBadge } from "../../components/dashboard/ZoneSection";
 import MetricCard from "../../components/dashboard/MetricCard";
 import PeriodSelector from "../../components/dashboard/PeriodSelector";
 import IntegrationStatusList from "../../components/dashboard/IntegrationStatusList";
-
-function compactCurrency(amount: number): string {
-  if (amount >= 1_000_000_000) return `₦${(amount / 1_000_000_000).toFixed(1)}B`;
-  if (amount >= 1_000_000) return `₦${(amount / 1_000_000).toFixed(1)}M`;
-  if (amount >= 1_000) return `₦${(amount / 1_000).toFixed(0)}K`;
-  return formatAmount(amount, "NGN");
-}
 
 // Generic async-zone state so each of the 6 zones can load/fail
 // independently — a slow or broken one never blanks the rest of the page.

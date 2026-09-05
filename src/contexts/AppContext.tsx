@@ -1,7 +1,8 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import type { Currency } from "../data/mockData";
-import { login as loginRequest, logout as logoutRequest, MOCK_CLIENT_USER, type AuthUser } from "../services/authService";
-import { fetchNotifications, markNotificationRead as markNotificationReadRequest, type Notification } from "../services/notificationsService";
+import { login as loginRequest, logout as logoutRequest, register as registerRequest, MOCK_CLIENT_USER, type AuthUser, type RegisterInput } from "../services/authService";
+import { fetchNotifications, markNotificationRead as markNotificationReadRequest, addNotification as addNotificationRequest, type Notification } from "../services/notificationsService";
+import type { WishlistItem } from "../services/marketplaceService";
 
 export type { Notification };
 
@@ -11,6 +12,7 @@ interface AppContextValue {
   user: User | null;
   isAuthenticated: boolean;
   login: (email: string, password?: string) => Promise<User>;
+  register: (input: RegisterInput) => Promise<User>;
   logout: () => void;
   savedPlots: string[];
   toggleSavedPlot: (id: string) => void;
@@ -18,6 +20,14 @@ interface AppContextValue {
   setCurrency: (c: Currency) => void;
   notifications: Notification[];
   markNotificationRead: (id: string) => void;
+  addNotification: (input: Omit<Notification, "id" | "read">) => Promise<void>;
+  // Marketplace wishlist — separate from savedPlots (that's individual plots
+  // in one company's inventory; this is estate-level across the national
+  // marketplace). See marketplaceService.ts's WishlistItem for why
+  // `priceAtSave` isn't the same thing as "the displayed price."
+  wishlist: WishlistItem[];
+  isWishlisted: (listingId: string) => boolean;
+  toggleWishlistItem: (listingId: string, currentFromPrice: number, listingType: WishlistItem["listingType"]) => void;
 }
 
 // Signed-in on load for prototype convenience — swap for a real session check
@@ -30,7 +40,8 @@ const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(DEFAULT_USER);
-  const [savedPlots, setSavedPlots] = useState<string[]>(["millbrook:2-7", "sterling:5-3"]);
+  const [savedPlots, setSavedPlots] = useState<string[]>(["peaceland:2-7", "sunrise-gardens:5-3"]);
+  const [wishlist, setWishlist] = useState<WishlistItem[]>([]);
   const [currency, setCurrencyState] = useState<Currency>(DEFAULT_USER.currency);
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
@@ -47,6 +58,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return loggedInUser;
   };
 
+  const register = async (input: RegisterInput) => {
+    const newUser = await registerRequest(input);
+    setUser(newUser);
+    setCurrencyState(newUser.currency);
+    return newUser;
+  };
+
   const logout = () => {
     logoutRequest();
     setUser(null);
@@ -54,6 +72,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const toggleSavedPlot = (id: string) => {
     setSavedPlots((prev) => prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]);
+  };
+
+  const isWishlisted = (listingId: string) => wishlist.some((w) => w.listingId === listingId);
+
+  const toggleWishlistItem = (listingId: string, currentFromPrice: number, listingType: WishlistItem["listingType"]) => {
+    setWishlist((prev) =>
+      prev.some((w) => w.listingId === listingId)
+        ? prev.filter((w) => w.listingId !== listingId)
+        : [...prev, { listingId, listingType, savedAt: new Date().toISOString(), priceAtSave: currentFromPrice }]
+    );
   };
 
   const setCurrency = (c: Currency) => {
@@ -66,8 +94,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     markNotificationReadRequest(id).catch(() => {});
   };
 
+  const addNotification = async (input: Omit<Notification, "id" | "read">) => {
+    const notification = await addNotificationRequest(input);
+    setNotifications((prev) => [notification, ...prev]);
+  };
+
   return (
-    <AppContext.Provider value={{ user, isAuthenticated: !!user, login, logout, savedPlots, toggleSavedPlot, currency, setCurrency, notifications, markNotificationRead }}>
+    <AppContext.Provider value={{ user, isAuthenticated: !!user, login, register, logout, savedPlots, toggleSavedPlot, currency, setCurrency, notifications, markNotificationRead, addNotification, wishlist, isWishlisted, toggleWishlistItem }}>
       {children}
     </AppContext.Provider>
   );
