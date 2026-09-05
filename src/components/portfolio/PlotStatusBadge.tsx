@@ -18,6 +18,7 @@ const STATUS_INFO: Record<PlotAccountStatus, { label: string; variant: BadgeVari
   in_arrears: { label: "In arrears", variant: "error" },
   upgrade_pending: { label: "Upgrade pending", variant: "warning" },
   transferred: { label: "Transferred", variant: "neutral" },
+  superseded: { label: "Superseded by upgrade", variant: "neutral" },
 };
 
 export default function PlotStatusBadge({ status }: { status: string }) {

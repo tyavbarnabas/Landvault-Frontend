@@ -7,6 +7,7 @@ import {
   type InstallmentSchedule, type PaymentRecord,
 } from "../../services/portfolioService";
 import { fetchDocumentsByPlotId } from "../../services/documentsService";
+import { fetchUpgradeRequestForPlot, type UpgradeRequest } from "../../services/upgradeService";
 import { fetchConstructionProgress, type ConstructionProgress } from "../../services/constructionService";
 import { CAPABILITIES } from "../../lib/capabilities";
 import { useApp } from "../../contexts/AppContext";
@@ -44,6 +45,7 @@ export default function PlotView() {
   const [payStep, setPayStep] = useState<PayStep>("form");
   const [pendingPayment, setPendingPayment] = useState<PaymentRecord | null>(null);
   const [verifyStatus, setVerifyStatus] = useState<VerificationStageStatus>("pending_payment");
+  const [inFlightUpgrade, setInFlightUpgrade] = useState<UpgradeRequest | null>(null);
 
   const load = (plotId: string) => {
     setLoadError(false);
@@ -60,6 +62,13 @@ export default function PlotView() {
     if (!id) { setPlot(null); return; }
     load(id);
   }, [id]);
+
+  useEffect(() => {
+    if (!id || plot?.status !== "upgrade_pending") { setInFlightUpgrade(null); return; }
+    let cancelled = false;
+    fetchUpgradeRequestForPlot(id).then((req) => { if (!cancelled) setInFlightUpgrade(req ?? null); });
+    return () => { cancelled = true; };
+  }, [id, plot?.status]);
 
   if (loadError) {
     return (
@@ -370,9 +379,15 @@ export default function PlotView() {
             <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
               <h3 className="font-semibold text-sm mb-3">Actions</h3>
               <div className="space-y-2">
-                <Link to={`/upgrade/${plot.id}`} className="flex items-center gap-2 w-full py-2 text-left text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] border border-[var(--border)] rounded-md px-3 transition-colors">
-                  <span aria-hidden="true">🔁</span> Upgrade or swap plot
-                </Link>
+                {plot.status === "upgrade_pending" && inFlightUpgrade ? (
+                  <Link to={`/upgrade/request/${inFlightUpgrade.id}`} className="flex items-center gap-2 w-full py-2 text-left text-sm text-amber-700 hover:text-amber-800 border border-amber-200 bg-amber-50 rounded-md px-3 transition-colors">
+                    <span aria-hidden="true">🔁</span> View upgrade progress
+                  </Link>
+                ) : (
+                  <Link to={`/upgrade/${plot.id}`} className="flex items-center gap-2 w-full py-2 text-left text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] border border-[var(--border)] rounded-md px-3 transition-colors">
+                    <span aria-hidden="true">🔁</span> Upgrade or swap plot
+                  </Link>
+                )}
                 {plot.intent === "investment" && (
                   <Link to={`/resale/list/${plot.id}`} className="flex items-center gap-2 w-full py-2 text-left text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] border border-[var(--border)] rounded-md px-3 transition-colors">
                     <span aria-hidden="true">🏷</span> List for resale

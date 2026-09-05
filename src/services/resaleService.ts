@@ -57,6 +57,9 @@ export function getListingEligibility(plot: OwnedPlot): ListingEligibility {
   if (plot.status === "transferred") {
     return { eligible: false, reason: "This plot has already been transferred to a new owner.", outstandingBalance };
   }
+  if (plot.status === "superseded") {
+    return { eligible: false, reason: "This plot record was superseded by an upgrade — see your new plot in the portfolio.", outstandingBalance };
+  }
   if (plot.status === "upgrade_pending") {
     return { eligible: false, reason: "An upgrade request is pending on this plot.", outstandingBalance };
   }
@@ -401,7 +404,10 @@ function sleep(ms: number): Promise<void> {
 // state corruption this platform exists to prevent. Mock mode necessarily
 // runs these as sequential calls; a real implementation must not.
 async function executeTitleTransfer(t: ResaleTransfer): Promise<void> {
-  await updateOwnedPlotStatus(t.plotId, "transferred");
+  // The seller's next-due obligation retires along with the plot itself —
+  // never left showing a stale payment reminder for a plot they no longer
+  // own. See the identical fix in upgradeService.ts's executeReallocation.
+  await updateOwnedPlotStatus(t.plotId, "transferred", { nextDueDate: undefined, nextDueAmount: undefined });
 
   const existingDocs = await fetchDocumentsByPlotId(t.plotId);
   const sellerDeed = existingDocs.find((d) => d.type === "deed_of_assignment" && d.status === "valid");

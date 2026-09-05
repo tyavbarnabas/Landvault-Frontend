@@ -19,6 +19,18 @@ export function urgencyRank(plot: OwnedPlot): number {
   return 2;
 }
 
+// A "transferred" (resold) or "superseded" (upgraded away) record is kept
+// forever for its audit history, but it's no longer a plot the buyer
+// currently holds — a real ledger stops counting it in current totals the
+// moment it retires, even though the row itself never disappears. Exported
+// so Dashboard.tsx's stats use the same rule as Portfolio.tsx's, rather than
+// double-counting equity that has already moved into a replacement record
+// (see upgradeService.ts's executeReallocation: the new OwnedPlot's
+// paidAmount already includes the old plot's carried-forward equity).
+export function isActivelyOwned(plot: OwnedPlot): boolean {
+  return plot.status !== "transferred" && plot.status !== "superseded";
+}
+
 // Never sum across currencies — group totals per currency actually present on
 // the buyer's plots. Exported so Dashboard.tsx's summary tiles use the exact
 // same grouping instead of a second copy that could drift out of sync.
@@ -30,7 +42,7 @@ export interface CurrencyTotals {
 
 export function groupPlotsByCurrency(plots: OwnedPlot[]): Map<Currency, CurrencyTotals> {
   const byCurrency = new Map<Currency, CurrencyTotals>();
-  for (const p of plots) {
+  for (const p of plots.filter(isActivelyOwned)) {
     const g = byCurrency.get(p.currency) ?? { totalValue: 0, totalPaid: 0, count: 0 };
     g.totalValue += p.totalPrice;
     g.totalPaid += p.paidAmount;

@@ -22,7 +22,7 @@ import Vault from "./pages/documents/Vault";
 import Settings from "./pages/settings/Settings";
 
 // Upgrade / swap
-import Upgrade from "./pages/upgrade/Upgrade";
+import Upgrade, { UpgradeRequestDetail } from "./pages/upgrade/Upgrade";
 
 // Resale — seller workspace only (buyer-side browsing lives in the unified
 // /marketplace feed; /resale itself redirects there, see below)
@@ -120,6 +120,7 @@ function AppRoutes() {
 
       {/* Upgrade / swap */}
       <Route path="/upgrade/:id" element={<AppPage><Upgrade /></AppPage>} />
+      <Route path="/upgrade/request/:requestId" element={<AppPage><UpgradeRequestDetail /></AppPage>} />
 
       {/* Resale — /resale as a browse destination is retired; the unified
           marketplace feed replaces it. Redirect keeps existing links working. */}

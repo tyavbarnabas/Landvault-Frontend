@@ -127,7 +127,8 @@ export type PlotAccountStatus =
   | "completed" // paid in full
   | "in_arrears" // a scheduled payment is overdue past the grace period
   | "upgrade_pending" // an upgrade/swap request is awaiting developer-side approval
-  | "transferred"; // ownership moved to a new buyer via resale — see resaleService.ts
+  | "transferred" // ownership moved to a new buyer via resale — see resaleService.ts
+  | "superseded"; // this record's equity moved to a new OwnedPlot via upgrade/swap — see upgradeService.ts. Distinct from "transferred": ownership stays with the same buyer, just reallocated to a different plot.
 
 export interface ArrearsInfo {
   amountOwed: number;
@@ -178,6 +179,10 @@ export interface OwnedPlot {
   // Populated once a "Request restructuring" action has been submitted —
   // approval logic lives in the developer portal (not built in this repo yet).
   restructureStatus?: "none" | "pending" | "approved" | "rejected";
+  // Set on a NEW record created by an upgrade/swap — points at the OwnedPlot
+  // it replaces (status "superseded" there), same append-only-chain idiom as
+  // Document.supersedes. See upgradeService.ts's executeReallocation.
+  supersedes?: string;
 }
 
 export interface Document {

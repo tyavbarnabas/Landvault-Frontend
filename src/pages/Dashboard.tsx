@@ -7,7 +7,7 @@ import { fetchEstates } from "../services/estatesService";
 import { fetchDocuments } from "../services/documentsService";
 import PlotStatusBadge from "../components/portfolio/PlotStatusBadge";
 import { DOCUMENT_TYPE_ICONS } from "../components/documents/DocumentCard";
-import { urgencyRank, groupPlotsByCurrency } from "./portfolio/Portfolio";
+import { urgencyRank, groupPlotsByCurrency, isActivelyOwned } from "./portfolio/Portfolio";
 
 export default function Dashboard() {
   const { user, currency, wishlist } = useApp();
@@ -30,10 +30,14 @@ export default function Dashboard() {
 
   if (loading) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Loading dashboard…</div>;
 
-  const activePlots = ownedPlots.filter((p) => p.status === "installment_active" || p.status === "in_arrears").length;
+  // Retired records (resold or superseded by an upgrade) stay in the ledger
+  // forever, but Dashboard's snapshot — like Portfolio's stats — reflects
+  // what's actively held today. See Portfolio.tsx's isActivelyOwned.
+  const activelyOwnedPlots = ownedPlots.filter(isActivelyOwned);
+  const activePlots = activelyOwnedPlots.filter((p) => p.status === "installment_active" || p.status === "in_arrears").length;
   const byCurrency = groupPlotsByCurrency(ownedPlots);
   const totalAvailablePlots = estates.reduce((s, e) => s + e.availablePlots, 0);
-  const upcomingPayments = ownedPlots
+  const upcomingPayments = activelyOwnedPlots
     .filter((p) => p.nextDueDate && p.nextDueAmount !== undefined)
     .sort((a, b) => urgencyRank(a) - urgencyRank(b))
     .slice(0, 3);
@@ -93,7 +97,7 @@ export default function Dashboard() {
         ))}
         <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
           <div className="text-xs text-[var(--muted-foreground)] mb-1">Plots owned</div>
-          <div className="font-semibold text-xl font-mono-data text-[var(--foreground)]">{ownedPlots.length}</div>
+          <div className="font-semibold text-xl font-mono-data text-[var(--foreground)]">{activelyOwnedPlots.length}</div>
           <div className="text-xs text-[var(--muted-foreground)] mt-0.5">{activePlots} with active plan</div>
         </div>
         <Link to="/wishlist" className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5 hover:border-[var(--accent)]/50 transition-colors">
@@ -111,7 +115,7 @@ export default function Dashboard() {
             <Link to="/portfolio" className="text-xs text-[var(--accent)] font-medium hover:underline">View all</Link>
           </div>
 
-          {ownedPlots.map((plot) => {
+          {activelyOwnedPlots.map((plot) => {
             const pct = plot.totalPrice > 0 ? Math.round((plot.paidAmount / plot.totalPrice) * 100) : 0;
             return (
               <Link
