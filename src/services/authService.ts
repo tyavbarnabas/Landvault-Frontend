@@ -39,14 +39,16 @@ const CLIENT_PERMISSIONS = [
   "client.settings.view",
 ];
 
-// Only what's actually built so far (tenant lifecycle + a platform dashboard).
-// The rest of the Super Admin backlog (marketplace governance, seller
-// verification, reputation/disputes, integrations, billing, compliance,
-// support ops) adds its own permission slugs here as those screens land.
+// Only what's actually built so far (tenant lifecycle, a platform dashboard,
+// and SA-3.4's listing-conflict detection). The rest of the Super Admin
+// backlog (the rest of marketplace governance, seller verification,
+// reputation/disputes, integrations, billing, compliance, support ops) adds
+// its own permission slugs here as those screens land.
 const SUPER_ADMIN_PERMISSIONS = [
   "admin.dashboard.view",
   "admin.tenants.view",
   "admin.tenants.manage",
+  "admin.marketplace.conflicts",
 ];
 
 export const MOCK_CLIENT_USER: AuthUser = {

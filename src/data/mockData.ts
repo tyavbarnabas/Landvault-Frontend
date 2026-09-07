@@ -1,4 +1,7 @@
 import type { NigerianState } from "./nigerianStates";
+import type { GeoPoint } from "../lib/geometry";
+
+export type { GeoPoint };
 
 export type PlotStatus = "available-dev" | "available-inv" | "reserved" | "sold";
 export type PaymentPlan = "outright" | "milestone" | "installment";
@@ -90,6 +93,15 @@ export interface Estate {
   // customers) without touching their tenant's verification state. One of
   // four conditions projectListing() checks; see marketplaceService.ts.
   published: boolean;
+  // The estate's real boundary polygon (a closed ring, 3+ vertices) — the
+  // mock stand-in for what a real state/AGIS cadastral survey would return
+  // as PostGIS geometry. Hand-placed to be geographically plausible for the
+  // estate's real `area`/`city`, not randomly generated, so
+  // listingConflictsService.ts's overlap detection (SA-3.4) operates on
+  // genuine (if fixture) footprints — real intersection math over real
+  // stored geometry, exactly the differentiator the backlog calls for, not a
+  // fabricated formula standing in for one.
+  footprint: GeoPoint[];
 }
 
 export interface Payment {
@@ -298,6 +310,20 @@ function estateStats(plots: Plot[]): { totalPlots: number; availablePlots: numbe
   };
 }
 
+// Builds a rectangular footprint polygon (4 corners, counter-clockwise)
+// centered on a real-ish lat/lng point for the estate's actual area — see
+// Estate.footprint's own comment. Half-extents are in degrees, chosen small
+// enough per estate to stay a plausible few-hundred-metre gated development,
+// not randomly sized.
+function rectFootprint(centerLat: number, centerLng: number, halfLatDeg: number, halfLngDeg: number): GeoPoint[] {
+  return [
+    { lat: centerLat - halfLatDeg, lng: centerLng - halfLngDeg },
+    { lat: centerLat - halfLatDeg, lng: centerLng + halfLngDeg },
+    { lat: centerLat + halfLatDeg, lng: centerLng + halfLngDeg },
+    { lat: centerLat + halfLatDeg, lng: centerLng - halfLngDeg },
+  ];
+}
+
 // ─── The 7 canonical estates ─────────────────────────────────────────────────
 // Names/geography/sellers/tiers/payment plans/intent kept from the old public
 // marketplace fixture (the more developed identity); plot-grid depth (rows,
@@ -382,6 +408,20 @@ const crownCourtPlots = generatePlots(
 );
 pinTierAvailability(crownCourtPlots, 700, 0); // sold_out
 
+// 8th estate — deliberately overlaps Peaceland's real footprint below (see
+// listingConflictsService.ts). A small, recently-verified second seller
+// re-listing land that's already sold under a different name is exactly the
+// duplicate-allocation scam SA-3.4 exists to catch — this fixture exercises
+// that path rather than leaving it only theoretically reachable.
+const lekkiGrandCourtPlots = generatePlots(
+  6, 6,
+  [
+    { sizeSqm: 300, price: 29_500_000 },
+    { sizeSqm: 450, price: 41_000_000 },
+  ],
+  15, 0.15, 0.05,
+);
+
 export const ESTATES: Estate[] = [
   {
     id: "peaceland",
@@ -409,6 +449,7 @@ export const ESTATES: Estate[] = [
     intent: "both",
     publishedDate: "2026-07-01",
     published: true,
+    footprint: rectFootprint(6.4433, 3.4763, 0.003, 0.0035), // Lekki, Lagos
   },
   {
     id: "sunrise-gardens",
@@ -436,6 +477,7 @@ export const ESTATES: Estate[] = [
     intent: "investment",
     publishedDate: "2026-05-28",
     published: true,
+    footprint: rectFootprint(9.1050, 7.4700, 0.003, 0.0035), // Maitama Extension, Abuja
   },
   {
     id: "golden-acres",
@@ -465,6 +507,7 @@ export const ESTATES: Estate[] = [
     intent: "development",
     publishedDate: "2026-05-10",
     published: true,
+    footprint: rectFootprint(6.8480, 3.6070, 0.0035, 0.004), // Sagamu Interchange, Ogun
   },
   {
     id: "riverside-estate",
@@ -492,6 +535,7 @@ export const ESTATES: Estate[] = [
     intent: "both",
     publishedDate: "2026-04-02",
     published: true,
+    footprint: rectFootprint(4.8156, 7.0134, 0.003, 0.0035), // GRA Phase 2, Port Harcourt
   },
   {
     id: "emerald-hills",
@@ -519,6 +563,7 @@ export const ESTATES: Estate[] = [
     intent: "development",
     publishedDate: "2025-11-20",
     published: true,
+    footprint: rectFootprint(6.5158, 3.3707, 0.0022, 0.0025), // Yaba, Lagos — well clear of Lekki, ~15km away
   },
   {
     id: "palm-view",
@@ -546,6 +591,7 @@ export const ESTATES: Estate[] = [
     intent: "investment",
     publishedDate: "2026-02-25",
     published: true,
+    footprint: rectFootprint(7.3775, 3.9022, 0.0028, 0.003), // Ring Road, Ibadan
   },
   {
     id: "crown-court",
@@ -573,6 +619,40 @@ export const ESTATES: Estate[] = [
     intent: "development",
     publishedDate: "2026-07-22",
     published: true,
+    footprint: rectFootprint(9.0453, 7.5086, 0.0028, 0.003), // Guzape, Abuja — well clear of Maitama Extension, ~7km away
+  },
+  {
+    // Recently verified second seller whose footprint deliberately overlaps
+    // Peaceland's above — see listingConflictsService.ts and the plots
+    // comment further up. Not a hidden/private test fixture: this is a live,
+    // marketplace-published listing exactly like the scam this feature
+    // exists to catch would be.
+    id: "lekki-grand-court",
+    name: "Lekki Grand Court",
+    area: "Lekki",
+    city: "Lagos",
+    state: "Lagos",
+    location: "Lekki, Lagos",
+    tenantId: "sunview-realty",
+    branchId: "sunview-lekki",
+    ...estateStats(lekkiGrandCourtPlots),
+    imageUrl: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&h=600&fit=crop&auto=format",
+    amenities: ["Perimeter Fencing", "Motorable Roads"],
+    titleType: "C of O",
+    titleVerified: true,
+    lastVerified: "2026-08-27",
+    agisRegistration: { status: "pending", note: "Submitted to AGIS; confirmation still outstanding." },
+    encroachmentStatus: { status: "not_checked" },
+    cornerPremiumPct: 15,
+    description: "A boutique gated layout in Lekki, recently brought to market.",
+    plots: lekkiGrandCourtPlots,
+    rows: 6,
+    cols: 6,
+    paymentPlans: ["outright", "installment"],
+    intent: "both",
+    publishedDate: "2026-08-28",
+    published: true,
+    footprint: rectFootprint(6.4442, 3.4771, 0.0025, 0.003), // Lekki, Lagos — deliberately overlaps peaceland's footprint above
   },
 ];
 

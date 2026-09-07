@@ -2,6 +2,7 @@
 // used to live separately in TenantDirectory.tsx and TenantDetail.tsx.
 
 import type { TenantStatus, VerificationState } from "../services/tenantsService";
+import type { ConflictStatus } from "../services/listingConflictsService";
 
 export type BadgeVariant = "neutral" | "info" | "warning" | "success" | "error";
 
@@ -37,5 +38,14 @@ export function verificationStateBadge(state: VerificationState): { label: strin
     case "verified": return { label: "Verified", variant: "success" };
     case "rejected": return { label: "Rejected", variant: "error" };
     case "suspended": return { label: "Verification suspended", variant: "error" };
+  }
+}
+
+export function conflictStatusBadge(status: ConflictStatus): { label: string; variant: BadgeVariant } {
+  switch (status) {
+    case "open": return { label: "Open", variant: "error" };
+    case "investigating": return { label: "Investigating", variant: "warning" };
+    case "confirmed_duplicate": return { label: "Confirmed duplicate", variant: "error" };
+    case "dismissed": return { label: "Dismissed", variant: "neutral" };
   }
 }

@@ -14,6 +14,7 @@ export interface Capabilities {
   payouts: boolean;
   constructionTracking: boolean;
   agisOverlay: boolean;
+  listingConflicts: boolean;
 }
 
 export const CAPABILITIES: Capabilities = {
@@ -46,4 +47,11 @@ export const CAPABILITIES: Capabilities = {
   // Stays false, hiding the toggle entirely, until a real integration backs
   // it. See landvault-catalogue-unification-plan in project memory.
   agisOverlay: false,
+  // SA-3.4 — listingConflictsService.ts's overlap detection runs real
+  // polygon-intersection math over every estate's real footprint (see
+  // mockData.ts's Estate.footprint); this is true because that's a genuine
+  // fetcher, not a placeholder. Gates the "/admin/listing-conflicts" page's
+  // Zone 1 attention row (platformMetricsService.ts) the same way
+  // tenantLifecycle gates the verification-queue row.
+  listingConflicts: true,
 };

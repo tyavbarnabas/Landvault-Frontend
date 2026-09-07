@@ -44,6 +44,7 @@ const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
 const TenantDirectory = lazy(() => import("./pages/admin/tenants/TenantDirectory"));
 const CreateTenant = lazy(() => import("./pages/admin/tenants/CreateTenant"));
 const TenantDetail = lazy(() => import("./pages/admin/tenants/TenantDetail"));
+const ListingConflicts = lazy(() => import("./pages/admin/marketplace/ListingConflicts"));
 
 // Public marketplace — lazy: its own surface (distinct layout, often entered
 // anonymously straight from a shared link) rather than something every
@@ -168,6 +169,7 @@ function AppRoutes() {
       <Route path="/admin/tenants" element={<AdminPage><TenantDirectory /></AdminPage>} />
       <Route path="/admin/tenants/new" element={<AdminPage><CreateTenant /></AdminPage>} />
       <Route path="/admin/tenants/:id" element={<AdminPage><TenantDetail /></AdminPage>} />
+      <Route path="/admin/listing-conflicts" element={<AdminPage><ListingConflicts /></AdminPage>} />
 
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />

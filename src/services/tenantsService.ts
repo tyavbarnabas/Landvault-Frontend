@@ -208,7 +208,11 @@ export interface SupportAccessGrant {
 // A minimal, real SA-9.1-style platform audit log — appended to from inside
 // the three functions below that already mutate tenant state, rather than a
 // parallel logging system a caller has to remember to feed.
-export type AuditAction = "tenant_verified" | "tenant_rejected" | "tenant_request_info" | "tenant_status_changed" | "support_access_used";
+// "listing_conflict_reviewed" is logged from listingConflictsService.ts (SA-3.4)
+// via recordAuditEntry below — a conflict review touches two tenants at once,
+// so it's logged once per tenant, same audit trail as everything else here
+// rather than a second, parallel log.
+export type AuditAction = "tenant_verified" | "tenant_rejected" | "tenant_request_info" | "tenant_status_changed" | "support_access_used" | "listing_conflict_reviewed";
 
 export interface AuditLogEntry {
   id: string;
@@ -456,6 +460,61 @@ const MOCK_TENANTS: Tenant[] = [
       { id: "vd-cv-1", reviewerName: "Ada Nwosu", timestamp: "2025-09-20T11:00:00Z", decision: "approved", reason: "Documents and SCUML/LASRERA registrations verified." },
     ],
   },
+  // Small, very recently onboarded and verified — a genuine second seller
+  // whose one Lekki estate (mockData.ts's "lekki-grand-court") deliberately
+  // overlaps Peaceland's real footprint. Exercises listingConflictsService.ts
+  // (SA-3.4) against exactly the scenario it exists to catch: a fast-tracked,
+  // thinly-verified newcomer re-listing land another verified developer
+  // already sold. See landvault-super-admin-backlog in project memory.
+  {
+    id: "sunview-realty",
+    status: "active",
+    plan: "starter",
+    entitlements: { marketplacePublishing: true, mlmModule: false, fxRails: false },
+    branches: [{ id: "sunview-lekki", name: "Lekki", managerName: "Chidinma Eze", estateCount: 1 }],
+    createdDate: "2026-08-20",
+    identity: {
+      registeredName: "Sunview Realty Limited",
+      rcNumber: "RC9988112",
+      companyType: "Limited Liability (Ltd)",
+      dateOfIncorporation: "2026-01-10",
+      registeredAddress: { street: "9 Admiralty Way", city: "Lekki", state: "Lagos" },
+      operatingAddress: { street: "9 Admiralty Way", city: "Lekki", state: "Lagos" },
+      statesOfOperation: ["Lagos"],
+    },
+    primaryContact: {
+      fullName: "Chidinma Eze",
+      roleTitle: "Managing Director",
+      workEmail: "chidinma@sunviewrealty.ng",
+      phone: "+234 8022334455",
+      govIdType: "NIN",
+      govIdNumber: "77788899900",
+    },
+    presence: { companyEmail: "hello@sunviewrealty.ng", companyPhone: "+234 8122334455", socials: {} },
+    documents: [
+      { id: "doc-sv-1", type: "cac_certificate", fileName: "cac-certificate.pdf", size: 480_000, status: "verified", uploadedAt: "2026-08-19" },
+      { id: "doc-sv-2", type: "cac_status_report", fileName: "cac-status-report.pdf", size: 44_000, status: "verified", uploadedAt: "2026-08-19" },
+      { id: "doc-sv-3", type: "tin", fileName: "tin.pdf", size: 150_000, status: "verified", uploadedAt: "2026-08-19" },
+      { id: "doc-sv-4", type: "proof_of_address", fileName: "tenancy-agreement.pdf", size: 360_000, status: "verified", uploadedAt: "2026-08-19" },
+      { id: "doc-sv-5", type: "scuml_certificate", fileName: "scuml.pdf", size: 210_000, status: "verified", uploadedAt: "2026-08-19" },
+    ],
+    regulatory: { scumlNumber: "SCUML-2026-004432", stateRegulators: [{ id: "reg-sv-1", state: "Lagos", regulatorName: "LASRERA", regNumber: "LAS-REG-91330" }], additionalPermits: [] },
+    directors: [
+      { id: "dir-sv-1", fullName: "Chidinma Eze", role: "Managing Director", nationality: "Nigerian", idType: "NIN", idNumber: "77788899900", ownershipPct: 100, isBeneficialOwner: true },
+    ],
+    directorsAttestation: true,
+    financial: {
+      bankName: "GTBank",
+      accountNumber: "0112233445",
+      accountName: "Sunview Realty Limited",
+      settlementCurrency: "NGN",
+      gateways: { Paystack: "connected" },
+    },
+    verificationState: "verified",
+    verificationHistory: [
+      { id: "vd-sv-1", reviewerName: "Ada Nwosu", timestamp: "2026-08-27T09:30:00Z", decision: "approved", reason: "Documents and SCUML/LASRERA registrations verified." },
+    ],
+  },
 ];
 
 // In-memory mock store so an onboarded/verified/suspended tenant reflects
@@ -467,6 +526,14 @@ let mockAuditLog: AuditLogEntry[] = [];
 
 function logAudit(entry: Omit<AuditLogEntry, "id" | "timestamp">) {
   mockAuditLog = [{ ...entry, id: newId("audit"), timestamp: new Date().toISOString() }, ...mockAuditLog];
+}
+
+// The one exported entry point for another module to append to this
+// platform-wide audit log, rather than reaching into the private mock store
+// directly — used by listingConflictsService.ts (SA-3.4), whose reviews
+// touch a tenant but aren't themselves a tenant-lifecycle action.
+export function recordAuditEntry(entry: Omit<AuditLogEntry, "id" | "timestamp">): void {
+  logAudit(entry);
 }
 
 // Filters shaped after what TenantDirectory.tsx's UI actually offers — passed

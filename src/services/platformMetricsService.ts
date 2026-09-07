@@ -10,6 +10,7 @@
 // data" badge so the numbers are never mistaken for real ones.
 
 import { fetchTenants, fetchAuditLog, type AuditLogEntry } from "./tenantsService";
+import { fetchConflicts } from "./listingConflictsService";
 import { CAPABILITIES } from "../lib/capabilities";
 import { apiClient } from "../lib/apiClient";
 import { buildPlatformHealthMetrics, MOCK_MARKETPLACE_PULSE, MOCK_REVENUE, MOCK_SYSTEM_HEALTH, type MetricsPeriod } from "../data/mockPlatformMetrics";
@@ -26,11 +27,11 @@ export interface AttentionItem {
   href: string;
 }
 
-// Zone 1 — "needs attention". Today this can only ever surface one row
-// (tenant verification); the other eight rows from the spec (moderation
+// Zone 1 — "needs attention". Two real rows now (tenant verification,
+// SA-3.4 listing conflicts); the other seven from the spec (moderation
 // queue, reports, agent verification, disputes, payouts, webhooks,
-// integrations, invoices) each need a capability flag flipped on and a real
-// count wired in here before they can appear — never a hardcoded row.
+// integrations, invoices) each still need a capability flag flipped on and a
+// real count wired in here before they can appear — never a hardcoded row.
 export async function fetchAttentionItems(): Promise<AttentionItem[]> {
   const items: AttentionItem[] = [];
 
@@ -46,6 +47,23 @@ export async function fetchAttentionItems(): Promise<AttentionItem[]> {
         count: awaitingCount,
         severity: "amber",
         href: "/admin/tenants?status=under_review",
+      });
+    }
+  }
+
+  if (CAPABILITIES.listingConflicts) {
+    // Only unresolved (open/investigating), high-severity (cross-tenant)
+    // conflicts surface here — the ones that are an active buyer-facing scam
+    // risk right now. Same-tenant/lower-severity ones are still visible on
+    // the page itself, just not urgent enough for this row.
+    const { total: openHighSeverity } = await fetchConflicts({ status: ["open", "investigating"], severity: ["high"] }, { limit: 1 });
+    if (openHighSeverity > 0) {
+      items.push({
+        id: "listing-conflicts",
+        label: `${openHighSeverity === 1 ? "Listing" : "Listings"} with overlapping/duplicate footprints`,
+        count: openHighSeverity,
+        severity: "red",
+        href: "/admin/listing-conflicts",
       });
     }
   }
@@ -68,6 +86,7 @@ export function describeAuditEntry(entry: AuditLogEntry): string {
     case "tenant_request_info": return `requested more information from ${entry.tenantName}`;
     case "tenant_status_changed": return `changed ${entry.tenantName}'s account status`;
     case "support_access_used": return `used support access on ${entry.tenantName}`;
+    case "listing_conflict_reviewed": return `reviewed a listing conflict involving ${entry.tenantName}`;
   }
 }
 
@@ -146,11 +165,19 @@ export interface SystemHealthMetrics {
   webhookSuccessRate: number;
   qrVerificationLookups: number;
   qrVerificationAnomalies: number;
-  duplicateListingConflicts: number; // the core anti-fraud differentiator — surface prominently once real
+  duplicateListingConflicts: number; // now real — see listingConflictsService.ts (SA-3.4); the rest of this zone is still illustrative
 }
 
 // TODO (backend): GET /api/admin/metrics/system-health
 export async function fetchSystemHealthMetrics(): Promise<SystemHealthMetrics> {
-  if (apiClient.isMockMode) return MOCK_SYSTEM_HEALTH;
+  // Same mixed-real-and-illustrative shape as buildPlatformHealthMetrics()
+  // above: the rest of this zone (webhook rate, QR lookups, integration
+  // statuses) is still mock data, but duplicateListingConflicts — the one
+  // metric this zone's own comment already called "the core anti-fraud
+  // differentiator" — is real now, so it's spliced in rather than left fake.
+  if (apiClient.isMockMode) {
+    const { total: openConflicts } = await fetchConflicts({ status: ["open", "investigating"] }, { limit: 1 });
+    return { ...MOCK_SYSTEM_HEALTH, duplicateListingConflicts: openConflicts };
+  }
   return apiClient.get<SystemHealthMetrics>("/api/admin/metrics/system-health");
 }

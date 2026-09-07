@@ -58,6 +58,12 @@ export function makeEstate(overrides: Partial<Estate> = {}): Estate {
     intent: "both",
     publishedDate: "2025-01-01",
     published: true,
+    footprint: [
+      { lat: 6.4, lng: 3.4 },
+      { lat: 6.4, lng: 3.41 },
+      { lat: 6.41, lng: 3.41 },
+      { lat: 6.41, lng: 3.4 },
+    ],
     ...overrides,
   };
 }
