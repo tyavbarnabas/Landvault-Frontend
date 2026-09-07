@@ -1,6 +1,7 @@
 // Backend integration seam for in-app notifications. See INTEGRATION.md.
 
 import { apiClient } from "../lib/apiClient";
+import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 
 export interface Notification {
   id: string;
@@ -22,9 +23,14 @@ const MOCK_NOTIFICATIONS: Notification[] = [
 // session, even without a backend.
 let mockNotifications: Notification[] = [...MOCK_NOTIFICATIONS];
 
-export async function fetchNotifications(): Promise<Notification[]> {
-  if (apiClient.isMockMode) return mockNotifications;
-  return apiClient.get<Notification[]>("/api/notifications");
+// Genuinely unbounded over a long-lived account, so it's paginated like the
+// other list endpoints — but its only consumer today (AppContext's bell
+// dropdown, Layout.tsx) is inherently bounded-by-relevance, not a scrolling
+// list page, so it just requests one generously-sized page rather than
+// wiring up "Load more" for a notification bell.
+export async function fetchNotifications(params: PageParams = {}): Promise<Page<Notification>> {
+  if (apiClient.isMockMode) return paginateMock(mockNotifications, params);
+  return apiClient.get<Page<Notification>>(`/api/notifications?${new URLSearchParams(params as Record<string, string>)}`);
 }
 
 // Used by marketplaceCheckoutService.ts to notify the buyer in-app when

@@ -3,6 +3,7 @@
 
 import { OWNED_PLOTS, type Currency, type OwnedPlot, type PaymentRecord } from "../data/mockData";
 import { apiClient } from "../lib/apiClient";
+import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 
 export type { PaymentRecord };
 
@@ -10,9 +11,32 @@ export type { PaymentRecord };
 // rest of the session, even without a backend.
 let mockOwnedPlots: OwnedPlot[] = [...OWNED_PLOTS];
 
-export async function fetchOwnedPlots(): Promise<OwnedPlot[]> {
-  if (apiClient.isMockMode) return mockOwnedPlots;
-  return apiClient.get<OwnedPlot[]>("/api/portfolio/plots");
+// Lower = more urgent. Arrears first, then anything due within a week, then
+// ordinary in-progress plans, then anything already settled last. Lives here
+// (not in Portfolio.tsx, which re-exports it) so fetchOwnedPlots' own
+// `sort: "urgency"` can apply it server-side, before pagination — sorting
+// only the plots already loaded into a page would silently break ordering
+// once a second page arrives.
+export function urgencyRank(plot: OwnedPlot): number {
+  if (plot.status === "in_arrears") return 0;
+  if (plot.nextDueDate) {
+    const daysUntilDue = Math.round((new Date(plot.nextDueDate).getTime() - Date.now()) / 86_400_000);
+    if (daysUntilDue <= 7) return 1;
+  }
+  if (plot.status === "completed") return 3;
+  return 2;
+}
+
+export interface FetchOwnedPlotsParams extends PageParams {
+  sort?: "urgency";
+}
+
+export async function fetchOwnedPlots(params: FetchOwnedPlotsParams = {}): Promise<Page<OwnedPlot>> {
+  if (apiClient.isMockMode) {
+    const source = params.sort === "urgency" ? [...mockOwnedPlots].sort((a, b) => urgencyRank(a) - urgencyRank(b)) : mockOwnedPlots;
+    return paginateMock(source, params);
+  }
+  return apiClient.get<Page<OwnedPlot>>(`/api/portfolio/plots?${new URLSearchParams(params as Record<string, string>)}`);
 }
 
 export async function fetchOwnedPlotById(id: string): Promise<OwnedPlot | undefined> {

@@ -50,7 +50,10 @@ export default function MarketplaceFeed() {
   const showWelcome = searchParams.get("welcome") === "1";
 
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(false);
   const [welcomeDismissed, setWelcomeDismissed] = useState(false);
 
@@ -59,12 +62,24 @@ export default function MarketplaceFeed() {
     setLoading(true);
     setError(false);
     fetchUnifiedListings(filters)
-      .then((data) => { if (!cancelled) setListings(data); })
+      .then((page) => { if (!cancelled) { setListings(page.items); setCursor(page.cursor); setHasMore(page.hasMore); } })
       .catch(() => { if (!cancelled) setError(true); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const page = await fetchUnifiedListings(filters, { cursor });
+      setListings((prev) => [...prev, ...page.items]);
+      setCursor(page.cursor);
+      setHasMore(page.hasMore);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const updateFilters = (patch: Partial<UnifiedListingFilters>) => {
     setSearchParams(paramsFromFilters({ ...filters, ...patch }), { replace: true });
@@ -141,9 +156,16 @@ export default function MarketplaceFeed() {
       )}
 
       {!loading && !error && listings.length > 0 && (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {listings.map((item) => <ListingCard key={`${item.listingType}:${item.data.id}`} item={item} />)}
-        </div>
+        <>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {listings.map((item) => <ListingCard key={`${item.listingType}:${item.data.id}`} item={item} />)}
+          </div>
+          {hasMore && (
+            <button onClick={loadMore} disabled={loadingMore} className="mt-6 w-full py-2.5 border border-[var(--border)] rounded-md text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors disabled:opacity-60">
+              {loadingMore ? "Loading…" : "Load more"}
+            </button>
+          )}
+        </>
       )}
     </div>
   );

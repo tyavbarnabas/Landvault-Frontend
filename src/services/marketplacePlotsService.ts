@@ -13,8 +13,13 @@
 // spellings to keep in sync.
 
 import { apiClient } from "../lib/apiClient";
+import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import { ESTATES, getPlotBlockLabel, type Plot, type PlotStatus } from "../data/mockData";
 import type { PriceTier } from "./marketplaceService";
+
+// Comfortably above any estate's plot count in this fixture set (the
+// largest, Golden Acres, has 320) — see fetchPlotsForListing's comment.
+export const CANVAS_PLOT_FETCH_LIMIT = 5000;
 
 export type { PlotStatus };
 
@@ -72,10 +77,18 @@ export function plotLabel(plot: ListingPlot): string {
   return `Block ${plot.block}, Plot ${plot.plotNumber}`;
 }
 
-export async function fetchPlotsForListing(listingId: string): Promise<ListingPlot[]> {
-  if (!apiClient.isMockMode) return apiClient.get<ListingPlot[]>(`/api/marketplace/listings/${listingId}/plots`);
+// Paginated for API-contract consistency with the other list endpoints (a
+// large real estate can run into the thousands of plots), but its one
+// consumer — the plot canvas — renders a spatial grid, not a scrolling list:
+// "Load more" would leave holes in the map. So the canvas requests a single
+// generously-sized page (comfortably above any estate in this fixture set)
+// rather than paging. A future estate that ever exceeds that would need the
+// canvas itself to become viewport-windowed, not paginated.
+export async function fetchPlotsForListing(listingId: string, params: PageParams = {}): Promise<Page<ListingPlot>> {
+  if (!apiClient.isMockMode) return apiClient.get<Page<ListingPlot>>(`/api/marketplace/listings/${listingId}/plots?${new URLSearchParams(params as Record<string, string>)}`);
   const estate = ESTATES.find((e) => e.id === listingId);
-  return estate ? estate.plots.map((p) => toListingPlot(listingId, p)) : [];
+  const all = estate ? estate.plots.map((p) => toListingPlot(listingId, p)) : [];
+  return paginateMock(all, params);
 }
 
 export async function fetchPlotById(listingId: string, plotId: string): Promise<ListingPlot | undefined> {

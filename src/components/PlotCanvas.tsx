@@ -18,6 +18,7 @@
 
 import { useRef, useState } from "react";
 import { useApp } from "../contexts/AppContext";
+import ErrorBoundary from "./ErrorBoundary";
 import { formatAmount } from "../data/mockData";
 import { CAPABILITIES } from "../lib/capabilities";
 import { AGIS_LAYER_LABELS, AGIS_LAYER_COLORS, isAffected, type AGISLayer } from "../services/agisService";
@@ -92,7 +93,21 @@ function plotXY(row: number, col: number) {
   };
 }
 
-export default function PlotCanvas({
+// Wrapped in its own error boundary here (not at each of its 4 call sites —
+// EstateDetail, MarketplacePlotSelection, Syndicate, Upgrade) so every
+// consumer is protected automatically: this is real, non-trivial SVG
+// rendering over live plot data, and it's exactly the kind of "heaviest
+// independent section" that should degrade to an inline message rather than
+// take its whole page down.
+export default function PlotCanvas(props: PlotCanvasProps) {
+  return (
+    <ErrorBoundary section="the plot map">
+      <PlotCanvasInner {...props} />
+    </ErrorBoundary>
+  );
+}
+
+function PlotCanvasInner({
   estateId, plots, tiers, cornerPremiumPct, selectedPlotId, onSelectPlot,
   selectedSizeSqm = null, onSelectSizeSqm, mode = "select", showAgisControls = false,
 }: PlotCanvasProps) {

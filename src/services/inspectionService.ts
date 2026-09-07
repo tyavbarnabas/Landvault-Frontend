@@ -5,6 +5,7 @@
 // touches plot status; that only happens in reservationService.ts.
 
 import { apiClient } from "../lib/apiClient";
+import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 
 export type InspectionType = "physical" | "virtual";
 export type InspectionStatus = "scheduled" | "completed" | "cancelled";
@@ -91,9 +92,9 @@ export async function createInspection(input: CreateInspectionInput): Promise<In
   return inspection;
 }
 
-export async function fetchMyInspections(): Promise<Inspection[]> {
-  if (apiClient.isMockMode) return mockInspections;
-  return apiClient.get<Inspection[]>("/api/inspections");
+export async function fetchMyInspections(params: PageParams = {}): Promise<Page<Inspection>> {
+  if (apiClient.isMockMode) return paginateMock(mockInspections, params);
+  return apiClient.get<Page<Inspection>>(`/api/inspections?${new URLSearchParams(params as Record<string, string>)}`);
 }
 
 export async function cancelInspection(id: string): Promise<void> {

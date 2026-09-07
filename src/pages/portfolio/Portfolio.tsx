@@ -1,23 +1,15 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { formatAmount, type Currency, type OwnedPlot } from "../../data/mockData";
-import { fetchOwnedPlots } from "../../services/portfolioService";
+import { fetchOwnedPlots, urgencyRank } from "../../services/portfolioService";
 import PlotStatusBadge from "../../components/portfolio/PlotStatusBadge";
 import ArrearsBanner from "../../components/portfolio/ArrearsBanner";
 
-// Lower = more urgent. Arrears first, then anything due within a week, then
-// ordinary in-progress plans, then anything already settled last. Exported so
-// Dashboard.tsx's "Upcoming payments" orders by the same urgency, rather than
-// a second, possibly-diverging copy of this logic.
-export function urgencyRank(plot: OwnedPlot): number {
-  if (plot.status === "in_arrears") return 0;
-  if (plot.nextDueDate) {
-    const daysUntilDue = Math.round((new Date(plot.nextDueDate).getTime() - Date.now()) / 86_400_000);
-    if (daysUntilDue <= 7) return 1;
-  }
-  if (plot.status === "completed") return 3;
-  return 2;
-}
+// Re-exported so Dashboard.tsx (and anything else ranking a buyer's plots by
+// urgency) uses the exact same logic — it now actually lives in
+// portfolioService.ts, so fetchOwnedPlots' own `sort: "urgency"` can apply it
+// server-side, before pagination.
+export { urgencyRank };
 
 // A "transferred" (resold) or "superseded" (upgraded away) record is kept
 // forever for its audit history, but it's no longer a plot the buyer
@@ -52,21 +44,41 @@ export function groupPlotsByCurrency(plots: OwnedPlot[]): Map<Currency, Currency
   return byCurrency;
 }
 
+// TODO (backend): the summary tiles below need a true total across every
+// plot the buyer owns, not just one loaded page — a real backend should
+// expose a dedicated aggregate/summary endpoint (sums computed server-side)
+// rather than the client fetching a large page to add them up itself. This
+// mock requests a generously-sized page instead (covers any realistic
+// portfolio) and still exposes real "Load more" if a buyer somehow exceeds it.
+const PORTFOLIO_PAGE_SIZE = 500;
+
 export default function Portfolio() {
   const [ownedPlots, setOwnedPlots] = useState<OwnedPlot[]>([]);
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
   const load = () => {
     setLoading(true);
     setLoadError(false);
-    fetchOwnedPlots()
-      .then((data) => setOwnedPlots(data))
+    fetchOwnedPlots({ sort: "urgency", limit: PORTFOLIO_PAGE_SIZE })
+      .then((page) => { setOwnedPlots(page.items); setCursor(page.cursor); setHasMore(page.hasMore); })
       .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    const page = await fetchOwnedPlots({ sort: "urgency", cursor, limit: PORTFOLIO_PAGE_SIZE });
+    setOwnedPlots((prev) => [...prev, ...page.items]);
+    setCursor(page.cursor);
+    setHasMore(page.hasMore);
+    setLoadingMore(false);
+  };
 
   if (loading) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Loading portfolio…</div>;
 
@@ -104,7 +116,9 @@ export default function Portfolio() {
   // it stays correct the moment that's no longer true.
   const byCurrency = groupPlotsByCurrency(ownedPlots);
 
-  const sortedPlots = [...ownedPlots].sort((a, b) => urgencyRank(a) - urgencyRank(b));
+  // Already sorted server-side (fetchOwnedPlots' sort: "urgency") — no
+  // client-side re-sort, so ordering stays correct across "Load more" pages.
+  const sortedPlots = ownedPlots;
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -203,6 +217,12 @@ export default function Portfolio() {
           );
         })}
       </div>
+
+      {hasMore && (
+        <button onClick={loadMore} disabled={loadingMore} className="mt-4 w-full py-2.5 border border-[var(--border)] rounded-md text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors disabled:opacity-60">
+          {loadingMore ? "Loading…" : "Load more"}
+        </button>
+      )}
     </div>
   );
 }

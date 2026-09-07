@@ -1,16 +1,20 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from "react-router-dom";
 import { AppProvider, useApp } from "./contexts/AppContext";
 import Layout from "./components/Layout";
 import MarketplaceLayout from "./components/MarketplaceLayout";
+import ErrorBoundary from "./components/ErrorBoundary";
+import PageLoading from "./components/PageLoading";
 
-// Auth
+// Auth — kept eager: the first thing an unauthenticated visitor hits, so
+// there's nothing to gain by chunking it separately.
 import Landing from "./pages/Landing";
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
 import ForgotPassword from "./pages/auth/ForgotPassword";
 
-// Onboarding
-import KYC from "./pages/onboarding/KYC";
+// Onboarding — lazy: a one-time wizard most sessions never load.
+const KYC = lazy(() => import("./pages/onboarding/KYC"));
 
 // Core app
 import Dashboard from "./pages/Dashboard";
@@ -34,19 +38,22 @@ import { SyndicateList, CreateSyndicate, SyndicateDetail } from "./pages/syndica
 // Support
 import Support from "./pages/support/Support";
 
-// Super Admin (platform operator console)
-import AdminDashboard from "./pages/admin/Dashboard";
-import TenantDirectory from "./pages/admin/tenants/TenantDirectory";
-import CreateTenant from "./pages/admin/tenants/CreateTenant";
-import TenantDetail from "./pages/admin/tenants/TenantDetail";
+// Super Admin (platform operator console) — lazy: an entire surface a
+// client-role session never navigates into at all.
+const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
+const TenantDirectory = lazy(() => import("./pages/admin/tenants/TenantDirectory"));
+const CreateTenant = lazy(() => import("./pages/admin/tenants/CreateTenant"));
+const TenantDetail = lazy(() => import("./pages/admin/tenants/TenantDetail"));
 
-// Public marketplace
-import MarketplaceFeed from "./pages/marketplace/MarketplaceFeed";
-import MarketplaceEstateDetail from "./pages/marketplace/MarketplaceEstateDetail";
-import MarketplaceResaleDetail from "./pages/marketplace/MarketplaceResaleDetail";
-import MarketplacePlotSelection from "./pages/marketplace/MarketplacePlotSelection";
-import MarketplaceCheckout from "./pages/marketplace/MarketplaceCheckout";
-import Wishlist from "./pages/marketplace/Wishlist";
+// Public marketplace — lazy: its own surface (distinct layout, often entered
+// anonymously straight from a shared link) rather than something every
+// session touches on first load.
+const MarketplaceFeed = lazy(() => import("./pages/marketplace/MarketplaceFeed"));
+const MarketplaceEstateDetail = lazy(() => import("./pages/marketplace/MarketplaceEstateDetail"));
+const MarketplaceResaleDetail = lazy(() => import("./pages/marketplace/MarketplaceResaleDetail"));
+const MarketplacePlotSelection = lazy(() => import("./pages/marketplace/MarketplacePlotSelection"));
+const MarketplaceCheckout = lazy(() => import("./pages/marketplace/MarketplaceCheckout"));
+const Wishlist = lazy(() => import("./pages/marketplace/Wishlist"));
 
 // Inspections & enquiries (buyer flow, Parts 3–4)
 import NewInspection from "./pages/inspections/NewInspection";
@@ -70,7 +77,9 @@ function CheckoutRedirect() {
 function AppPage({ children }: { children: React.ReactNode }) {
   return (
     <PrivateRoute>
-      <Layout>{children}</Layout>
+      <Layout>
+        <Suspense fallback={<PageLoading />}>{children}</Suspense>
+      </Layout>
     </PrivateRoute>
   );
 }
@@ -88,7 +97,9 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 function AdminPage({ children }: { children: React.ReactNode }) {
   return (
     <AdminRoute>
-      <Layout>{children}</Layout>
+      <Layout>
+        <Suspense fallback={<PageLoading />}>{children}</Suspense>
+      </Layout>
     </AdminRoute>
   );
 }
@@ -101,7 +112,7 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/onboarding/kyc" element={<KYC />} />
+      <Route path="/onboarding/kyc" element={<Suspense fallback={<PageLoading />}><KYC /></Suspense>} />
 
       {/* Checkout — the legacy internal flow is retired; MarketplaceCheckout
           is the one purchase path now that estates/marketplace share one
@@ -145,7 +156,7 @@ function AppRoutes() {
       <Route path="/wishlist" element={<MarketplaceLayout><PrivateRoute><Wishlist /></PrivateRoute></MarketplaceLayout>} />
 
       {/* Marketplace checkout — no sidebar, same convention as /checkout */}
-      <Route path="/marketplace/checkout/:listingId/:plotId" element={<PrivateRoute><MarketplaceCheckout /></PrivateRoute>} />
+      <Route path="/marketplace/checkout/:listingId/:plotId" element={<PrivateRoute><Suspense fallback={<PageLoading />}><MarketplaceCheckout /></Suspense></PrivateRoute>} />
 
       {/* Inspections & enquiries — Parts 3–4 of the buyer flow */}
       <Route path="/inspections/new" element={<PrivateRoute><NewInspection /></PrivateRoute>} />
@@ -166,10 +177,12 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <AppProvider>
-        <AppRoutes />
-      </AppProvider>
-    </BrowserRouter>
+    <ErrorBoundary section="LandVault">
+      <BrowserRouter>
+        <AppProvider>
+          <AppRoutes />
+        </AppProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }

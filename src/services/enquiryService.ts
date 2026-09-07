@@ -3,6 +3,7 @@
 // full inspection booking. See INTEGRATION.md conventions used elsewhere.
 
 import { apiClient } from "../lib/apiClient";
+import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 
 export type EnquiryContactMethod = "in_app" | "whatsapp" | "phone";
 
@@ -53,9 +54,9 @@ export async function createEnquiry(input: CreateEnquiryInput): Promise<Enquiry>
   return enquiry;
 }
 
-export async function fetchMyEnquiries(): Promise<Enquiry[]> {
-  if (apiClient.isMockMode) return mockEnquiries;
-  return apiClient.get<Enquiry[]>("/api/marketplace/enquiries");
+export async function fetchMyEnquiries(params: PageParams = {}): Promise<Page<Enquiry>> {
+  if (apiClient.isMockMode) return paginateMock(mockEnquiries, params);
+  return apiClient.get<Page<Enquiry>>(`/api/marketplace/enquiries?${new URLSearchParams(params as Record<string, string>)}`);
 }
 
 // TODO (backend): a real WhatsApp handoff goes through the WhatsApp Business

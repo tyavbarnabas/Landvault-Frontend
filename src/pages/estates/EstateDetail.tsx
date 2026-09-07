@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { formatAmount, getPlotBlockLabel, type Estate, type Currency, type VerificationCheck } from "../../data/mockData";
 import { fetchEstateById, fetchPriceTiers, type PriceTier } from "../../services/estatesService";
 import { fetchListingById, type Listing } from "../../services/marketplaceService";
 import { fetchReviews } from "../../services/reviewsService";
+import { useFetch } from "../../lib/useFetch";
 import { createInspection, type Inspection } from "../../services/inspectionService";
 import { toListingPlot, type ListingPlot } from "../../services/marketplacePlotsService";
 import { useApp } from "../../contexts/AppContext";
@@ -23,19 +24,9 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "projections", label: "Investment data" },
 ];
 
-export default function EstateDetail() {
-  const { id } = useParams();
-  const navigate = useNavigate();
-  const { currency } = useApp();
-  const [estate, setEstate] = useState<Estate | null | undefined>(undefined); // undefined = loading, null = not found
-  const [priceTiers, setPriceTiers] = useState<PriceTier[]>([]);
-  const [avgRating, setAvgRating] = useState(0);
-  const [reviewCount, setReviewCount] = useState(0);
-  const [selectedPlot, setSelectedPlot] = useState<ListingPlot | null>(null);
-  const [selectedSizeSqm, setSelectedSizeSqm] = useState<number | null>(null);
-  const [showInspection, setShowInspection] = useState(false);
-  const [enquiryOpen, setEnquiryOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>("map");
+interface EstateDetailData {
+  estate: Estate | null;
+  priceTiers: PriceTier[];
   // The estate's own public marketplace listing, when it has one — see
   // marketplaceService.ts's projectListing() publication gate. Reused both
   // for the "View on public marketplace" link and to power the shared
@@ -45,24 +36,43 @@ export default function EstateDetail() {
   // verified/active/entitled, or that hasn't opted in — the panel falls
   // back to a plain message in that case rather than assuming this always
   // resolves.
-  const [listing, setListing] = useState<Listing | null>(null);
+  listing: Listing | null;
+  avgRating: number;
+  reviewCount: number;
+}
 
-  useEffect(() => {
-    if (!id) return;
-    let cancelled = false;
-    fetchEstateById(id).then((data) => { if (!cancelled) setEstate(data ?? null); });
-    fetchPriceTiers(id).then((tiers) => { if (!cancelled) setPriceTiers(tiers); });
-    fetchListingById(id).then((l) => { if (!cancelled) setListing(l ?? null); });
-    fetchReviews(id).then((reviews) => {
-      if (cancelled) return;
-      setReviewCount(reviews.length);
-      setAvgRating(reviews.length ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0);
-    });
-    return () => { cancelled = true; };
+export default function EstateDetail() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { currency } = useApp();
+  const [selectedPlot, setSelectedPlot] = useState<ListingPlot | null>(null);
+  const [selectedSizeSqm, setSelectedSizeSqm] = useState<number | null>(null);
+  const [showInspection, setShowInspection] = useState(false);
+  const [enquiryOpen, setEnquiryOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>("map");
+
+  const { data, loading } = useFetch<EstateDetailData>(async () => {
+    if (!id) return { estate: null, priceTiers: [], listing: null, avgRating: 0, reviewCount: 0 };
+    const [estateData, priceTiers, listing, reviews] = await Promise.all([
+      fetchEstateById(id), fetchPriceTiers(id), fetchListingById(id), fetchReviews(id),
+    ]);
+    return {
+      estate: estateData ?? null,
+      priceTiers,
+      listing: listing ?? null,
+      reviewCount: reviews.length,
+      avgRating: reviews.length ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0,
+    };
   }, [id]);
 
-  if (estate === undefined) return <div className="p-8 text-[var(--muted-foreground)]">Loading estate…</div>;
-  if (estate === null) return <div className="p-8 text-[var(--muted-foreground)]">Estate not found.</div>;
+  const estate = data?.estate ?? null;
+  const priceTiers = data?.priceTiers ?? [];
+  const listing = data?.listing ?? null;
+  const avgRating = data?.avgRating ?? 0;
+  const reviewCount = data?.reviewCount ?? 0;
+
+  if (loading) return <div className="p-8 text-[var(--muted-foreground)]">Loading estate…</div>;
+  if (!estate) return <div className="p-8 text-[var(--muted-foreground)]">Estate not found.</div>;
 
   const listingPlots = estate.plots.map((p) => toListingPlot(estate.id, p));
 

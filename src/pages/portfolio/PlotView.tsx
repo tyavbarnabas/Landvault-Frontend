@@ -8,6 +8,7 @@ import {
 } from "../../services/portfolioService";
 import { fetchDocumentsByPlotId } from "../../services/documentsService";
 import { fetchUpgradeRequestForPlot, type UpgradeRequest } from "../../services/upgradeService";
+import { useFetch } from "../../lib/useFetch";
 import { fetchConstructionProgress, type ConstructionProgress } from "../../services/constructionService";
 import { CAPABILITIES } from "../../lib/capabilities";
 import { useApp } from "../../contexts/AppContext";
@@ -24,14 +25,21 @@ import VerifiedBadge from "../../components/marketplace/VerifiedBadge";
 type Tab = "overview" | "payments" | "construction" | "documents";
 type PayStep = "form" | "verifying";
 
+interface PlotViewData {
+  plot: OwnedPlot | null;
+  docs: Document[];
+  schedule: InstallmentSchedule | undefined;
+}
+
 export default function PlotView() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { currency: displayCurrency, user } = useApp();
-  const [plot, setPlot] = useState<OwnedPlot | null | undefined>(undefined); // undefined = loading, null = not found
-  const [loadError, setLoadError] = useState(false);
-  const [docs, setDocs] = useState<Document[]>([]);
-  const [schedule, setSchedule] = useState<InstallmentSchedule | undefined>();
+  const { data, loading, error: loadError, refetch, setData } = useFetch<PlotViewData>(async () => {
+    if (!id) return { plot: null, docs: [], schedule: undefined };
+    const [plotData, docData, scheduleData] = await Promise.all([fetchOwnedPlotById(id), fetchDocumentsByPlotId(id), fetchInstallmentSchedule(id)]);
+    return { plot: plotData ?? null, docs: docData, schedule: scheduleData };
+  }, [id]);
   const [tab, setTab] = useState<Tab>("overview");
   const [verifyingDoc, setVerifyingDoc] = useState<Document | null>(null);
   const [restructuring, setRestructuring] = useState(false);
@@ -47,39 +55,24 @@ export default function PlotView() {
   const [verifyStatus, setVerifyStatus] = useState<VerificationStageStatus>("pending_payment");
   const [inFlightUpgrade, setInFlightUpgrade] = useState<UpgradeRequest | null>(null);
 
-  const load = (plotId: string) => {
-    setLoadError(false);
-    Promise.all([fetchOwnedPlotById(plotId), fetchDocumentsByPlotId(plotId), fetchInstallmentSchedule(plotId)])
-      .then(([plotData, docData, scheduleData]) => {
-        setPlot(plotData ?? null);
-        setDocs(docData);
-        setSchedule(scheduleData);
-      })
-      .catch(() => setLoadError(true));
-  };
-
   useEffect(() => {
-    if (!id) { setPlot(null); return; }
-    load(id);
-  }, [id]);
-
-  useEffect(() => {
-    if (!id || plot?.status !== "upgrade_pending") { setInFlightUpgrade(null); return; }
+    if (!id || data?.plot?.status !== "upgrade_pending") { setInFlightUpgrade(null); return; }
     let cancelled = false;
     fetchUpgradeRequestForPlot(id).then((req) => { if (!cancelled) setInFlightUpgrade(req ?? null); });
     return () => { cancelled = true; };
-  }, [id, plot?.status]);
+  }, [id, data?.plot?.status]);
 
   if (loadError) {
     return (
       <div className="p-8 text-center">
         <p className="text-sm text-[var(--foreground)] font-medium mb-2">Couldn't load this plot.</p>
-        <button onClick={() => id && load(id)} className="text-sm text-[var(--accent)] hover:underline">Try again</button>
+        <button onClick={refetch} className="text-sm text-[var(--accent)] hover:underline">Try again</button>
       </div>
     );
   }
-  if (plot === undefined) return <div className="p-8 text-[var(--muted-foreground)]">Loading plot…</div>;
-  if (plot === null) return <div className="p-8">Plot not found.</div>;
+  if (loading) return <div className="p-8 text-[var(--muted-foreground)]">Loading plot…</div>;
+  if (!data?.plot) return <div className="p-8">Plot not found.</div>;
+  const { plot, docs, schedule } = data;
 
   const pct = plot.totalPrice > 0 ? Math.round((plot.paidAmount / plot.totalPrice) * 100) : 0;
   const outstanding = plot.totalPrice - plot.paidAmount;
@@ -139,10 +132,9 @@ export default function PlotView() {
         setVerifyStatus("rejected");
       } else {
         setVerifyStatus("verified");
-        setPlot(updatedPlot);
-        const freshSchedule = await fetchInstallmentSchedule(plot.id);
-        setSchedule(freshSchedule ? { ...freshSchedule, periods: [...freshSchedule.periods] } : undefined);
-        fetchDocumentsByPlotId(plot.id).then(setDocs);
+        const [rawSchedule, freshDocs] = await Promise.all([fetchInstallmentSchedule(plot.id), fetchDocumentsByPlotId(plot.id)]);
+        const freshSchedule = rawSchedule ? { ...rawSchedule, periods: [...rawSchedule.periods] } : undefined;
+        setData((): PlotViewData => ({ plot: updatedPlot, docs: freshDocs, schedule: freshSchedule }));
       }
     } catch {
       setPayError("Something went wrong submitting your payment. Please try again.");
@@ -156,7 +148,7 @@ export default function PlotView() {
     setRestructuring(true);
     try {
       const updated = await requestRestructure(plot.id, "Buyer requested restructuring from plot detail.");
-      if (updated) setPlot(updated);
+      if (updated) setData({ ...data, plot: updated });
     } finally {
       setRestructuring(false);
     }

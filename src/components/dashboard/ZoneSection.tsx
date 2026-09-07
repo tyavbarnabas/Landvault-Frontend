@@ -1,7 +1,10 @@
 import { CAPABILITIES, type Capabilities } from "../../lib/capabilities";
+import ErrorBoundary from "../ErrorBoundary";
 
 // Wraps a dashboard zone and renders nothing at all — not a placeholder,
-// not a skeleton — when its capability flag is off.
+// not a skeleton — when its capability flag is off. Each zone also gets its
+// own error boundary: one broken zone (of 6, each independently fetched)
+// must never blank the rest of the admin dashboard.
 export default function ZoneSection({
   capability, title, badge, action, children,
 }: { capability: keyof Capabilities; title: string; badge?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode }) {
@@ -15,7 +18,7 @@ export default function ZoneSection({
         </div>
         {action}
       </div>
-      {children}
+      <ErrorBoundary section={title}>{children}</ErrorBoundary>
     </section>
   );
 }

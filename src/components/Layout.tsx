@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useApp } from "../contexts/AppContext"
+import ErrorBoundary from "./ErrorBoundary"
 
 // One nav config for the whole app, not a per-role branch. Every item names
 // the permission it needs; Layout below renders only what the signed-in
@@ -432,7 +433,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Content */}
-        <main className="flex-1 overflow-y-auto">{children}</main>
+        <main className="flex-1 overflow-y-auto">
+          {/* The nav/sidebar above survives even if a page crashes — one
+              broken page shouldn't take navigation down with it. */}
+          <ErrorBoundary section="this page" key={location.pathname}>{children}</ErrorBoundary>
+        </main>
       </div>
     </div>
   )

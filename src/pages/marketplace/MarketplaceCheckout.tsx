@@ -10,6 +10,8 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { formatAmount } from "../../data/mockData";
 import { useApp } from "../../contexts/AppContext";
+import { useFetch } from "../../lib/useFetch";
+import ErrorBoundary from "../../components/ErrorBoundary";
 import { fetchListingById, type Listing, type PaymentPlanType } from "../../services/marketplaceService";
 import { fetchPlotById, plotLabel, priceForPlot, type ListingPlot } from "../../services/marketplacePlotsService";
 import { fetchKycStatus, type KycRecord } from "../../services/kycService";
@@ -31,8 +33,6 @@ export default function MarketplaceCheckout() {
   const navigate = useNavigate();
   const { user, currency, addNotification } = useApp();
 
-  const [listing, setListing] = useState<Listing | null | undefined>(undefined);
-  const [plot, setPlot] = useState<ListingPlot | null | undefined>(undefined);
   const [step, setStep] = useState<Step>("confirm");
   const [kycRecord, setKycRecord] = useState<KycRecord | null>(null);
   const [reservation, setReservation] = useState<Reservation | null>(null);
@@ -45,20 +45,20 @@ export default function MarketplaceCheckout() {
   const [paymentError, setPaymentError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (!listingId || !plotId) { setListing(null); setPlot(null); return; }
-    let cancelled = false;
-    fetchListingById(listingId).then((l) => { if (!cancelled) setListing(l ?? null); });
-    fetchPlotById(listingId, plotId).then((p) => { if (!cancelled) setPlot(p ?? null); });
-    return () => { cancelled = true; };
+  const { data: listingAndPlot, loading: pageLoading } = useFetch(async () => {
+    if (!listingId || !plotId) return { listing: null, plot: null };
+    const [listing, plot] = await Promise.all([fetchListingById(listingId), fetchPlotById(listingId, plotId)]);
+    return { listing: listing ?? null, plot: plot ?? null };
   }, [listingId, plotId]);
+  const listing = listingAndPlot?.listing ?? null;
+  const plot = listingAndPlot?.plot ?? null;
 
   useEffect(() => {
     if (!user) return;
     fetchKycStatus(user).then(setKycRecord);
   }, [user]);
 
-  if (listing === undefined || plot === undefined || !user) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Loading…</div>;
+  if (pageLoading || !user) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Loading…</div>;
   if (!listing || !plot) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Plot not found. <Link to="/marketplace" className="text-[var(--accent)] hover:underline">Back to marketplace</Link></div>;
 
   const tier = listing.priceTiers.find((t) => t.id === plot.tierId);
@@ -175,6 +175,7 @@ export default function MarketplaceCheckout() {
           </div>
         )}
 
+        <ErrorBoundary section="checkout">
         {step === "confirm" && (
           <div>
             {tier?.availability === "sold_out" || plot.status === "sold" || plot.status === "reserved" ? (
@@ -330,6 +331,7 @@ export default function MarketplaceCheckout() {
             </div>
           </div>
         )}
+        </ErrorBoundary>
       </div>
     </div>
   );

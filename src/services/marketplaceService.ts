@@ -28,6 +28,7 @@
 // unrelated things either.
 
 import { apiClient } from "../lib/apiClient";
+import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import type { NigerianState } from "../data/nigerianStates";
 import { ESTATES, type Estate as MockEstate } from "../data/mockData";
 import { tiersFromPlots, type PriceTier, type TierAvailability } from "./estatesService";
@@ -193,8 +194,11 @@ function publishedListings(): Listing[] {
 
 // ─── Service functions ───────────────────────────────────────────────────────
 
-export async function fetchListings(filters: ListingFilters = {}): Promise<Listing[]> {
-  if (!apiClient.isMockMode) return apiClient.get<Listing[]>(`/api/marketplace/listings?${new URLSearchParams(filters as Record<string, string>)}`);
+export async function fetchListings(filters: ListingFilters = {}, params: PageParams = {}): Promise<Page<Listing>> {
+  if (!apiClient.isMockMode) {
+    const qp = new URLSearchParams({ ...(filters as Record<string, string>), ...(params as Record<string, string>) });
+    return apiClient.get<Page<Listing>>(`/api/marketplace/listings?${qp}`);
+  }
 
   let results = publishedListings();
 
@@ -219,7 +223,7 @@ export async function fetchListings(filters: ListingFilters = {}): Promise<Listi
     case "newest": default: results.sort((a, b) => (a.publishedDate < b.publishedDate ? 1 : -1)); break;
   }
 
-  return results;
+  return paginateMock(results, params);
 }
 
 export async function fetchListingById(id: string): Promise<Listing | undefined> {

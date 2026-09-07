@@ -29,12 +29,28 @@ export default function Support() {
 
   const [tab, setTab] = useState<"chat" | "disputes">(isDisputeFlow ? "disputes" : "chat");
   const [tickets, setTickets] = useState<DisputeTicket[]>([]);
+  const [ticketsTotal, setTicketsTotal] = useState(0);
+  const [ticketsCursor, setTicketsCursor] = useState<string | undefined>(undefined);
+  const [ticketsHasMore, setTicketsHasMore] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    fetchDisputes().then((data) => { if (!cancelled) setTickets(data); });
+    fetchDisputes().then((page) => {
+      if (cancelled) return;
+      setTickets(page.items);
+      setTicketsTotal(page.total);
+      setTicketsCursor(page.cursor);
+      setTicketsHasMore(page.hasMore);
+    });
     return () => { cancelled = true; };
   }, []);
+
+  const loadMoreTickets = async () => {
+    const page = await fetchDisputes({ cursor: ticketsCursor });
+    setTickets((prev) => [...prev, ...page.items]);
+    setTicketsCursor(page.cursor);
+    setTicketsHasMore(page.hasMore);
+  };
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -48,7 +64,7 @@ export default function Support() {
         <div className="flex gap-0">
           {([
             { id: "chat", label: "Live chat" },
-            { id: "disputes", label: `Disputes (${tickets.length})` },
+            { id: "disputes", label: `Disputes (${ticketsTotal})` },
           ] as const).map((t) => (
             <button
               key={t.id}
@@ -66,7 +82,10 @@ export default function Support() {
         <DisputesPanel
           initialPlotId={isDisputeFlow ? disputePlotId || "" : ""}
           tickets={tickets}
-          onCreated={(ticket) => setTickets((prev) => [ticket, ...prev])}
+          ticketsTotal={ticketsTotal}
+          hasMore={ticketsHasMore}
+          onLoadMore={loadMoreTickets}
+          onCreated={(ticket) => { setTickets((prev) => [ticket, ...prev]); setTicketsTotal((t) => t + 1); }}
         />
       )}
     </div>
@@ -193,7 +212,7 @@ function ChatPanel({ userName }: { userName: string }) {
 
 // ─── Disputes panel ────────────────────────────────────────────────────────
 
-function DisputesPanel({ initialPlotId, tickets, onCreated }: { initialPlotId: string; tickets: DisputeTicket[]; onCreated: (ticket: DisputeTicket) => void }) {
+function DisputesPanel({ initialPlotId, tickets, ticketsTotal, hasMore, onLoadMore, onCreated }: { initialPlotId: string; tickets: DisputeTicket[]; ticketsTotal: number; hasMore: boolean; onLoadMore: () => void; onCreated: (ticket: DisputeTicket) => void }) {
   const [showForm, setShowForm] = useState(!!initialPlotId);
   const [ownedPlots, setOwnedPlots] = useState<OwnedPlot[]>([]);
   const [form, setForm] = useState({
@@ -207,7 +226,8 @@ function DisputesPanel({ initialPlotId, tickets, onCreated }: { initialPlotId: s
 
   useEffect(() => {
     let cancelled = false;
-    fetchOwnedPlots().then((data) => { if (!cancelled) setOwnedPlots(data); });
+    // All plots, for a dropdown — not a paginated list view.
+    fetchOwnedPlots({ limit: 500 }).then((page) => { if (!cancelled) setOwnedPlots(page.items); });
     return () => { cancelled = true; };
   }, []);
 
@@ -232,7 +252,7 @@ function DisputesPanel({ initialPlotId, tickets, onCreated }: { initialPlotId: s
       {/* Raise new dispute */}
       {!showForm ? (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-[var(--muted-foreground)]">{tickets.length} dispute{tickets.length !== 1 ? "s" : ""} on record</p>
+          <p className="text-sm text-[var(--muted-foreground)]">{ticketsTotal} dispute{ticketsTotal !== 1 ? "s" : ""} on record</p>
           <button onClick={() => { setSubmitted(false); setShowForm(true); }} className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium hover:opacity-90 transition-opacity">
             Raise a dispute
           </button>
@@ -314,6 +334,11 @@ function DisputesPanel({ initialPlotId, tickets, onCreated }: { initialPlotId: s
               )}
             </div>
           ))}
+          {hasMore && (
+            <button onClick={onLoadMore} className="w-full py-2.5 border border-[var(--border)] rounded-md text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors">
+              Load more
+            </button>
+          )}
         </div>
       )}
     </div>

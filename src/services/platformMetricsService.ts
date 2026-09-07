@@ -35,13 +35,15 @@ export async function fetchAttentionItems(): Promise<AttentionItem[]> {
   const items: AttentionItem[] = [];
 
   if (CAPABILITIES.tenantLifecycle) {
-    const tenants = await fetchTenants();
-    const awaitingVerification = tenants.filter((t) => t.verificationState === "documents_submitted" || t.verificationState === "under_review");
-    if (awaitingVerification.length > 0) {
+    // The filter is passed to the server; limit:1 because only the real
+    // `total` this filtered query reports is needed here, not the tenants
+    // themselves.
+    const { total: awaitingCount } = await fetchTenants({ verificationState: ["documents_submitted", "under_review"] }, { limit: 1 });
+    if (awaitingCount > 0) {
       items.push({
         id: "tenants-awaiting-verification",
-        label: `${awaitingVerification.length === 1 ? "Tenant" : "Tenants"} awaiting verification`,
-        count: awaitingVerification.length,
+        label: `${awaitingCount === 1 ? "Tenant" : "Tenants"} awaiting verification`,
+        count: awaitingCount,
         severity: "amber",
         href: "/admin/tenants?status=under_review",
       });
@@ -55,7 +57,8 @@ export async function fetchAttentionItems(): Promise<AttentionItem[]> {
 // audit log so the dashboard doesn't reach into a lower-level service's
 // internals directly.
 export async function fetchRecentActivity(limit = 10): Promise<AuditLogEntry[]> {
-  return fetchAuditLog(limit);
+  const page = await fetchAuditLog({ limit });
+  return page.items;
 }
 
 export function describeAuditEntry(entry: AuditLogEntry): string {
@@ -94,7 +97,13 @@ export interface PlatformHealthMetrics {
 
 // TODO (backend): GET /api/admin/metrics/platform-health?period=
 export async function fetchPlatformHealthMetrics(period: MetricsPeriod): Promise<PlatformHealthMetrics> {
-  if (apiClient.isMockMode) return buildPlatformHealthMetrics(await fetchTenants(), period);
+  if (apiClient.isMockMode) {
+    // This is a genuine aggregate over every tenant, not a paginated list —
+    // same TODO as Portfolio.tsx's: a real backend should compute this
+    // server-side rather than the client requesting "everything."
+    const { items: allTenants } = await fetchTenants({}, { limit: 10_000 });
+    return buildPlatformHealthMetrics(allTenants, period);
+  }
   return apiClient.get<PlatformHealthMetrics>(`/api/admin/metrics/platform-health?period=${period}`);
 }
 

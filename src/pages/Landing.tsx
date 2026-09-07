@@ -8,7 +8,10 @@ export default function Landing() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchListings().then((data) => { if (!cancelled) setListings(data); });
+    // The whole published catalogue, for the real trust-indicator stats
+    // below (plots available, title types, states covered) — a marketing
+    // page computing its own honest numbers, not a paginated list view.
+    fetchListings({}, { limit: 500 }).then((page) => { if (!cancelled) setListings(page.items); });
     return () => { cancelled = true; };
   }, []);
 

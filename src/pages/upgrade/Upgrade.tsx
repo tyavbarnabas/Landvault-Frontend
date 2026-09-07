@@ -9,6 +9,7 @@ import {
   type UpgradeQuote, type UpgradeRequest, type DeltaPaymentMethod,
 } from "../../services/upgradeService";
 import { paymentMethodsForCountry } from "../../services/marketplaceCheckoutService";
+import { usePolling } from "../../lib/useFetch";
 import { useApp } from "../../contexts/AppContext";
 import PlotCanvas from "../../components/PlotCanvas";
 import PaymentMethodSelector from "../../components/checkout/PaymentMethodSelector";
@@ -415,22 +416,11 @@ export function UpgradeRequestDetail() {
   const { requestId } = useParams();
   const navigate = useNavigate();
   const { addNotification } = useApp();
-  const [request, setRequest] = useState<UpgradeRequest | null | undefined>(undefined);
+  // usePolling clones on every tick itself — same fix ResaleTransferDetail
+  // needed (the mock store returns the same mutated object reference each
+  // tick; React bails out of a setState with an unchanged reference).
+  const request = usePolling(() => (requestId ? fetchUpgradeRequest(requestId) : Promise.resolve(undefined)), 1200, [requestId]);
   const notifiedRef = useRef(false);
-
-  useEffect(() => {
-    if (!requestId) { setRequest(null); return; }
-    let cancelled = false;
-    // Clone on every poll — fetchUpgradeRequest returns the same mutated
-    // object reference each tick in mock mode, and React bails out of a
-    // setState with an unchanged reference (Object.is), so the UI would
-    // otherwise freeze on the first-rendered stage forever. Same fix
-    // ResaleTransferDetail needed.
-    const poll = () => fetchUpgradeRequest(requestId).then((r) => { if (!cancelled) setRequest(r ? { ...r } : null); });
-    poll();
-    const interval = setInterval(poll, 1200);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [requestId]);
 
   useEffect(() => {
     if (request?.status === "completed" && !notifiedRef.current) {

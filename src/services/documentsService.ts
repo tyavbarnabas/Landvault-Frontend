@@ -5,15 +5,21 @@
 
 import { DOCUMENTS, type Document } from "../data/mockData";
 import { apiClient } from "../lib/apiClient";
+import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 
 // In-memory mock store so documents issued during a session (e.g. by the
 // marketplace checkout flow — see marketplaceCheckoutService.ts) show up
 // here and in Vault.tsx/PlotView.tsx, same idiom as portfolioService.ts.
 let mockDocuments: Document[] = [...DOCUMENTS];
 
-export async function fetchDocuments(): Promise<Document[]> {
-  if (apiClient.isMockMode) return mockDocuments;
-  return apiClient.get<Document[]>("/api/documents");
+// Sorted newest-first before paginating — a stable order pagination can
+// actually page through, rather than trusting insertion order.
+export async function fetchDocuments(params: PageParams = {}): Promise<Page<Document>> {
+  if (apiClient.isMockMode) {
+    const sorted = [...mockDocuments].sort((a, b) => (a.date < b.date ? 1 : -1));
+    return paginateMock(sorted, params);
+  }
+  return apiClient.get<Page<Document>>(`/api/documents?${new URLSearchParams(params as Record<string, string>)}`);
 }
 
 export async function fetchDocumentsByPlotId(plotId: string): Promise<Document[]> {

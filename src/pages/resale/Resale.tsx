@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { formatAmount, type OwnedPlot } from "../../data/mockData";
-import { fetchOwnedPlots } from "../../services/portfolioService";
+import { fetchOwnedPlots, fetchOwnedPlotById } from "../../services/portfolioService";
+import { usePolling } from "../../lib/useFetch";
 import { useApp } from "../../contexts/AppContext";
 import PlotStatusBadge from "../../components/portfolio/PlotStatusBadge";
 import ResaleProgress from "../../components/resale/ResaleProgress";
@@ -31,8 +32,8 @@ export function MyListings() {
   const load = () => {
     if (!user) return;
     setLoading(true);
-    Promise.all([fetchOwnedPlots(), fetchMyOffersReceived(user.name), fetchMyResaleTransfers(user.name)]).then(([plots, offers, txns]) => {
-      setOwnedPlots(plots);
+    Promise.all([fetchOwnedPlots({ limit: 500 }), fetchMyOffersReceived(user.name), fetchMyResaleTransfers(user.name)]).then(([plotsPage, offers, txns]) => {
+      setOwnedPlots(plotsPage.items);
       setReceived(offers);
       setTransfers(txns);
       setLoading(false);
@@ -214,21 +215,12 @@ export function ResaleTransferDetail() {
   const { transferId } = useParams();
   const navigate = useNavigate();
   const { addNotification } = useApp();
-  const [transfer, setTransfer] = useState<ResaleTransfer | null | undefined>(undefined);
+  // usePolling clones on every tick itself — see its own comment for why
+  // that matters (the mock store returns the same mutated object reference
+  // each tick, and React bails out of a setState with an unchanged
+  // reference, which used to freeze this exact screen on the first stage).
+  const transfer = usePolling(() => (transferId ? fetchResaleTransfer(transferId) : Promise.resolve(undefined)), 1200, [transferId]);
   const notifiedRef = useRef(false);
-
-  useEffect(() => {
-    if (!transferId) { setTransfer(null); return; }
-    let cancelled = false;
-    // Clone on every poll — fetchResaleTransfer returns the same mutated
-    // object reference each tick in mock mode, and React bails out of a
-    // setState with an unchanged reference (Object.is), so the UI would
-    // otherwise freeze on the first-rendered stage forever.
-    const poll = () => fetchResaleTransfer(transferId).then((t) => { if (!cancelled) setTransfer(t ? { ...t } : null); });
-    poll();
-    const interval = setInterval(poll, 1200);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [transferId]);
 
   useEffect(() => {
     if (transfer?.status === "completed" && !notifiedRef.current) {
@@ -269,8 +261,11 @@ export function ListPlot() {
   const [published, setPublished] = useState<{ price: number } | null>(null);
 
   useEffect(() => {
+    if (!plotId) { setPlot(null); return; }
     let cancelled = false;
-    fetchOwnedPlots().then((plots) => { if (!cancelled) setPlot(plots.find((p) => p.id === plotId) ?? null); });
+    // A single plot by id — no reason to page through the whole portfolio
+    // for this (that's what fetchOwnedPlots is for; this is fetchOwnedPlotById).
+    fetchOwnedPlotById(plotId).then((p) => { if (!cancelled) setPlot(p ?? null); });
     return () => { cancelled = true; };
   }, [plotId]);
 

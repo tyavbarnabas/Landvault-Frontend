@@ -11,12 +11,35 @@ const STATUS_STYLES: Record<Inspection["status"], string> = {
 
 export default function Inspections() {
   const [inspections, setInspections] = useState<Inspection[]>([]);
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [reschedulingId, setReschedulingId] = useState<string | null>(null);
 
-  const load = () => fetchMyInspections().then((data) => { setInspections(data); setLoading(false); });
+  // A mutation (cancel/reschedule) resets back to the first page — simplest
+  // way to stay consistent without tracking which loaded page an item came
+  // from.
+  const load = () => {
+    setLoading(true);
+    fetchMyInspections().then((page) => {
+      setInspections(page.items);
+      setCursor(page.cursor);
+      setHasMore(page.hasMore);
+      setLoading(false);
+    });
+  };
 
   useEffect(() => { load(); }, []);
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    const page = await fetchMyInspections({ cursor });
+    setInspections((prev) => [...prev, ...page.items]);
+    setCursor(page.cursor);
+    setHasMore(page.hasMore);
+    setLoadingMore(false);
+  };
 
   const handleCancel = async (id: string) => {
     await cancelInspection(id);
@@ -80,6 +103,12 @@ export default function Inspections() {
                 ))}
               </div>
             </section>
+          )}
+
+          {hasMore && (
+            <button onClick={loadMore} disabled={loadingMore} className="w-full py-2.5 border border-[var(--border)] rounded-md text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors disabled:opacity-60">
+              {loadingMore ? "Loading…" : "Load more"}
+            </button>
           )}
         </div>
       )}

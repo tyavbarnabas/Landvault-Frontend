@@ -47,7 +47,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetchNotifications().then((data) => { if (!cancelled) setNotifications(data); });
+    // The bell dropdown shows recent notifications, not a paginated list —
+    // one generously-sized page, no "Load more" here.
+    fetchNotifications({ limit: 50 }).then((page) => { if (!cancelled) setNotifications(page.items); });
     return () => { cancelled = true; };
   }, []);
 

@@ -4,6 +4,7 @@
 // there until a real chat/messaging backend exists.
 
 import { apiClient } from "../lib/apiClient";
+import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 
 export interface DisputeTicket {
   id: string;
@@ -38,9 +39,9 @@ const MOCK_TICKETS: DisputeTicket[] = [
 // the session, even without a backend.
 let mockTickets: DisputeTicket[] = [...MOCK_TICKETS];
 
-export async function fetchDisputes(): Promise<DisputeTicket[]> {
-  if (apiClient.isMockMode) return mockTickets;
-  return apiClient.get<DisputeTicket[]>("/api/disputes");
+export async function fetchDisputes(params: PageParams = {}): Promise<Page<DisputeTicket>> {
+  if (apiClient.isMockMode) return paginateMock(mockTickets, params);
+  return apiClient.get<Page<DisputeTicket>>(`/api/disputes?${new URLSearchParams(params as Record<string, string>)}`);
 }
 
 export async function createDispute(input: CreateDisputeInput): Promise<DisputeTicket> {

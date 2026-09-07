@@ -18,11 +18,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchOwnedPlots(), fetchEstates(), fetchDocuments()]).then(([plots, ests, docs]) => {
+    // Full portfolio (see Portfolio.tsx's PORTFOLIO_PAGE_SIZE note — a real
+    // backend should expose a dedicated summary endpoint for these stats
+    // instead) and just the 3 most recent documents.
+    Promise.all([fetchOwnedPlots({ limit: 500 }), fetchEstates(), fetchDocuments({ limit: 3 })]).then(([plotsPage, ests, docsPage]) => {
       if (cancelled) return;
-      setOwnedPlots(plots);
+      setOwnedPlots(plotsPage.items);
       setEstates(ests);
-      setDocuments(docs);
+      setDocuments(docsPage.items);
       setLoading(false);
     });
     return () => { cancelled = true; };
@@ -41,7 +44,8 @@ export default function Dashboard() {
     .filter((p) => p.nextDueDate && p.nextDueAmount !== undefined)
     .sort((a, b) => urgencyRank(a) - urgencyRank(b))
     .slice(0, 3);
-  const recentDocuments = [...documents].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 3);
+  // fetchDocuments already returns newest-first, and we requested exactly 3.
+  const recentDocuments = documents;
 
   return (
     <div className="p-6 max-w-6xl mx-auto">

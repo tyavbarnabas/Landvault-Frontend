@@ -7,7 +7,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { fetchListingById, type Listing } from "../../services/marketplaceService";
-import { fetchPlotsForListing, type ListingPlot } from "../../services/marketplacePlotsService";
+import { fetchPlotsForListing, CANVAS_PLOT_FETCH_LIMIT, type ListingPlot } from "../../services/marketplacePlotsService";
 import PlotCanvas from "../../components/PlotCanvas";
 import PlotDetailPanel from "../../components/marketplace/PlotDetailPanel";
 import EnquiryPanel from "../../components/marketplace/EnquiryPanel";
@@ -30,9 +30,9 @@ export default function MarketplacePlotSelection() {
   useEffect(() => {
     if (!estateId) return;
     setLoading(true);
-    Promise.all([fetchListingById(estateId), fetchPlotsForListing(estateId)]).then(([l, p]) => {
+    Promise.all([fetchListingById(estateId), fetchPlotsForListing(estateId, { limit: CANVAS_PLOT_FETCH_LIMIT })]).then(([l, plotsPage]) => {
       setListing(l);
-      setPlots(p);
+      setPlots(plotsPage.items);
       setLoading(false);
       // Default to the requested size, else the first tier with stock.
       if (l && !sizeParam) {

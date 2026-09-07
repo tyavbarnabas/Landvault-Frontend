@@ -18,6 +18,7 @@
 // account; only the seller-facing progress view is built here.
 
 import { apiClient } from "../lib/apiClient";
+import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import type { Currency, Document, OwnedPlot } from "../data/mockData";
 import { addDocuments, voidDocument, fetchDocumentsByPlotId } from "./documentsService";
 import { updateOwnedPlotStatus } from "./portfolioService";
@@ -162,9 +163,9 @@ const mockTransfers: ResaleTransfer[] = [];
 
 // ─── Listings ────────────────────────────────────────────────────────────────
 
-export async function fetchListings(): Promise<ResaleListing[]> {
-  if (!apiClient.isMockMode) return apiClient.get<ResaleListing[]>("/api/resale/listings");
-  return mockListings.filter((l) => l.status === "active");
+export async function fetchListings(params: PageParams = {}): Promise<Page<ResaleListing>> {
+  if (!apiClient.isMockMode) return apiClient.get<Page<ResaleListing>>(`/api/resale/listings?${new URLSearchParams(params as Record<string, string>)}`);
+  return paginateMock(mockListings.filter((l) => l.status === "active"), params);
 }
 
 export async function fetchListingById(id: string): Promise<ResaleListing | undefined> {

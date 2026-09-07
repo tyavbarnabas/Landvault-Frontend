@@ -15,6 +15,7 @@
 import { apiClient } from "../lib/apiClient";
 import type { Currency } from "../data/mockData";
 import type { NigerianState } from "../data/nigerianStates";
+import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 
 export type TenantStatus = "active" | "suspended" | "offboarded";
 export type TenantPlan = "starter" | "growth" | "enterprise";
@@ -468,9 +469,41 @@ function logAudit(entry: Omit<AuditLogEntry, "id" | "timestamp">) {
   mockAuditLog = [{ ...entry, id: newId("audit"), timestamp: new Date().toISOString() }, ...mockAuditLog];
 }
 
-export async function fetchTenants(): Promise<Tenant[]> {
-  if (apiClient.isMockMode) return mockTenants;
-  return apiClient.get<Tenant[]>("/api/admin/tenants");
+// Filters shaped after what TenantDirectory.tsx's UI actually offers — passed
+// to the server (mock or real) rather than applied after fetching a page, so
+// pagination and filtering never fight each other.
+export interface TenantFilters {
+  query?: string;
+  verificationState?: VerificationState[];
+  plan?: TenantPlan;
+  state?: NigerianState;
+  submittedAfter?: string;
+}
+
+export async function fetchTenants(filters: TenantFilters = {}, params: PageParams = {}): Promise<Page<Tenant>> {
+  if (apiClient.isMockMode) {
+    let results = mockTenants;
+    if (filters.query) {
+      const q = filters.query.toLowerCase();
+      results = results.filter((t) => tenantDisplayName(t).toLowerCase().includes(q) || t.primaryContact.workEmail.toLowerCase().includes(q));
+    }
+    if (filters.verificationState && filters.verificationState.length > 0) {
+      results = results.filter((t) => filters.verificationState!.includes(t.verificationState));
+    }
+    if (filters.plan) results = results.filter((t) => t.plan === filters.plan);
+    if (filters.state) results = results.filter((t) => t.identity.statesOfOperation.includes(filters.state!));
+    if (filters.submittedAfter) results = results.filter((t) => t.createdDate >= filters.submittedAfter!);
+    return paginateMock(results, params);
+  }
+  const qp = new URLSearchParams();
+  if (filters.query) qp.set("query", filters.query);
+  if (filters.verificationState) for (const v of filters.verificationState) qp.append("verificationState", v);
+  if (filters.plan) qp.set("plan", filters.plan);
+  if (filters.state) qp.set("state", filters.state);
+  if (filters.submittedAfter) qp.set("submittedAfter", filters.submittedAfter);
+  if (params.limit) qp.set("limit", String(params.limit));
+  if (params.cursor) qp.set("cursor", params.cursor);
+  return apiClient.get<Page<Tenant>>(`/api/admin/tenants?${qp}`);
 }
 
 // Mock-mode-only synchronous accessor — same convention as
@@ -651,9 +684,9 @@ export async function requestSupportAccess(tenantId: string, reason: string, act
   return apiClient.post<SupportAccessGrant>(`/api/admin/tenants/${tenantId}/support-access`, { reason });
 }
 
-export async function fetchAuditLog(limit?: number): Promise<AuditLogEntry[]> {
-  if (apiClient.isMockMode) return limit ? mockAuditLog.slice(0, limit) : mockAuditLog;
-  return apiClient.get<AuditLogEntry[]>(`/api/admin/audit-log${limit ? `?limit=${limit}` : ""}`);
+export async function fetchAuditLog(params: PageParams = {}): Promise<Page<AuditLogEntry>> {
+  if (apiClient.isMockMode) return paginateMock(mockAuditLog, params);
+  return apiClient.get<Page<AuditLogEntry>>(`/api/admin/audit-log?${new URLSearchParams(params as Record<string, string>)}`);
 }
 
 export async function fetchSupportAccessGrants(tenantId: string): Promise<SupportAccessGrant[]> {

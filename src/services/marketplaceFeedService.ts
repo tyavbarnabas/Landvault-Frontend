@@ -19,6 +19,17 @@ import {
 } from "./marketplaceService";
 import { fetchListings as fetchResaleListingsRaw, type ResaleListing } from "./resaleService";
 import type { NigerianState } from "../data/nigerianStates";
+import { paginateMock, type Page, type PageParams } from "../lib/pagination";
+
+// Both sides of the merge are fetched in full (a generous limit, well above
+// this fixture set's real size) rather than composed from two independently-
+// paginated sub-fetches — merging two already-paginated, differently-shaped
+// sources into one correctly-ordered cursor is a real cross-type-pagination
+// problem a real backend would need its own indexing/materialized-view
+// strategy for. This mock merges everything, then paginates the merged
+// result — honest about the exposed Page<T> contract, simplified about how
+// it's sourced.
+const MERGE_FETCH_LIMIT = 5000;
 
 export type MarketplaceListingType = "primary" | "resale";
 
@@ -100,7 +111,7 @@ export interface UnifiedListingFilters extends ListingFilters {
   type?: MarketplaceListingType; // undefined = both (the default, single-view point of this unification)
 }
 
-export async function fetchUnifiedListings(filters: UnifiedListingFilters = {}): Promise<MarketplaceListing[]> {
+export async function fetchUnifiedListings(filters: UnifiedListingFilters = {}, params: PageParams = {}): Promise<Page<MarketplaceListing>> {
   const wantPrimary = filters.type !== "resale";
   const wantResale = filters.type !== "primary";
 
@@ -109,14 +120,14 @@ export async function fetchUnifiedListings(filters: UnifiedListingFilters = {}):
   // ever returns active listings), so this is the one place cross-type
   // filters are actually applied, rather than duplicating filter logic into
   // two services that model listings completely differently.
-  const [primaryRaw, resaleRaw] = await Promise.all([
-    wantPrimary ? fetchPrimaryListings() : Promise.resolve([]),
-    wantResale ? fetchResaleListingsRaw() : Promise.resolve([]),
+  const [primaryPage, resalePage] = await Promise.all([
+    wantPrimary ? fetchPrimaryListings({}, { limit: MERGE_FETCH_LIMIT }) : Promise.resolve({ items: [], total: 0, hasMore: false } as Page<Listing>),
+    wantResale ? fetchResaleListingsRaw({ limit: MERGE_FETCH_LIMIT }) : Promise.resolve({ items: [], total: 0, hasMore: false } as Page<ResaleListing>),
   ]);
 
   let merged: MarketplaceListing[] = [
-    ...primaryRaw.map((data): MarketplaceListing => ({ listingType: "primary", data })),
-    ...resaleRaw.map((data): MarketplaceListing => ({ listingType: "resale", data })),
+    ...primaryPage.items.map((data): MarketplaceListing => ({ listingType: "primary", data })),
+    ...resalePage.items.map((data): MarketplaceListing => ({ listingType: "resale", data })),
   ];
 
   if (filters.query) {
@@ -149,5 +160,5 @@ export async function fetchUnifiedListings(filters: UnifiedListingFilters = {}):
       break;
   }
 
-  return merged;
+  return paginateMock(merged, params);
 }

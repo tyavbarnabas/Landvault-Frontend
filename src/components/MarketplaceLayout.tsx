@@ -1,12 +1,16 @@
 // A slim, public top-nav shell for the marketplace surface — deliberately
 // distinct from the authenticated sidebar Layout.tsx, since these pages must
 // render for anonymous visitors too. Never assumes `user` exists.
-import { Link, useNavigate } from "react-router-dom";
+import { Suspense } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useApp } from "../contexts/AppContext";
+import ErrorBoundary from "./ErrorBoundary";
+import PageLoading from "./PageLoading";
 
 export default function MarketplaceLayout({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, logout } = useApp();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogout = () => {
     logout();
@@ -42,7 +46,11 @@ export default function MarketplaceLayout({ children }: { children: React.ReactN
         )}
       </header>
 
-      <main className="flex-1">{children}</main>
+      <main className="flex-1">
+        <ErrorBoundary section="this page" key={location.pathname}>
+          <Suspense fallback={<PageLoading />}>{children}</Suspense>
+        </ErrorBoundary>
+      </main>
     </div>
   );
 }

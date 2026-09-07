@@ -9,8 +9,10 @@
 // data" badge and gets replaced by a real fetch the moment its epic ships
 // (see the TODOs in platformMetricsService.ts and the note at the bottom
 // of this file for what's still fully absent).
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useApp } from "../../contexts/AppContext";
+import { useFetch } from "../../lib/useFetch";
+import ErrorBoundary from "../../components/ErrorBoundary";
 import {
   fetchAttentionItems, fetchRecentActivity,
   fetchPlatformHealthMetrics, fetchMarketplacePulseMetrics, fetchRevenueMetrics, fetchSystemHealthMetrics,
@@ -25,26 +27,11 @@ import MetricCard from "../../components/dashboard/MetricCard";
 import PeriodSelector from "../../components/dashboard/PeriodSelector";
 import IntegrationStatusList from "../../components/dashboard/IntegrationStatusList";
 
-// Generic async-zone state so each of the 6 zones can load/fail
-// independently — a slow or broken one never blanks the rest of the page.
-function useZone<T>(fetcher: () => Promise<T>, deps: unknown[] = []) {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(false);
-    fetcher()
-      .then((d) => { if (!cancelled) setData(d); })
-      .catch(() => { if (!cancelled) setError(true); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-
-  return { data, loading, error };
+// Each of the 6 zones loads/fails independently — a slow or broken one never
+// blanks the rest of the page. Now just useFetch under its old name; the
+// abort-aware, refetch-capable primitive every fetch in the app uses.
+function useZone<T>(fetcher: (signal: AbortSignal) => Promise<T>, deps: unknown[] = []) {
+  return useFetch(fetcher, deps);
 }
 
 export default function AdminDashboard() {
@@ -65,7 +52,9 @@ export default function AdminDashboard() {
         <p className="text-[var(--muted-foreground)] text-sm mt-1">Signed in as {user?.name} · Super Admin</p>
       </div>
 
-      <AttentionPanel items={attention.data ?? []} loading={attention.loading} error={attention.error} />
+      <ErrorBoundary section="needs attention">
+        <AttentionPanel items={attention.data ?? []} loading={attention.loading} error={attention.error} />
+      </ErrorBoundary>
 
       <ZoneSection capability="activityLog" title="Recent activity">
         <ActivityStream entries={activity.data ?? []} loading={activity.loading} error={activity.error} />

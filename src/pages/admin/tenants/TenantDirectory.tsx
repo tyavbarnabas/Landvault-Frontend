@@ -13,32 +13,56 @@ export default function TenantDirectory() {
   const initialVerificationFilter: VerificationState | "all" = VALID_VERIFICATION_STATES.includes(statusParam as VerificationState) ? (statusParam as VerificationState) : "all";
 
   const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [query, setQuery] = useState("");
   const [verificationFilter, setVerificationFilter] = useState<VerificationState | "all">(initialVerificationFilter);
   const [planFilter, setPlanFilter] = useState<TenantPlan | "all">("all");
   const [stateFilter, setStateFilter] = useState<NigerianState | "all">("all");
   const [submittedAfter, setSubmittedAfter] = useState("");
+  // The "states of operation" dropdown lists every state seen across the
+  // unfiltered directory — fetched once, separately from the filtered/paged
+  // list below, so narrowing other filters doesn't shrink this dropdown's
+  // own options.
+  const [allStates, setAllStates] = useState<string[]>([]);
+
+  const filters = { query: query || undefined, verificationState: verificationFilter === "all" ? undefined : [verificationFilter], plan: planFilter === "all" ? undefined : planFilter, state: stateFilter === "all" ? undefined : stateFilter, submittedAfter: submittedAfter || undefined };
 
   useEffect(() => {
     let cancelled = false;
-    fetchTenants().then((data) => { if (!cancelled) { setTenants(data); setLoading(false); } });
+    setLoading(true);
+    fetchTenants(filters).then((page) => {
+      if (cancelled) return;
+      setTenants(page.items);
+      setCursor(page.cursor);
+      setHasMore(page.hasMore);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, verificationFilter, planFilter, stateFilter, submittedAfter]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchTenants({}, { limit: 10_000 }).then((page) => {
+      if (cancelled) return;
+      setAllStates(Array.from(new Set(page.items.flatMap((t) => t.identity.statesOfOperation))).sort());
+    });
     return () => { cancelled = true; };
   }, []);
 
+  const loadMore = async () => {
+    setLoadingMore(true);
+    const page = await fetchTenants(filters, { cursor });
+    setTenants((prev) => [...prev, ...page.items]);
+    setCursor(page.cursor);
+    setHasMore(page.hasMore);
+    setLoadingMore(false);
+  };
+
   if (loading) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Loading tenants…</div>;
-
-  const allStates = Array.from(new Set(tenants.flatMap((t) => t.identity.statesOfOperation))).sort();
-
-  const filtered = tenants.filter((t) => {
-    const name = tenantDisplayName(t).toLowerCase();
-    const matchesQuery = name.includes(query.toLowerCase()) || t.primaryContact.workEmail.toLowerCase().includes(query.toLowerCase());
-    const matchesVerification = verificationFilter === "all" || t.verificationState === verificationFilter;
-    const matchesPlan = planFilter === "all" || t.plan === planFilter;
-    const matchesState = stateFilter === "all" || t.identity.statesOfOperation.includes(stateFilter);
-    const matchesSubmitted = !submittedAfter || t.createdDate >= submittedAfter;
-    return matchesQuery && matchesVerification && matchesPlan && matchesState && matchesSubmitted;
-  });
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -88,7 +112,7 @@ export default function TenantDirectory() {
       </div>
 
       <div className="space-y-3">
-        {filtered.map((t) => {
+        {tenants.map((t) => {
           const estateCount = t.branches.reduce((s, b) => s + b.estateCount, 0);
           const verBadge = verificationStateBadge(t.verificationState);
           return (
@@ -126,8 +150,14 @@ export default function TenantDirectory() {
           );
         })}
 
-        {filtered.length === 0 && (
+        {tenants.length === 0 && (
           <div className="text-center py-16 text-sm text-[var(--muted-foreground)]">No tenants match your filters.</div>
+        )}
+
+        {hasMore && (
+          <button onClick={loadMore} disabled={loadingMore} className="w-full py-2.5 border border-[var(--border)] rounded-md text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors disabled:opacity-60">
+            {loadingMore ? "Loading…" : "Load more"}
+          </button>
         )}
       </div>
     </div>
