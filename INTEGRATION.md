@@ -26,7 +26,7 @@ Component  →  service (src/services/*.ts)  →  apiClient (src/lib/apiClient.t
 
 Every page now fetches through `src/services/*.ts` — none import `mockData.ts` arrays directly any more (only type-only imports and the services themselves touch it). Services in place:
 
-- **`estatesService.ts`** — `Browse.tsx`, `EstateDetail.tsx`, `Resale.tsx`, `Checkout.tsx`, `Upgrade.tsx`, `Syndicate.tsx`, `Dashboard.tsx`
+- **`estatesService.ts`** — `Browse.tsx`, `EstateDetail.tsx`, `Resale.tsx`, `Checkout.tsx`, `Upgrade.tsx`, `Syndicate.tsx`
 - **`reviewsService.ts`** — `EstateReviews.tsx` (mounted on `EstateDetail.tsx`)
 - **`authService.ts`** — `AppContext.tsx`, `Login.tsx`, `Register.tsx`
 - **`portfolioService.ts`** (owned plots + payments) — `Dashboard.tsx`, `Portfolio.tsx`, `PlotView.tsx`, `Upgrade.tsx`, `Support.tsx`, `Resale.tsx`
@@ -34,6 +34,7 @@ Every page now fetches through `src/services/*.ts` — none import `mockData.ts`
 - **`syndicatesService.ts`** — `Syndicate.tsx` (`SyndicateList`, `CreateSyndicate`, `SyndicateDetail`); creating a syndicate now actually persists it (mock store) and the "Open dashboard" link goes to the real created id, not a hardcoded one
 - **`disputesService.ts`** — `Support.tsx`'s disputes tab; the live-chat tab intentionally stays local component state (it's a scripted demo bot, not real backend data — nothing to migrate until a real chat backend exists)
 - **`checkoutService.ts`** — `Checkout.tsx`. Models the real shape of a payment flow (reserve → initiate payment → confirm) so a real gateway integration later means filling in three functions, not restructuring the page. **This does not talk to a real payment gateway** — there are no Paystack/Opay credentials or webhook handling here; mock mode simulates the same outcomes the UI always assumed. A successful mock payment now calls `portfolioService.addOwnedPlot()`, so checkout actually produces a real entry in Portfolio/Dashboard/Vault instead of just showing a cosmetic success screen.
+- **`attentionService.ts`** — `Dashboard.tsx`'s attention strip. **Not a straight async swap**: it is a cross-cutting, time-filtered query spanning owned plots, in-flight upgrade requests, newly issued documents and wishlist price moves, and it becomes one endpoint (`GET /api/me/attention?since=&dueWithinDays=`) rather than the four separate fetches mock mode composes it from. The `AttentionItem` shape is documented at the top of that file — writing it down before `sales`/`finance` are built is the point, so those modules aren't designed to answer only "list my plots".
 - **`notificationsService.ts`** — `AppContext.tsx` (`notifications`, `markNotificationRead`), consumed by the notification bell in `Layout.tsx`. Marking a notification read is optimistic (updates the UI immediately, then fires the request) — a real backend failure wouldn't currently roll that back, worth adding if this becomes user-visible-critical.
 
 Every migrated page follows the same shape: `useState` + `useEffect` fetch + a loading branch before the main render — see `Browse.tsx` or `PlotView.tsx` as reference examples.

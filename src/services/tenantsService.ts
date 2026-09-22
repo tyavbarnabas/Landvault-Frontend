@@ -109,11 +109,17 @@ export interface Regulatory {
   additionalPermits: { id: string; name: string; documentId?: string }[];
 }
 
-// SENSITIVE: idNumber and bvn are NDPR-regulated personal data.
+// SENSITIVE: idNumber is NDPR-regulated personal data.
 // TODO (backend): encrypt at rest, restrict reads to compliance staff, log
 // every read against the director record (see SA-2.2's audit requirement),
 // and define a retention policy — don't keep these longer than a documented
 // compliance need requires.
+//
+// No bvn field: it was collected here once and removed — never verified
+// against anything (no NIBSS integration exists), so it was liability
+// without benefit. See landvault-backend's AGENTS.md ("BVN was removed")
+// for the full reasoning and the condition under which it could
+// legitimately return.
 export interface Director {
   id: string;
   fullName: string;
@@ -121,7 +127,6 @@ export interface Director {
   nationality: string;
   idType: GovIdType;
   idNumber: string;
-  bvn?: string;
   ownershipPct: number;
   isBeneficialOwner: boolean;
 }
@@ -289,8 +294,8 @@ const MOCK_TENANTS: Tenant[] = [
       additionalPermits: [],
     },
     directors: [
-      { id: "dir-eg-1", fullName: "Ifeoma Balogun", role: "Executive Director", nationality: "Nigerian", idType: "NIN", idNumber: "12345678901", bvn: "22134455667", ownershipPct: 60, isBeneficialOwner: true },
-      { id: "dir-eg-2", fullName: "Chukwuma Eze", role: "Non-Executive Director", nationality: "Nigerian", idType: "NIN", idNumber: "98765432109", bvn: "33245566778", ownershipPct: 40, isBeneficialOwner: true },
+      { id: "dir-eg-1", fullName: "Ifeoma Balogun", role: "Executive Director", nationality: "Nigerian", idType: "NIN", idNumber: "12345678901", ownershipPct: 60, isBeneficialOwner: true },
+      { id: "dir-eg-2", fullName: "Chukwuma Eze", role: "Non-Executive Director", nationality: "Nigerian", idType: "NIN", idNumber: "98765432109", ownershipPct: 40, isBeneficialOwner: true },
     ],
     directorsAttestation: true,
     financial: {

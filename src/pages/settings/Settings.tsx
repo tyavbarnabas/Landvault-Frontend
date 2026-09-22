@@ -8,8 +8,10 @@ export default function Settings() {
   const { user, currency, setCurrency } = useApp();
   const [tab, setTab] = useState<Tab>("profile");
   const [saved, setSaved] = useState(false);
+  const [nameFirst, ...nameRest] = (user?.name || "").split(" ");
   const [form, setForm] = useState({
-    name: user?.name || "",
+    firstName: nameFirst || "",
+    lastName: nameRest.join(" "),
     email: user?.email || "",
     phone: user?.phone || "",
   });
@@ -68,7 +70,10 @@ export default function Settings() {
               </div>
 
               <form onSubmit={handleSave} className="space-y-4">
-                <FormField label="Full name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <FormField label="First name" value={form.firstName} onChange={(v) => setForm({ ...form, firstName: v })} />
+                  <FormField label="Last name" value={form.lastName} onChange={(v) => setForm({ ...form, lastName: v })} />
+                </div>
                 <FormField label="Email address" value={form.email} onChange={(v) => setForm({ ...form, email: v })} type="email" />
                 <FormField label="Phone number" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} type="tel" />
 

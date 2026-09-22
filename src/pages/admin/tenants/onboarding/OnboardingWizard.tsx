@@ -142,12 +142,11 @@ export default function OnboardingWizard() {
 
     const directors: Director[] = v.directors.map((d) => ({
       id: d.id,
-      fullName: d.fullName,
+      fullName: `${d.firstName} ${d.lastName}`.trim(),
       role: d.role,
       nationality: d.nationality,
       idType: d.idType,
       idNumber: d.idNumber,
-      bvn: d.bvn || undefined,
       ownershipPct: Number(d.ownershipPct),
       isBeneficialOwner: isBeneficialOwner(Number(d.ownershipPct)),
     }));
@@ -174,7 +173,7 @@ export default function OnboardingWizard() {
         operatingAddress: v.sameAsRegisteredAddress ? v.registeredAddress : v.operatingAddress,
         statesOfOperation: v.statesOfOperation,
       },
-      primaryContact: { fullName: v.fullName, roleTitle: v.roleTitle, workEmail: v.workEmail, phone: v.phone, govIdType: v.govIdType, govIdNumber: v.govIdNumber },
+      primaryContact: { fullName: `${v.firstName} ${v.lastName}`.trim(), roleTitle: v.roleTitle, workEmail: v.workEmail, phone: v.phone, govIdType: v.govIdType, govIdNumber: v.govIdNumber },
       presence: { companyEmail: v.companyEmail, companyPhone: v.companyPhone, website: v.website || undefined, socials: v.socials },
       plan: "starter",
     });

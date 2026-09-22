@@ -13,7 +13,7 @@ export default function Register() {
   const [searchParams] = useSearchParams();
   const { register, toggleWishlistItem } = useApp();
   const [step, setStep] = useState<Step>("details");
-  const [form, setForm] = useState({ name: "", email: "", phone: "", password: "", country: "NG", currency: "NGN" });
+  const [form, setForm] = useState({ firstName: "", lastName: "", email: "", phone: "", password: "", country: "NG", currency: "NGN" });
   const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -23,7 +23,7 @@ export default function Register() {
 
   const handleDetails = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name || !form.email || !form.password) { setError("Please fill in all required fields."); return; }
+    if (!form.firstName || !form.lastName || !form.email || !form.password) { setError("Please fill in all required fields."); return; }
     if (form.password.length < 8) { setError("Password must be at least 8 characters."); return; }
     setError("");
     setStep("country");
@@ -41,7 +41,8 @@ export default function Register() {
     setLoading(true);
     setTimeout(async () => {
       try {
-        await register({ name: form.name, email: form.email, phone: form.phone, country: form.country, currency: form.currency as Currency });
+        const fullName = `${form.firstName.trim()} ${form.lastName.trim()}`.trim();
+        await register({ name: fullName, email: form.email, phone: form.phone, country: form.country, currency: form.currency as Currency });
 
         // Complete a pending wishlist intent (see WishlistButton.tsx) before
         // returning the user to wherever they were. KYC belongs at purchase,
@@ -92,9 +93,15 @@ export default function Register() {
 
       {step === "details" && (
         <form onSubmit={handleDetails} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Full name</label>
-            <input value={form.name} onChange={set("name")} placeholder="Emeka Okonkwo" className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm" />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">First name</label>
+              <input value={form.firstName} onChange={set("firstName")} placeholder="Emeka" className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Last name</label>
+              <input value={form.lastName} onChange={set("lastName")} placeholder="Okonkwo" className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm" />
+            </div>
           </div>
           <div>
             <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Email address</label>

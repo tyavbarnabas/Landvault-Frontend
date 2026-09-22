@@ -36,22 +36,17 @@ export default function Step6Directors() {
                   Beneficial owner — requires enhanced verification
                 </div>
               )}
-              <div className="grid sm:grid-cols-2 gap-4">
-                <TextField label="Full name" required error={directorErrors?.fullName?.message} {...register(`directors.${i}.fullName`)} />
+              <div className="grid sm:grid-cols-3 gap-4">
+                <TextField label="First name" required error={directorErrors?.firstName?.message} {...register(`directors.${i}.firstName`)} />
+                <TextField label="Last name" required error={directorErrors?.lastName?.message} {...register(`directors.${i}.lastName`)} />
                 <TextField label="Role" required error={directorErrors?.role?.message} {...register(`directors.${i}.role`)} />
               </div>
-              <div className="grid sm:grid-cols-3 gap-4">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <TextField label="Nationality" required error={directorErrors?.nationality?.message} {...register(`directors.${i}.nationality`)} />
                 <SelectField label="ID type" required {...register(`directors.${i}.idType`)}>
                   {GOV_ID_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </SelectField>
                 <TextField label="ID number" required error={directorErrors?.idNumber?.message} {...register(`directors.${i}.idNumber`)} />
-              </div>
-              <div className="grid sm:grid-cols-2 gap-4">
-                <TextField
-                  label="BVN (optional, sensitive)"
-                  {...register(`directors.${i}.bvn`)}
-                />
                 <TextField
                   label="Ownership %"
                   type="number"

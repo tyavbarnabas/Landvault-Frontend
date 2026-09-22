@@ -36,7 +36,7 @@ export default function Step8Review({ onEditStep }: { onEditStep: (index: number
     {
       title: STEP_LABELS[1], stepIndex: 1,
       rows: [
-        { label: "Name", value: v.fullName },
+        { label: "Name", value: v.firstName || v.lastName ? `${v.firstName ?? ""} ${v.lastName ?? ""}`.trim() : undefined },
         { label: "Role", value: v.roleTitle },
         { label: "Work email", value: v.workEmail },
         { label: "Phone", value: v.phone },

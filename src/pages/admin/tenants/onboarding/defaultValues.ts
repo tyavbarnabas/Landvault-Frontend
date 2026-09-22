@@ -18,7 +18,8 @@ export function getOnboardingDefaultValues(): TenantOnboardingValues {
     sameAsRegisteredAddress: true,
     statesOfOperation: [],
 
-    fullName: "",
+    firstName: "",
+    lastName: "",
     roleTitle: "",
     workEmail: "",
     phone: "+234",
@@ -45,7 +46,7 @@ export function getOnboardingDefaultValues(): TenantOnboardingValues {
     additionalPermits: [],
 
     directors: [
-      { id: newLocalId("director"), fullName: "", role: "", nationality: "Nigerian", idType: "NIN", idNumber: "", bvn: "", ownershipPct: 0 },
+      { id: newLocalId("director"), firstName: "", lastName: "", role: "", nationality: "Nigerian", idType: "NIN", idNumber: "", ownershipPct: 0 },
     ],
     attestation: false,
 
@@ -61,7 +62,7 @@ export function getOnboardingDefaultValues(): TenantOnboardingValues {
 }
 
 export function newDirector() {
-  return { id: newLocalId("director"), fullName: "", role: "", nationality: "Nigerian", idType: "NIN" as const, idNumber: "", bvn: "", ownershipPct: 0 };
+  return { id: newLocalId("director"), firstName: "", lastName: "", role: "", nationality: "Nigerian", idType: "NIN" as const, idNumber: "", ownershipPct: 0 };
 }
 
 export function newStateRegulatorEntry() {
@@ -76,7 +77,7 @@ export function newPermit() {
 // validate only the current step before advancing.
 export const STEP_FIELDS: (keyof TenantOnboardingValues | `${string}.${string}`)[][] = [
   ["registeredName", "tradingName", "rcNumber", "companyType", "dateOfIncorporation", "registeredAddress", "operatingAddress", "statesOfOperation"],
-  ["fullName", "roleTitle", "workEmail", "phone", "govIdType", "govIdNumber"],
+  ["firstName", "lastName", "roleTitle", "workEmail", "phone", "govIdType", "govIdNumber"],
   ["companyEmail", "companyPhone", "website", "socials"],
   ["cacCertificate", "cacStatusReport", "tinNumber", "tinDocument", "proofOfAddress"],
   ["scumlNumber", "scumlCertificate", "lasreraRegNumber", "lasreraDocument", "otherStateRegulators", "redanNumber", "additionalPermits"],

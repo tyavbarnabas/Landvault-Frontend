@@ -14,10 +14,14 @@
 // an offer). This file only merges, filters, and sorts for browsing.
 
 import {
-  fetchListings as fetchPrimaryListings, fromPrice, cheapestTier, pricePerSqm,
-  type Listing, type ListingFilters, type TitleType,
+  fetchListings as fetchPrimaryListings, fetchListingById as fetchPrimaryListingById,
+  fromPrice, cheapestTier, pricePerSqm,
+  type Listing, type ListingFilters, type TitleType, type WishlistItem,
 } from "./marketplaceService";
-import { fetchListings as fetchResaleListingsRaw, type ResaleListing } from "./resaleService";
+import {
+  fetchListings as fetchResaleListingsRaw, fetchListingById as fetchResaleListingById,
+  type ResaleListing,
+} from "./resaleService";
 import type { NigerianState } from "../data/nigerianStates";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 
@@ -97,6 +101,27 @@ export function listingPlotsRemaining(item: MarketplaceListing): number {
 
 export function listingSortDate(item: MarketplaceListing): string {
   return item.listingType === "primary" ? item.data.publishedDate : item.data.createdAt;
+}
+
+// Where a listing's own detail page lives. The two types deliberately sit on
+// different path shapes (a 1-segment estate id vs a 2-segment resale id) so
+// they can never collide — see MarketplaceResaleDetail.tsx.
+export function listingRoute(item: MarketplaceListing): string {
+  return item.listingType === "primary" ? `/marketplace/${item.data.id}` : `/marketplace/resale/${item.data.id}`;
+}
+
+// Re-reads a saved wishlist entry from whichever side actually owns it, and
+// hands back the tagged union. Every caller re-fetches live rather than
+// trusting the saved copy — WishlistItem.priceAtSave is a historical marker
+// for the delta only, never "the price". Returns null when the listing is
+// gone entirely (delisted, or an id that no longer resolves).
+export async function fetchWishlistListing(saved: WishlistItem): Promise<MarketplaceListing | null> {
+  if (saved.listingType === "resale") {
+    const listing = await fetchResaleListingById(saved.listingId);
+    return listing ? { listingType: "resale", data: listing } : null;
+  }
+  const listing = await fetchPrimaryListingById(saved.listingId);
+  return listing ? { listingType: "primary", data: listing } : null;
 }
 
 function listingQueryText(item: MarketplaceListing): string {

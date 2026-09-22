@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
-import { fetchListingById as fetchPrimaryListingById, fromPrice } from "../../services/marketplaceService";
-import { fetchListingById as fetchResaleListingById, type ResaleListing } from "../../services/resaleService";
-import type { MarketplaceListing } from "../../services/marketplaceFeedService";
+import type { ResaleListing } from "../../services/resaleService";
+import { fetchWishlistListing, listingFromPrice, type MarketplaceListing } from "../../services/marketplaceFeedService";
 import ListingCard from "../../components/marketplace/ListingCard";
 import ListingTypeBadge from "../../components/marketplace/ListingTypeBadge";
 import EmptyState from "../../components/marketplace/EmptyState";
@@ -38,18 +37,15 @@ export default function Wishlist() {
 
     Promise.all(
       wishlist.map(async (saved) => {
-        if (saved.listingType === "resale") {
-          const listing = await fetchResaleListingById(saved.listingId);
-          if (!listing) return null;
-          if (listing.status !== "active") return { kind: "unavailable" as const, listing };
-          return { kind: "entry" as const, item: { listingType: "resale" as const, data: listing }, priceChangeSinceSaved: listing.asking - saved.priceAtSave };
-        }
         // Always re-fetched live — nothing here is a stored copy of the
         // listing. priceAtSave is only ever used for the delta below, never
         // to render "the price" itself.
-        const listing = await fetchPrimaryListingById(saved.listingId);
-        if (!listing) return null;
-        return { kind: "entry" as const, item: { listingType: "primary" as const, data: listing }, priceChangeSinceSaved: fromPrice(listing) - saved.priceAtSave };
+        const item = await fetchWishlistListing(saved);
+        if (!item) return null;
+        if (item.listingType === "resale" && item.data.status !== "active") {
+          return { kind: "unavailable" as const, listing: item.data };
+        }
+        return { kind: "entry" as const, item, priceChangeSinceSaved: listingFromPrice(item) - saved.priceAtSave };
       })
     ).then((results) => {
       if (cancelled) return;

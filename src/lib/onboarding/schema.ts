@@ -60,7 +60,8 @@ export type CompanyIdentityValues = z.infer<typeof companyIdentitySchema>;
 export const GOV_ID_TYPES = ["NIN", "International Passport"] as const;
 
 export const primaryContactSchema = z.object({
-  fullName: z.string().min(2, "Full name is required."),
+  firstName: z.string().min(1, "First name is required."),
+  lastName: z.string().min(1, "Last name is required."),
   roleTitle: z.string().min(1, "Role / job title is required."),
   workEmail: z.string().email("Enter a valid work email."),
   phone: z.string().min(8, "Enter a valid phone number."),
@@ -125,18 +126,24 @@ export type RegulatoryValues = z.infer<typeof regulatorySchema>;
 
 export const BENEFICIAL_OWNER_THRESHOLD = 25;
 
-// SENSITIVE: idNumber and bvn are NDPR-regulated personal data.
+// SENSITIVE: idNumber is NDPR-regulated personal data.
 // TODO (backend): encrypt at rest, log every read against the director record
 // (see SA-2.2 global user lookup's audit requirement), and define a retention
 // policy — don't keep these longer than a documented compliance need.
+//
+// No bvn field: BVN was collected here once and removed — it was never
+// verified against anything (no NIBSS integration exists), so it was
+// liability without benefit. See landvault-backend's AGENTS.md ("BVN was
+// removed") for the full reasoning and the condition under which it could
+// legitimately return.
 export const directorSchema = z.object({
   id: z.string(),
-  fullName: z.string().min(2, "Director name is required."),
+  firstName: z.string().min(1, "Director's first name is required."),
+  lastName: z.string().min(1, "Director's last name is required."),
   role: z.string().min(1, "Director's role is required."),
   nationality: z.string().min(1, "Nationality is required."),
   idType: z.enum(GOV_ID_TYPES),
   idNumber: z.string().min(4, "ID number is required."),
-  bvn: z.string().optional(),
   ownershipPct: z.number({ error: "Enter a number." }).min(0, "Must be 0 or more.").max(100, "Cannot exceed 100%."),
 });
 export type DirectorValues = z.infer<typeof directorSchema>;

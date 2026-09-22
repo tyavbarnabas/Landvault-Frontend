@@ -44,7 +44,6 @@ export default function TenantDetail() {
   const [reviewAction, setReviewAction] = useState<"reject" | "request_info" | null>(null);
   const [reviewReason, setReviewReason] = useState("");
   const [failedDocIds, setFailedDocIds] = useState<Set<string>>(new Set());
-  const [revealedBvn, setRevealedBvn] = useState<Set<string>>(new Set());
 
   const load = async () => {
     if (!id) return;
@@ -281,11 +280,6 @@ export default function TenantDetail() {
                 <div>
                   <div className="text-sm font-medium text-[var(--foreground)]">{d.fullName} — {d.role}</div>
                   <div className="text-xs text-[var(--muted-foreground)]">{d.nationality} · {d.idType} {d.idNumber} · Ownership {d.ownershipPct}%</div>
-                  {d.bvn && (
-                    <div className="text-xs text-[var(--muted-foreground)] mt-0.5">
-                      BVN: <MaskedValue value={d.bvn} revealed={revealedBvn.has(d.id)} onToggle={() => setRevealedBvn((prev) => { const next = new Set(prev); next.has(d.id) ? next.delete(d.id) : next.add(d.id); return next; })} />
-                    </div>
-                  )}
                 </div>
                 {d.isBeneficialOwner && <StatusBadge label="Beneficial owner" variant="warning" />}
               </div>
@@ -466,18 +460,6 @@ function Checkbox({ label, checked, onChange }: { label: string; checked: boolea
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="w-4 h-4 accent-[var(--accent)]" />
       {label}
     </label>
-  );
-}
-
-// Sensitive data (see the SENSITIVE comment on Director in tenantsService.ts)
-// — masked to the last 4 digits by default, revealed only on demand.
-function MaskedValue({ value, revealed, onToggle }: { value: string; revealed: boolean; onToggle: () => void }) {
-  const masked = `${"•".repeat(Math.max(0, value.length - 4))}${value.slice(-4)}`;
-  return (
-    <span className="font-mono-data">
-      {revealed ? value : masked}{" "}
-      <button type="button" onClick={onToggle} className="text-[var(--accent)] hover:underline">{revealed ? "Hide" : "Reveal"}</button>
-    </span>
   );
 }
 

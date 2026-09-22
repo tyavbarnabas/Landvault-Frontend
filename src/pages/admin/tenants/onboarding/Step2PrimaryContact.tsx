@@ -14,9 +14,11 @@ export default function Step2PrimaryContact() {
       </div>
 
       <div className="grid sm:grid-cols-2 gap-4">
-        <TextField label="Full name" required error={errors.fullName?.message} {...register("fullName")} />
-        <TextField label="Role / job title" required placeholder="e.g. Managing Director" error={errors.roleTitle?.message} {...register("roleTitle")} />
+        <TextField label="First name" required error={errors.firstName?.message} {...register("firstName")} />
+        <TextField label="Last name" required error={errors.lastName?.message} {...register("lastName")} />
       </div>
+
+      <TextField label="Role / job title" required placeholder="e.g. Managing Director" error={errors.roleTitle?.message} {...register("roleTitle")} />
 
       <TextField label="Work email" type="email" required placeholder="name@company.com" error={errors.workEmail?.message} {...register("workEmail")} />
 
