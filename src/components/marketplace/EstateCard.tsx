@@ -2,6 +2,9 @@ import { Link } from "react-router-dom";
 import { formatAmount } from "../../data/mockData";
 import { formatCompactCurrency } from "../../lib/formatCurrency";
 import { fromPrice, cheapestTier, pricePerSqm, type Listing } from "../../services/marketplaceService";
+import { fetchCostDisclosure, tierCommitmentForLandPrice } from "../../services/costDisclosureService";
+import { useFetch } from "../../lib/useFetch";
+import MoneyRangeDisplay from "../cost/MoneyRangeDisplay";
 import ListingTypeBadge from "./ListingTypeBadge";
 import SellerLine from "./SellerLine";
 import WishlistButton from "./WishlistButton";
@@ -15,6 +18,13 @@ interface EstateCardProps {
 
 export default function EstateCard({ listing, priceChangeSinceSaved }: EstateCardProps) {
   const from = fromPrice(listing);
+  // TODO (backend): one public request per card. A real feed endpoint should
+  // return each listing's commitment alongside it (or expose a batch lookup)
+  // rather than the client fanning out — see costDisclosureService.ts.
+  const { data: disclosure } = useFetch(() => fetchCostDisclosure(listing.id), [listing.id]);
+  // Matched to the exact tier this card's "from" price belongs to. No match
+  // means no total is shown — never a total taken from a different tier.
+  const commitment = tierCommitmentForLandPrice(disclosure, from);
   const perSqm = pricePerSqm(cheapestTier(listing));
   const sizes = listing.priceTiers.map((t) => t.sizeSqm);
   const sizeRange = sizes.length > 1 ? `${Math.min(...sizes)}–${Math.max(...sizes)} sqm` : `${sizes[0]} sqm`;
@@ -56,6 +66,15 @@ export default function EstateCard({ listing, priceChangeSinceSaved }: EstateCar
             </span>
           )}
         </div>
+        {/* Land price AND total commitment, never one in place of the other:
+            buyers search on land price and compare it against listings
+            elsewhere, but two estates at the same land price are not the same
+            offer once fees are counted. */}
+        {commitment && (
+          <div className="text-xs text-[var(--foreground)] mb-1">
+            true total <MoneyRangeDisplay money={commitment.totalCommitment} compact className="font-mono-data font-semibold" />
+          </div>
+        )}
         <div className="text-xs text-[var(--muted-foreground)] mb-2.5" title="Price per sqm at the lowest available tier — the honest way to compare differently sized plots">
           {formatAmount(perSqm, "NGN")}/sqm
         </div>

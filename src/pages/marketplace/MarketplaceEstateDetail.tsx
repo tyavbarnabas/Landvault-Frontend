@@ -9,6 +9,8 @@ import WishlistButton from "../../components/marketplace/WishlistButton";
 import EstateCard from "../../components/marketplace/EstateCard";
 import EnquiryPanel from "../../components/marketplace/EnquiryPanel";
 import { CAPABILITIES } from "../../lib/capabilities";
+import { fetchCostDisclosure, tierCommitmentForSize, type EstateCostDisclosure } from "../../services/costDisclosureService";
+import CostDisclosureSection from "../../components/cost/CostDisclosureSection";
 
 export default function MarketplaceEstateDetail() {
   const { estateId } = useParams<{ estateId: string }>();
@@ -18,6 +20,7 @@ export default function MarketplaceEstateDetail() {
 
   const [listing, setListing] = useState<Listing | undefined>();
   const [similar, setSimilar] = useState<Listing[]>([]);
+  const [disclosure, setDisclosure] = useState<EstateCostDisclosure | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedSizeSqm, setSelectedSizeSqm] = useState<number | null>(null);
   const [enquiryOpen, setEnquiryOpen] = useState(false);
@@ -25,9 +28,12 @@ export default function MarketplaceEstateDetail() {
   useEffect(() => {
     if (!estateId) return;
     setLoading(true);
-    Promise.all([fetchListingById(estateId), fetchSimilarListings(estateId)]).then(([l, s]) => {
+    // Cost disclosure is fetched with the listing, not behind a click — it is
+    // public and must be readable without an account (CD-11).
+    Promise.all([fetchListingById(estateId), fetchSimilarListings(estateId), fetchCostDisclosure(estateId)]).then(([l, s, d]) => {
       setListing(l);
       setSimilar(s);
+      setDisclosure(d);
       setSelectedSizeSqm(null);
       setLoading(false);
     });
@@ -43,6 +49,15 @@ export default function MarketplaceEstateDetail() {
   };
 
   const selectedTier = listing.priceTiers.find((t) => t.sizeSqm === selectedSizeSqm);
+
+  // Falls back to the estate's cheapest declared tier so a total is visible
+  // on arrival — a real tier's real figure, labelled with its own size, never
+  // a blend across tiers.
+  const commitmentTier =
+    tierCommitmentForSize(disclosure, selectedSizeSqm ?? -1) ??
+    (disclosure?.status === "declared"
+      ? disclosure.tiers.reduce<typeof disclosure.tiers[number] | null>((cheapest, t) => (!cheapest || t.landPrice < cheapest.landPrice ? t : cheapest), null)
+      : null);
 
   return (
     <div className="max-w-5xl mx-auto p-6">
@@ -92,6 +107,15 @@ export default function MarketplaceEstateDetail() {
         <h2 className="text-sm font-semibold text-[var(--foreground)] mb-3">Plot sizes & pricing</h2>
         <PriceTierTable tiers={listing.priceTiers} cornerPremiumPct={listing.cornerPremiumPct} currency={currency} selectedSizeSqm={selectedSizeSqm} onSelectSize={setSelectedSizeSqm} />
       </section>
+
+      {/* What this actually costs — absent entirely for an estate that has
+          declared nothing, rather than rendered as zero. */}
+      {disclosure && (
+        <section className="mb-8">
+          <h2 className="text-sm font-semibold text-[var(--foreground)] mb-3">What this actually costs</h2>
+          <CostDisclosureSection disclosure={disclosure} tier={commitmentTier} />
+        </section>
+      )}
 
       {/* Plot canvas — select a specific plot at this size tier */}
       {selectedTier && (

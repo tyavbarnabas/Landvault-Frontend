@@ -63,9 +63,13 @@ export default function PriceTierTable({ tiers, cornerPremiumPct, currency, sele
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-[var(--muted-foreground)] mt-2.5">
-        Corner plots carry a {cornerPremiumPct}% premium on their tier's price — dual road frontage and a larger effective frontage.
-      </p>
+      {/* Only when the estate actually charges one — "a 0% premium" reads as
+          a missing value rather than a real term. */}
+      {cornerPremiumPct > 0 && (
+        <p className="text-xs text-[var(--muted-foreground)] mt-2.5">
+          Corner plots carry a {cornerPremiumPct}% premium on their tier's price — dual road frontage and a larger effective frontage.
+        </p>
+      )}
     </div>
   );
 }

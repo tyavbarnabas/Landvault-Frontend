@@ -11,6 +11,8 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { formatAmount } from "../../data/mockData";
 import { useApp } from "../../contexts/AppContext";
 import { useFetch } from "../../lib/useFetch";
+import { fetchCostDisclosure, tierCommitmentForSize } from "../../services/costDisclosureService";
+import CostDisclosureSection from "../../components/cost/CostDisclosureSection";
 import ErrorBoundary from "../../components/ErrorBoundary";
 import { fetchListingById, type Listing, type PaymentPlanType } from "../../services/marketplaceService";
 import { fetchPlotById, plotLabel, priceForPlot, type ListingPlot } from "../../services/marketplacePlotsService";
@@ -46,12 +48,13 @@ export default function MarketplaceCheckout() {
   const [loading, setLoading] = useState(false);
 
   const { data: listingAndPlot, loading: pageLoading } = useFetch(async () => {
-    if (!listingId || !plotId) return { listing: null, plot: null };
-    const [listing, plot] = await Promise.all([fetchListingById(listingId), fetchPlotById(listingId, plotId)]);
-    return { listing: listing ?? null, plot: plot ?? null };
+    if (!listingId || !plotId) return { listing: null, plot: null, disclosure: null };
+    const [listing, plot, disclosure] = await Promise.all([fetchListingById(listingId), fetchPlotById(listingId, plotId), fetchCostDisclosure(listingId)]);
+    return { listing: listing ?? null, plot: plot ?? null, disclosure };
   }, [listingId, plotId]);
   const listing = listingAndPlot?.listing ?? null;
   const plot = listingAndPlot?.plot ?? null;
+  const disclosure = listingAndPlot?.disclosure ?? null;
 
   useEffect(() => {
     if (!user) return;
@@ -195,6 +198,18 @@ export default function MarketplaceCheckout() {
                     </div>
                   </div>
                 </div>
+                {/* The full cost, before the reserve action completes. Every
+                    term here is already disclosed by developers — in a letter
+                    issued after the buyer has paid. The failure is sequence,
+                    not secrecy, and this is the last moment disclosure can
+                    still change the decision. */}
+                {disclosure && (
+                  <div className="mb-6">
+                    <h3 className="font-semibold text-sm mb-3">What this commits you to</h3>
+                    <CostDisclosureSection disclosure={disclosure} tier={tierCommitmentForSize(disclosure, plot.sizeSqm)} />
+                  </div>
+                )}
+
                 <button onClick={handleConfirmReserve} disabled={loading} className="w-full py-3 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-60">
                   {loading ? "Starting your hold…" : "Confirm & continue →"}
                 </button>

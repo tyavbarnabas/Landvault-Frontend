@@ -408,6 +408,28 @@ const crownCourtPlots = generatePlots(
 );
 pinTierAvailability(crownCourtPlots, 700, 0); // sold_out
 
+// An affordable outer-corridor estate — the price point where fee loading
+// bites hardest. Its tiers and fee schedule come from a real August 2026
+// offer/allocation letter (see costDisclosureService.ts): ₦4,500,000 of land
+// carrying ₦8,110,000 of declared fees.
+const greenfieldParkPlots = generatePlots(
+  10, 12,
+  [
+    { sizeSqm: 180, price: 4_500_000 },
+    { sizeSqm: 300, price: 7_200_000 },
+  ],
+  10, 0.3, 0.1,
+);
+
+// The second cost-disclosure fixture: land ₦6,000,000 carrying ₦4,010,000 of
+// declared fees. Its ₦6,000,000 is the source letter's own price for a
+// 250 sqm CORNER plot, so this estate charges no further corner premium.
+const doubleKingEstatePlots = generatePlots(
+  8, 10,
+  [{ sizeSqm: 250, price: 6_000_000 }],
+  0, 0.3, 0.1,
+);
+
 // 8th estate — deliberately overlaps Peaceland's real footprint below (see
 // listingConflictsService.ts). A small, recently-verified second seller
 // re-listing land that's already sold under a different name is exactly the
@@ -423,6 +445,59 @@ const lekkiGrandCourtPlots = generatePlots(
 );
 
 export const ESTATES: Estate[] = [
+  {
+    id: "greenfield-park",
+    name: "Greenfield Park",
+    area: "Mowe",
+    city: "Ogun",
+    state: "Ogun",
+    location: "Mowe, Ogun",
+    tenantId: "estintin-group",
+    branchId: "heritage",
+    ...estateStats(greenfieldParkPlots),
+    imageUrl: "https://images.unsplash.com/photo-1449844908441-8829872d2607?w=800&h=600&fit=crop&auto=format",
+    amenities: ["Perimeter Fencing", "Motorable Roads", "Drainage System"],
+    titleType: "Gazette",
+    titleVerified: true,
+    lastVerified: "2026-06-18",
+    agisRegistration: { status: "not_checked" },
+    cornerPremiumPct: 10,
+    description: "An affordable residential layout along the Lagos–Ibadan corridor at Mowe, sold on outright and instalment terms with a declared infrastructure levy.",
+    plots: greenfieldParkPlots,
+    rows: 10,
+    cols: 12,
+    paymentPlans: ["outright", "installment"],
+    intent: "development",
+    publishedDate: "2026-06-20",
+    published: true,
+    footprint: rectFootprint(6.8103, 3.4391, 0.0026, 0.0029), // Mowe, Ogun
+  },
+  {
+    id: "double-king-estate",
+    name: "Double King Estate",
+    area: "Mowe",
+    city: "Ogun",
+    state: "Ogun",
+    location: "Mowe, Ogun",
+    tenantId: "estintin-group",
+    branchId: "double-king",
+    ...estateStats(doubleKingEstatePlots),
+    imageUrl: "https://images.unsplash.com/photo-1523217582562-09d0def993a6?w=800&h=600&fit=crop&auto=format",
+    amenities: ["Perimeter Fencing", "Motorable Roads", "Gate House"],
+    titleType: "Gazette",
+    titleVerified: true,
+    lastVerified: "2026-08-05",
+    cornerPremiumPct: 0,
+    description: "A residential layout on the Lagos–Ibadan corridor, sold with a declared infrastructure schedule payable in stages as building progresses.",
+    plots: doubleKingEstatePlots,
+    rows: 8,
+    cols: 10,
+    paymentPlans: ["outright", "installment"],
+    intent: "development",
+    publishedDate: "2026-08-12",
+    published: true,
+    footprint: rectFootprint(6.8221, 3.4508, 0.0024, 0.0026), // Mowe, Ogun
+  },
   {
     id: "peaceland",
     name: "Peaceland",
