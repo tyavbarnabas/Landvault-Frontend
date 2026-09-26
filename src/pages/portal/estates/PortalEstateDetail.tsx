@@ -91,7 +91,12 @@ export default function PortalEstateDetail() {
       </section>
 
       <section className="mb-8">
-        <h2 className="text-sm font-semibold text-[var(--foreground)] mb-3">Inventory</h2>
+        <div className="flex items-center justify-between gap-4 mb-3">
+          <h2 className="text-sm font-semibold text-[var(--foreground)]">Inventory</h2>
+          <Link to={`/portal/estates/${estate.id}/inventory`} className="text-xs font-semibold text-[var(--accent)] hover:underline">
+            Manage tiers &amp; plots →
+          </Link>
+        </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <Stat label="Total plots" value={estate.totalPlots.toString()} />
           <Stat label="Available" value={estate.availablePlots.toString()} />
@@ -100,7 +105,7 @@ export default function PortalEstateDetail() {
         </div>
         {estate.totalPlots === 0 ? (
           <p className="text-xs text-[var(--muted-foreground)] mt-3">
-            No plots yet. Blocks, price tiers and plot creation come in a later release.
+            No plots yet. Add price tiers, then create plots priced by them.
           </p>
         ) : (
           <p className="text-xs text-[var(--muted-foreground)] mt-3 font-mono-data">

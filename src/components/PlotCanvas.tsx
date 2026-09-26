@@ -20,6 +20,7 @@ import { useRef, useState } from "react";
 import { useApp } from "../contexts/AppContext";
 import ErrorBoundary from "./ErrorBoundary";
 import { formatAmount } from "../data/mockData";
+import { STATUS_COLORS, STATUS_LABELS } from "../lib/plotStatus";
 import { CAPABILITIES } from "../lib/capabilities";
 import { AGIS_LAYER_LABELS, AGIS_LAYER_COLORS, isAffected, type AGISLayer } from "../services/agisService";
 import { plotLabel, type ListingPlot, type PlotStatus } from "../services/marketplacePlotsService";
@@ -51,19 +52,6 @@ interface PlotCanvasProps {
   showAgisControls?: boolean;
 }
 
-const STATUS_COLORS: Record<PlotStatus, string> = {
-  "available-dev": "#16A34A",
-  "available-inv": "#2563EB",
-  reserved: "#D97706",
-  sold: "#DC2626",
-};
-
-const STATUS_LABELS: Record<PlotStatus, string> = {
-  "available-dev": "Available — development",
-  "available-inv": "Available — investment",
-  reserved: "Reserved / pending",
-  sold: "Sold / allocated",
-};
 
 const CELL_SIZE = 22;
 const GAP = 3;

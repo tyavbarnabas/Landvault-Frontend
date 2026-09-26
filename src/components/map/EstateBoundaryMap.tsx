@@ -14,12 +14,23 @@ import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import * as L from "leaflet";
 import type { GeoJsonFeatureCollection } from "../../services/portalEstatesService";
 
+// Leaflet's own PathOptions, narrowed to what callers actually set.
+export interface FeatureStyle {
+  color: string;
+  weight?: number;
+  fillOpacity?: number;
+}
+
 interface EstateBoundaryMapProps {
   boundary: GeoJsonFeatureCollection;
   // An explicit height is required: `height: 100%` inside a parent with no
   // height of its own produces a zero-height map and no visible error.
   heightClass?: string;
   label?: string;
+  // Per-feature styling, so one collection can carry an estate boundary and
+  // its plots coloured by status. Omitted = the single boundary style below.
+  styleForFeature?: (properties: Record<string, unknown>) => FeatureStyle;
+  legend?: { color: string; label: string }[];
 }
 
 // Free, no account needed. A production tile provider (imagery licensing,
@@ -38,7 +49,7 @@ function FitToBoundary({ bounds }: { bounds: L.LatLngBoundsExpression }) {
   return null;
 }
 
-export default function EstateBoundaryMap({ boundary, heightClass = "h-80", label }: EstateBoundaryMapProps) {
+export default function EstateBoundaryMap({ boundary, heightClass = "h-80", label, styleForFeature, legend }: EstateBoundaryMapProps) {
   // Leaflet's own helper does the [lng, lat] → [lat, lng] conversion. Doing
   // that by hand is exactly where the swap bug creeps back in, so it is never
   // done by hand anywhere in this app.
@@ -51,9 +62,27 @@ export default function EstateBoundaryMap({ boundary, heightClass = "h-80", labe
       <MapContainer bounds={bounds} scrollWheelZoom={false} className="w-full h-full" aria-label={label ?? "Estate boundary on satellite imagery"}>
         <TileLayer url={ESRI_IMAGERY_URL} attribution={ESRI_ATTRIBUTION} maxZoom={19} />
         {/* Leaflet's GeoJSON component, never a hand-built Polygon. */}
-        <GeoJSON data={boundary as never} style={{ color: "#f59e0b", weight: 2, fillOpacity: 0.15 }} />
+        <GeoJSON
+          // Keyed on the feature count so adding plots re-renders the layer —
+          // Leaflet's GeoJSON caches its data prop otherwise.
+          key={boundary.features.length}
+          data={boundary as never}
+          style={(feature) => (styleForFeature
+            ? styleForFeature((feature?.properties ?? {}) as Record<string, unknown>)
+            : { color: "#f59e0b", weight: 2, fillOpacity: 0.15 })}
+        />
         <FitToBoundary bounds={bounds} />
       </MapContainer>
+      {legend && legend.length > 0 && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 px-3 py-2 bg-[var(--card)] border-t border-[var(--border)]">
+          {legend.map((entry) => (
+            <span key={entry.label} className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
+              <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: entry.color }} aria-hidden="true" />
+              {entry.label}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

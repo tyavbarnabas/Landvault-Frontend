@@ -43,6 +43,8 @@ import Support from "./pages/support/Support";
 const PortalEstateList = lazy(() => import("./pages/portal/estates/PortalEstateList"));
 const CreatePortalEstate = lazy(() => import("./pages/portal/estates/CreatePortalEstate"));
 const PortalEstateDetail = lazy(() => import("./pages/portal/estates/PortalEstateDetail"));
+const PortalEstateInventory = lazy(() => import("./pages/portal/estates/PortalEstateInventory"));
+const CreatePortalPlots = lazy(() => import("./pages/portal/estates/CreatePortalPlots"));
 const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
 const TenantDirectory = lazy(() => import("./pages/admin/tenants/TenantDirectory"));
 const CreateTenant = lazy(() => import("./pages/admin/tenants/CreateTenant"));
@@ -193,6 +195,8 @@ function AppRoutes() {
       <Route path="/portal/estates" element={<PortalPage><PortalEstateList /></PortalPage>} />
       <Route path="/portal/estates/new" element={<PortalPage><CreatePortalEstate /></PortalPage>} />
       <Route path="/portal/estates/:estateId" element={<PortalPage><PortalEstateDetail /></PortalPage>} />
+      <Route path="/portal/estates/:estateId/inventory" element={<PortalPage><PortalEstateInventory /></PortalPage>} />
+      <Route path="/portal/estates/:estateId/plots/new" element={<PortalPage><CreatePortalPlots /></PortalPage>} />
 
       <Route path="/admin/dashboard" element={<AdminPage><AdminDashboard /></AdminPage>} />
       <Route path="/admin/tenants" element={<AdminPage><TenantDirectory /></AdminPage>} />
