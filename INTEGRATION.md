@@ -77,7 +77,14 @@ Worth noting the conflict check has no boolean of its own: the frontend infers a
 
 Branch scoping is enforced server-side by RLS either way; this is about the portal knowing its own scope well enough to label the UI honestly ("your branch's estates" vs "every estate across your company's branches") without a second round trip to a debug surface. `AuthUser.tenantId`/`branchId` are already optional on the frontend for exactly this reason.
 
+### 3. Add a session-authenticated change-password endpoint
+
+`mustChangePassword` is returned and now routed on, but **there is no endpoint to change a password with the current one**. `SuperAdminBootstrap` says so in as many words: *"the endpoint doesn't exist"*.
+
+So `/change-password` completes using the two endpoints that DO exist — `forgot-password` to email a code, then `reset-password`. That works, but it verifies against the account's mailbox rather than against the password the user just typed, and it means a bootstrapped admin needs working email before they can retire a temporary password. A `POST /api/auth/change-password` taking `{currentPassword, newPassword}` would let the screen do what its name says.
+
 ### Also worth a look, lower priority
 
-- `POST /api/auth/login`'s Javadoc says "OTP is a TODO", but `TwoFactorController` and `TwoFactorChallengeResponse` exist. The frontend's login still runs a **cosmetic** OTP step that accepts any six digits; it should be wired to the real challenge/verify pair, which needs the login response's shape for a 2FA-required outcome pinned down.
-- `AuthUserResponse` carries `mustChangePassword`, `mustSetUpTwoFa` and `recoveryCodesRemaining`, which the frontend now models but does not yet route on — no change-password or 2FA-setup screen exists.
+- **`POST /api/auth/login`'s OpenAPI description says to "check for a `challengeId` field".** `TwoFactorChallengeResponse` has no such field — it is `challengeToken`. The frontend discriminates on `twoFactorRequired`, which is unambiguous, but the description is misleading and worth correcting.
+- Login's Javadoc still says "OTP is a TODO" even though `TwoFactorController` is complete — the frontend is now wired to the real challenge/verify pair, so that comment is stale.
+- *(Resolved on the frontend 2026-09-26: the cosmetic OTP step is gone, and `mustChangePassword` / `mustSetUpTwoFa` / `recoveryCodesRemaining` are all routed on or displayed.)*

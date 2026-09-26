@@ -13,6 +13,8 @@ import Landing from "./pages/Landing";
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
 import ForgotPassword from "./pages/auth/ForgotPassword";
+import ResetPassword from "./pages/auth/ResetPassword";
+import ChangePassword from "./pages/auth/ChangePassword";
 
 // Onboarding — lazy: a one-time wizard most sessions never load.
 const KYC = lazy(() => import("./pages/onboarding/KYC"));
@@ -41,6 +43,7 @@ import Support from "./pages/support/Support";
 
 // Super Admin (platform operator console) — lazy: an entire surface a
 // client-role session never navigates into at all.
+const TwoFactorSetupPage = lazy(() => import("./pages/auth/TwoFactorSetupPage"));
 const PortalEstateList = lazy(() => import("./pages/portal/estates/PortalEstateList"));
 const CreatePortalEstate = lazy(() => import("./pages/portal/estates/CreatePortalEstate"));
 const PortalEstateDetail = lazy(() => import("./pages/portal/estates/PortalEstateDetail"));
@@ -140,6 +143,10 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      {/* Routed to on mustChangePassword / mustSetUpTwoFa — never blocked on. */}
+      <Route path="/change-password" element={<PrivateRoute><ChangePassword /></PrivateRoute>} />
+      <Route path="/security/two-factor" element={<AppPage><TwoFactorSetupPage /></AppPage>} />
       <Route path="/onboarding/kyc" element={<Suspense fallback={<PageLoading />}><KYC /></Suspense>} />
 
       {/* Checkout — the legacy internal flow is retired; MarketplaceCheckout

@@ -1,6 +1,10 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import type { Currency } from "../data/mockData";
-import { login as loginRequest, logout as logoutRequest, register as registerRequest, MOCK_CLIENT_USER, type AuthUser, type RegisterInput } from "../services/authService";
+import {
+  login as loginRequest, logout as logoutRequest, register as registerRequest,
+  verifyTwoFactor as verifyTwoFactorRequest,
+  MOCK_CLIENT_USER, type AuthUser, type LoginOutcome, type RegisterInput,
+} from "../services/authService";
 import { fetchNotifications, markNotificationRead as markNotificationReadRequest, addNotification as addNotificationRequest, type Notification } from "../services/notificationsService";
 import type { WishlistItem } from "../services/marketplaceService";
 
@@ -11,7 +15,12 @@ type User = AuthUser;
 interface AppContextValue {
   user: User | null;
   isAuthenticated: boolean;
-  login: (email: string, password?: string) => Promise<User>;
+  // Returns an OUTCOME, not a user: login either authenticates or hands back a
+  // two-factor challenge, and nothing is signed in until a code verifies.
+  login: (email: string, password?: string) => Promise<LoginOutcome>;
+  // The second step. Exchanges a challenge token plus a TOTP or recovery code
+  // for a real session.
+  completeTwoFactor: (challengeToken: string, code: string) => Promise<User>;
   register: (input: RegisterInput) => Promise<User>;
   logout: () => void;
   savedPlots: string[];
@@ -53,19 +62,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, []);
 
-  const login = async (email: string, password?: string) => {
-    const loggedInUser = await loginRequest(email, password);
+  const signIn = (loggedInUser: AuthUser) => {
     setUser(loggedInUser);
     setCurrencyState(loggedInUser.currency);
     return loggedInUser;
   };
 
-  const register = async (input: RegisterInput) => {
-    const newUser = await registerRequest(input);
-    setUser(newUser);
-    setCurrencyState(newUser.currency);
-    return newUser;
+  const login = async (email: string, password?: string): Promise<LoginOutcome> => {
+    const outcome = await loginRequest(email, password);
+    // A challenge is NOT a session — no user is set until it verifies.
+    if (outcome.kind === "authenticated") signIn(outcome.user);
+    return outcome;
   };
+
+  const completeTwoFactor = async (challengeToken: string, code: string) =>
+    signIn(await verifyTwoFactorRequest(challengeToken, code));
+
+  const register = async (input: RegisterInput) => signIn(await registerRequest(input));
 
   const logout = () => {
     logoutRequest();
@@ -102,7 +115,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ user, isAuthenticated: !!user, login, register, logout, savedPlots, toggleSavedPlot, currency, setCurrency, notifications, markNotificationRead, addNotification, wishlist, isWishlisted, toggleWishlistItem }}>
+    <AppContext.Provider value={{ user, isAuthenticated: !!user, login, completeTwoFactor, register, logout, savedPlots, toggleSavedPlot, currency, setCurrency, notifications, markNotificationRead, addNotification, wishlist, isWishlisted, toggleWishlistItem }}>
       {children}
     </AppContext.Provider>
   );

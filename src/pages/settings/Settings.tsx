@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useApp } from "../../contexts/AppContext";
+import { Link } from "react-router-dom";
+import TwoFactorSettings from "../../components/auth/TwoFactorSettings";
 import type { Currency } from "../../data/mockData";
 
 type Tab = "profile" | "security" | "notifications" | "sessions";
@@ -98,35 +100,21 @@ export default function Settings() {
 
           {tab === "security" && (
             <div className="space-y-4">
+              {/* The three inputs that used to sit here were wired to
+                  nothing, and there is no session-authenticated
+                  change-password endpoint to wire them to (see
+                  ChangePassword.tsx). This routes to the flow that does work. */}
               <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-6">
-                <h2 className="font-semibold mb-5">Password</h2>
-                <div className="space-y-3 max-w-sm">
-                  <FormField label="Current password" value="" onChange={() => {}} type="password" placeholder="••••••••" />
-                  <FormField label="New password" value="" onChange={() => {}} type="password" placeholder="Min. 8 characters" />
-                  <FormField label="Confirm new password" value="" onChange={() => {}} type="password" placeholder="••••••••" />
-                  <button className="px-5 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium hover:opacity-90 transition-opacity mt-1">
-                    Update password
-                  </button>
-                </div>
+                <h2 className="font-semibold mb-1">Password</h2>
+                <p className="text-sm text-[var(--muted-foreground)] mb-4">
+                  We'll email a code to confirm it's you, then you can set a new password.
+                </p>
+                <Link to="/change-password" className="inline-block px-5 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium hover:opacity-90 transition-opacity">
+                  Change password
+                </Link>
               </div>
 
-              <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-6">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h2 className="font-semibold mb-1">Two-factor authentication</h2>
-                    <p className="text-sm text-[var(--muted-foreground)]">An extra layer of security for your account. Required before each login.</p>
-                  </div>
-                  <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium ${user?.twoFAEnabled ? "bg-emerald-50 text-emerald-700" : "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${user?.twoFAEnabled ? "bg-emerald-500" : "bg-gray-400"}`} />
-                    {user?.twoFAEnabled ? "Enabled" : "Disabled"}
-                  </div>
-                </div>
-                {user?.twoFAEnabled && (
-                  <div className="mt-4 p-3 bg-emerald-50 rounded-lg text-xs text-emerald-800">
-                    2FA is active on your account. Authenticator app (TOTP) is your current method.
-                  </div>
-                )}
-              </div>
+              <TwoFactorSettings />
             </div>
           )}
 

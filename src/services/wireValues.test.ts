@@ -23,6 +23,7 @@ import type { FeeDueTrigger, FeeType } from "./costDisclosureService";
 import type { ListingIntent, PlotIntent, PlotOrientation, PropertyType, TierType } from "./portalInventoryService";
 import type { Currency, PlotStatus, PaymentPlan } from "../data/mockData";
 import type { TitleType } from "./marketplaceService";
+import { AUTH_ERROR_CODES, type TwoFactorChallenge, type UserRole } from "./authService";
 
 // Each list is exhaustive: the `satisfies` clause makes TypeScript fail the
 // build if a union gains or loses a member without this test being updated.
@@ -128,6 +129,41 @@ describe("kyc enums", () => {
   it("KycBuyerType and KycDocType", () => {
     expect(wireValues(["local", "diaspora"] satisfies readonly KycBuyerType[])).toEqual(["local", "diaspora"]);
     expect(wireValues(["nin", "passport", "proof_of_address"] satisfies readonly KycDocType[])).toEqual(["nin", "passport", "proof_of_address"]);
+  });
+});
+
+// The auth surface is not an enum, but the same contract risk applies: the
+// frontend branches on these strings, so they are transcribed from
+// AuthExceptionHandler and TwoFactorChallengeResponse rather than guessed.
+describe("auth response shapes and error codes", () => {
+  it("auth error codes match AuthExceptionHandler exactly", () => {
+    expect([...AUTH_ERROR_CODES].sort()).toEqual([
+      "ACCOUNT_DEACTIVATED", "ACCOUNT_SUSPENDED", "EMAIL_ALREADY_REGISTERED",
+      "INVALID_CREDENTIALS", "INVALID_OR_EXPIRED_CODE", "INVALID_REFRESH_TOKEN",
+      "INVALID_TWO_FACTOR_CHALLENGE", "INVALID_TWO_FACTOR_CODE",
+      "TENANT_NOT_ACTIVE", "TWO_FACTOR_LOCKED_OUT", "TWO_FACTOR_MANDATORY",
+      "TWO_FACTOR_NOT_ENABLED", "TWO_FACTOR_SETUP_REQUIRED",
+    ]);
+  });
+
+  it("the 2FA challenge is discriminated by twoFactorRequired, not by a challengeId", () => {
+    // The login endpoint's OpenAPI text says to "check for a `challengeId`
+    // field". TwoFactorChallengeResponse has no such field — it is
+    // `challengeToken`. The DTO is the authority.
+    const challenge: TwoFactorChallenge = { twoFactorRequired: true, challengeToken: "chal_x", expiresAt: new Date().toISOString() };
+
+    expect(challenge.twoFactorRequired).toBe(true);
+    expect("challengeId" in challenge).toBe(false);
+    // And it shares no field name with a successful login, so neither can be
+    // mistaken for the other.
+    expect("token" in challenge).toBe(false);
+    expect("user" in challenge).toBe(false);
+  });
+
+  it("UserRole carries only what the backend emits", () => {
+    // AuthService returns `ctx.superAdmin() ? "super_admin" : "client"`. There
+    // is no "developer" role, whatever earlier frontend code assumed.
+    expect(wireValues(["client", "super_admin"] satisfies readonly UserRole[])).toEqual(["client", "super_admin"]);
   });
 });
 

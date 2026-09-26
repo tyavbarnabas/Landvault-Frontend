@@ -139,7 +139,8 @@ export const MOCK_CLIENT_USER: AuthUser = {
   currency: "GBP",
   kycStatus: "approved",
   kycType: "diaspora",
-  twoFAEnabled: true,
+  // Off, so a returning buyer's login is exactly what it was: password, done.
+  twoFAEnabled: false,
   role: "client",
   permissions: CLIENT_PERMISSIONS,
 };
@@ -156,7 +157,13 @@ const MOCK_SUPER_ADMIN_USER: AuthUser = {
   currency: "NGN",
   kycStatus: "approved",
   kycType: "local",
-  twoFAEnabled: true,
+  // Platform staff hold the platform-scope RLS bypass, so 2FA is mandatory for
+  // them — but login is deliberately not blocked on it, or the bootstrapped
+  // Super Admin could never sign in to set it up. This account demonstrates
+  // both flags being ROUTED on rather than enforced.
+  twoFAEnabled: false,
+  mustSetUpTwoFa: true,
+  mustChangePassword: true,
   role: "super_admin",
   permissions: SUPER_ADMIN_PERMISSIONS,
 };
@@ -193,7 +200,7 @@ const MOCK_PORTAL_BRANCH_MANAGER: AuthUser = {
   currency: "NGN",
   kycStatus: "approved",
   kycType: "local",
-  twoFAEnabled: true,
+  twoFAEnabled: false,
   role: "client",
   permissions: PORTAL_PERMISSIONS,
   tenantId: "estintin-group",
@@ -209,13 +216,126 @@ const MOCK_ACCOUNTS_BY_EMAIL: Record<string, AuthUser> = {
   [MOCK_PORTAL_BRANCH_MANAGER.email]: MOCK_PORTAL_BRANCH_MANAGER,
 };
 
-export async function login(email: string, password?: string): Promise<AuthUser> {
+// ─── Login, and the second step when 2FA is on ───────────────────────────────
+
+// `POST /api/auth/login` returns EITHER tokens or a challenge. The two response
+// shapes deliberately share no field name — the challenge carries no `token`,
+// no `refreshToken` and no `user` — so a client cannot mistake one for the
+// other. We discriminate on `twoFactorRequired`, which the challenge states
+// outright.
+//
+// (The endpoint's OpenAPI description says to "check for a `challengeId`
+// field". `TwoFactorChallengeResponse` has no such field — it is
+// `challengeToken`. The DTO is the authority.)
+export interface TwoFactorChallenge {
+  twoFactorRequired: true;
+  challengeToken: string;
+  expiresAt: string;
+}
+
+export type LoginOutcome =
+  | { kind: "authenticated"; user: AuthUser }
+  | { kind: "two_factor_required"; challenge: TwoFactorChallenge };
+
+interface AuthResponseBody {
+  user: AuthUser;
+  token: string;
+  refreshToken: string;
+}
+
+function isChallenge(body: AuthResponseBody | TwoFactorChallenge): body is TwoFactorChallenge {
+  return (body as TwoFactorChallenge).twoFactorRequired === true;
+}
+
+export async function login(email: string, password?: string): Promise<LoginOutcome> {
   if (apiClient.isMockMode) {
-    return MOCK_ACCOUNTS_BY_EMAIL[email.trim().toLowerCase()] ?? MOCK_CLIENT_USER;
+    const user = MOCK_ACCOUNTS_BY_EMAIL[email.trim().toLowerCase()] ?? MOCK_CLIENT_USER;
+    // Mock mode mirrors the real branch: an account with 2FA on gets a
+    // challenge, not a session. Nothing is signed in until a code verifies.
+    if (user.twoFAEnabled) {
+      const challengeToken = issueMockChallenge(user);
+      return { kind: "two_factor_required", challenge: { twoFactorRequired: true, challengeToken, expiresAt: mockChallengeExpiry() } };
+    }
+    return { kind: "authenticated", user };
   }
-  const { user, token } = await apiClient.post<{ user: AuthUser; token: string }>("/api/auth/login", { email, password });
-  setAuthToken(token);
-  return user;
+
+  const body = await apiClient.post<AuthResponseBody | TwoFactorChallenge>("/api/auth/login", { email, password });
+  if (isChallenge(body)) return { kind: "two_factor_required", challenge: body };
+  setAuthToken(body.token);
+  return { kind: "authenticated", user: body.user };
+}
+
+// The challenge token identifies a PENDING login and nothing else: it cannot
+// call a protected endpoint, and it is never stored as a session token.
+export async function verifyTwoFactor(challengeToken: string, code: string): Promise<AuthUser> {
+  if (apiClient.isMockMode) return verifyMockChallenge(challengeToken, code);
+  const body = await apiClient.post<AuthResponseBody>("/api/auth/2fa/verify", { challengeToken, code });
+  setAuthToken(body.token);
+  return body.user;
+}
+
+// ─── Two-factor enrolment and management ─────────────────────────────────────
+
+// `setup` does NOT enable 2FA. Only `confirm` does — and collapsing the two
+// would strand a user whose QR scan silently failed, permanently and with no
+// recovery codes, because those are issued at confirmation.
+export interface TwoFactorSetup {
+  // Base32, returned HERE AND NOWHERE ELSE. Encrypted at rest and never
+  // readable again through any endpoint. Never log it, never persist it.
+  secret: string;
+  otpAuthUri: string;
+}
+
+export async function setupTwoFactor(): Promise<TwoFactorSetup> {
+  if (apiClient.isMockMode) return mockSetupTwoFactor();
+  return apiClient.post<TwoFactorSetup>("/api/auth/2fa/setup", {});
+}
+
+// Returns the recovery codes, in plaintext, EXACTLY ONCE. They are stored
+// hashed and can never be retrieved again.
+export async function confirmTwoFactor(code: string): Promise<string[]> {
+  if (apiClient.isMockMode) return mockConfirmTwoFactor(code);
+  const { recoveryCodes } = await apiClient.post<{ recoveryCodes: string[] }>("/api/auth/2fa/confirm", { code });
+  return recoveryCodes;
+}
+
+// A code is required, not just a session: a hijacked session must not be able
+// to strip the protection 2FA exists to provide. Platform staff cannot disable
+// it at all (TWO_FACTOR_MANDATORY).
+export async function disableTwoFactor(code: string): Promise<void> {
+  if (apiClient.isMockMode) return mockDisableTwoFactor(code);
+  await apiClient.post("/api/auth/2fa/disable", { code });
+}
+
+// Requires a current TOTP code, and invalidates every previous code.
+export async function regenerateRecoveryCodes(code: string): Promise<string[]> {
+  if (apiClient.isMockMode) return mockRegenerateRecoveryCodes(code);
+  const { recoveryCodes } = await apiClient.post<{ recoveryCodes: string[] }>("/api/auth/2fa/recovery-codes/regenerate", { code });
+  return recoveryCodes;
+}
+
+// ─── Password reset ──────────────────────────────────────────────────────────
+
+// The backend returns the SAME response whether or not the email exists, and
+// goes to real trouble to keep the timing equal too. Nothing here may reveal
+// which it was — no "no account found", ever.
+export async function forgotPassword(email: string): Promise<void> {
+  if (apiClient.isMockMode) {
+    mockResetCodes.set(email.trim().toLowerCase(), MOCK_RESET_CODE);
+    return;
+  }
+  await apiClient.post("/api/auth/forgot-password", { email });
+}
+
+export interface ResetPasswordInput {
+  email: string;
+  code: string;
+  newPassword: string;
+}
+
+export async function resetPassword(input: ResetPasswordInput): Promise<void> {
+  if (apiClient.isMockMode) return mockResetPassword(input);
+  await apiClient.post("/api/auth/reset-password", input);
 }
 
 export interface RegisterInput {
@@ -256,3 +376,155 @@ export async function register(input: RegisterInput): Promise<AuthUser> {
 export function logout(): void {
   setAuthToken(null);
 }
+
+// ─── Mock-mode implementations ───────────────────────────────────────────────
+//
+// These stand in for the backend so the flows are exercisable without it. The
+// error CODES thrown here are the backend's own (see AuthExceptionHandler), so
+// UI that branches on a code works identically in both modes.
+
+export const AUTH_ERROR_CODES = [
+  "EMAIL_ALREADY_REGISTERED",
+  "INVALID_CREDENTIALS",
+  "ACCOUNT_SUSPENDED",
+  "ACCOUNT_DEACTIVATED",
+  "TENANT_NOT_ACTIVE",
+  "INVALID_REFRESH_TOKEN",
+  "INVALID_OR_EXPIRED_CODE",
+  "INVALID_TWO_FACTOR_CODE",
+  "INVALID_TWO_FACTOR_CHALLENGE",
+  "TWO_FACTOR_LOCKED_OUT",
+  "TWO_FACTOR_SETUP_REQUIRED",
+  "TWO_FACTOR_NOT_ENABLED",
+  "TWO_FACTOR_MANDATORY",
+] as const;
+
+export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[number];
+
+// Mirrors ApiError's shape closely enough that one `errorCodeOf` helper reads
+// both, so callers never branch on a message string.
+export class MockAuthError extends Error {
+  body: { code: AuthErrorCode; message: string };
+  constructor(code: AuthErrorCode, message: string) {
+    super(message);
+    this.name = "MockAuthError";
+    this.body = { code, message };
+  }
+}
+
+// Branch on the code, never the message — the message is written for people
+// and may change.
+export function errorCodeOf(error: unknown): AuthErrorCode | null {
+  const code = (error as { body?: { code?: string } } | undefined)?.body?.code;
+  return code && (AUTH_ERROR_CODES as readonly string[]).includes(code) ? (code as AuthErrorCode) : null;
+}
+
+// Demo codes for mock mode. Deliberately obvious, and only ever compared —
+// never rendered into a URL or a log.
+const MOCK_TOTP_CODE = "123456";
+const MOCK_RESET_CODE = "654321";
+const MOCK_RECOVERY_CODES = [
+  "4f2a-91bc", "7d3e-05fa", "b18c-6e42", "9a70-cd15",
+  "2e64-38ab", "c5d9-71f0", "83bf-4a2c", "16e5-90db",
+];
+
+const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+const MAX_TWO_FACTOR_ATTEMPTS = 5;
+
+interface MockChallenge {
+  user: AuthUser;
+  expiresAt: number;
+  attempts: number;
+}
+
+const mockChallenges = new Map<string, MockChallenge>();
+const mockResetCodes = new Map<string, string>();
+// Recovery codes are single-use, so a consumed one is remembered.
+const mockUsedRecoveryCodes = new Set<string>();
+let mockPendingSecret: string | null = null;
+
+function mockChallengeExpiry(): string {
+  return new Date(Date.now() + CHALLENGE_TTL_MS).toISOString();
+}
+
+function issueMockChallenge(user: AuthUser): string {
+  const token = `chal_${Math.random().toString(36).slice(2, 12)}`;
+  mockChallenges.set(token, { user, expiresAt: Date.now() + CHALLENGE_TTL_MS, attempts: 0 });
+  return token;
+}
+
+function verifyMockChallenge(challengeToken: string, code: string): AuthUser {
+  const challenge = mockChallenges.get(challengeToken);
+  if (!challenge || challenge.expiresAt < Date.now()) {
+    throw new MockAuthError("INVALID_TWO_FACTOR_CHALLENGE", "This sign-in attempt is no longer valid. Start again.");
+  }
+  if (challenge.attempts >= MAX_TWO_FACTOR_ATTEMPTS) {
+    throw new MockAuthError("TWO_FACTOR_LOCKED_OUT", "Too many incorrect codes. Try again later.");
+  }
+
+  const normalized = code.trim().toLowerCase();
+  const isRecovery = MOCK_RECOVERY_CODES.includes(normalized) && !mockUsedRecoveryCodes.has(normalized);
+  if (code.trim() !== MOCK_TOTP_CODE && !isRecovery) {
+    challenge.attempts += 1;
+    if (challenge.attempts >= MAX_TWO_FACTOR_ATTEMPTS) {
+      throw new MockAuthError("TWO_FACTOR_LOCKED_OUT", "Too many incorrect codes. Try again later.");
+    }
+    throw new MockAuthError("INVALID_TWO_FACTOR_CODE", "That code is not valid. Try again, or use a recovery code.");
+  }
+
+  // Each recovery code works exactly once.
+  if (isRecovery) mockUsedRecoveryCodes.add(normalized);
+  mockChallenges.delete(challengeToken);
+  return challenge.user;
+}
+
+function mockSetupTwoFactor(): TwoFactorSetup {
+  // Base32 alphabet, so a real authenticator app would accept the shape.
+  const secret = "JBSWY3DPEHPK3PXP";
+  mockPendingSecret = secret;
+  const label = encodeURIComponent("LandVault:demo@landvault.com");
+  return { secret, otpAuthUri: `otpauth://totp/${label}?secret=${secret}&issuer=LandVault` };
+}
+
+function mockConfirmTwoFactor(code: string): string[] {
+  // Confirming without having started setup is its own error, not a bad code.
+  if (!mockPendingSecret) {
+    throw new MockAuthError("TWO_FACTOR_SETUP_REQUIRED", "Start two-factor setup before confirming it.");
+  }
+  if (code.trim() !== MOCK_TOTP_CODE) {
+    throw new MockAuthError("INVALID_TWO_FACTOR_CODE", "That code is not valid. Try again, or use a recovery code.");
+  }
+  mockPendingSecret = null;
+  mockUsedRecoveryCodes.clear();
+  return [...MOCK_RECOVERY_CODES];
+}
+
+function mockDisableTwoFactor(code: string): void {
+  if (code.trim() !== MOCK_TOTP_CODE && !MOCK_RECOVERY_CODES.includes(code.trim().toLowerCase())) {
+    throw new MockAuthError("INVALID_TWO_FACTOR_CODE", "That code is not valid. Try again, or use a recovery code.");
+  }
+}
+
+function mockRegenerateRecoveryCodes(code: string): string[] {
+  if (code.trim() !== MOCK_TOTP_CODE) {
+    throw new MockAuthError("INVALID_TWO_FACTOR_CODE", "That code is not valid. Try again, or use a recovery code.");
+  }
+  // Every previous code is invalidated.
+  mockUsedRecoveryCodes.clear();
+  return MOCK_RECOVERY_CODES.map((c) => c.split("").reverse().join(""));
+}
+
+function mockResetPassword({ email, code }: ResetPasswordInput): void {
+  const expected = mockResetCodes.get(email.trim().toLowerCase());
+  // One generic failure for a wrong code, an expired code, and a code that was
+  // never requested — the backend does the same, so nothing here reveals which
+  // emails have accounts.
+  if (!expected || code.trim() !== expected) {
+    throw new MockAuthError("INVALID_OR_EXPIRED_CODE", "That reset code is invalid or has expired. Request a new one.");
+  }
+  mockResetCodes.delete(email.trim().toLowerCase());
+}
+
+// Exported for the demo screens only, so a tester knows what to type. Never
+// rendered into a URL, and never logged.
+export const MOCK_DEMO_CODES = { totp: MOCK_TOTP_CODE, reset: MOCK_RESET_CODE };

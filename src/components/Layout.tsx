@@ -34,6 +34,11 @@ const NAV_SECTIONS = [
     items: [
       { path: "/support", label: "Support", icon: ChatIcon, permission: "client.support.view" },
       { path: "/settings", label: "Settings", icon: GearIcon, permission: "client.settings.view" },
+      // No permission: your own second factor isn't a tenant-scoped resource,
+      // it's a property of your account. Portal staff and platform staff hold
+      // no `client.*` slugs, so a permission gate here would leave them unable
+      // to manage their own 2FA at all.
+      { path: "/security/two-factor", label: "Security", icon: ShieldIcon },
     ],
   },
   // A company managing its own estates — the third surface, gated on the
@@ -54,6 +59,15 @@ const NAV_SECTIONS = [
     ],
   },
 ]
+
+function ShieldIcon() {
+  return (
+    <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+      <path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3Z" />
+      <path d="M9 12l2 2 4-4" />
+    </svg>
+  );
+}
 
 function GridIcon() {
   return (
@@ -260,7 +274,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const visibleNavSections = NAV_SECTIONS
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => user?.permissions?.includes(item.permission)),
+      items: section.items.filter((item) => !item.permission || user?.permissions?.includes(item.permission)),
     }))
     .filter((section) => section.items.length > 0)
 
