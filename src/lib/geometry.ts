@@ -57,6 +57,16 @@ function ensureCounterClockwise(points: XY[]): XY[] {
   return signedArea(points) >= 0 ? points : [...points].reverse();
 }
 
+// Absolute area of a single closed ring, in square metres. Same projection
+// and shoelace maths the overlap detection already uses — exported so a
+// boundary's area can be sanity-checked before it is saved (a developer who
+// knows their estate is 98 hectares spots "0.2 ha" immediately).
+export function polygonAreaSqm(ring: GeoPoint[]): number {
+  if (ring.length < 3) return 0;
+  const origin = ring[0];
+  return polygonArea(ring.map((p) => toLocalMeters(p, origin)));
+}
+
 // Sutherland–Hodgman polygon clipping: clips `subject` against convex
 // polygon `clip`, one clip edge at a time. Every footprint in this app is a
 // convex quad by construction, so this always returns the exact intersection

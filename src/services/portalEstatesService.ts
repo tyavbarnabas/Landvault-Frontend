@@ -14,6 +14,7 @@
 // scope — a caller that passes a branch gets that branch.
 
 import { ESTATES, type Estate, type GeoPoint } from "../data/mockData";
+import { polygonAreaSqm } from "../lib/geometry";
 import { apiClient } from "../lib/apiClient";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import { fetchTenantByIdSync } from "./tenantsService";
@@ -53,6 +54,28 @@ export interface GeoJsonFeatureCollection {
 // `state` required so it can narrow the check per state.
 const NIGERIA_BOUNDS = { minLat: 4.0, maxLat: 14.0, minLng: 2.6, maxLng: 14.7 };
 
+// The downloadable boundary template: a real boundary in Gwarinpa, Abuja.
+// Handing a developer a working file to edit beats explaining GeoJSON
+// structure — and these are the coordinates known to work end to end, so the
+// template, the "use the example" button and the tests all reference one
+// value. No commented-out fields or placeholders: edited, it produces a valid
+// estate; it can't produce a half-filled one.
+//
+// Lives here rather than beside the form because the tests need it without
+// pulling Leaflet (and therefore `window`) into a Node test run.
+export const BOUNDARY_TEMPLATE_JSON = `{
+  "type": "Polygon",
+  "coordinates": [
+    [
+      [7.4140, 9.1070],
+      [7.4195, 9.1070],
+      [7.4195, 9.1115],
+      [7.4140, 9.1115],
+      [7.4140, 9.1070]
+    ]
+  ]
+}`;
+
 export interface BoundaryValidationError {
   message: string;
   // The likely-transposed case gets its own flag so the UI can lead with the
@@ -60,10 +83,21 @@ export interface BoundaryValidationError {
   likelyTransposed: boolean;
 }
 
+export interface ParsedBoundary {
+  polygon: GeoJsonPolygon;
+  // True when every coordinate would ALSO be a valid Nigerian position with
+  // latitude and longitude swapped — which, given the 4-to-14 overlap in the
+  // country's own ranges, is most of Nigeria. It is NOT an error: a correct
+  // boundary usually sets this too. It is the cue to say "confirm on the map",
+  // because no automated check can separate the two cases without knowing
+  // which state the estate is in.
+  coordinatesAmbiguous: boolean;
+}
+
 // Mirrors the backend's own validation so a developer sees the problem before
 // a round trip, not so the frontend becomes the authority: the backend still
 // re-validates and is the one that rejects.
-export function parseBoundary(text: string): { polygon: GeoJsonPolygon } | { error: BoundaryValidationError } {
+export function parseBoundary(text: string): ParsedBoundary | { error: BoundaryValidationError } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -71,12 +105,13 @@ export function parseBoundary(text: string): { polygon: GeoJsonPolygon } | { err
     return { error: { message: "That isn't valid JSON. Paste the GeoJSON exactly as your surveyor exported it.", likelyTransposed: false } };
   }
 
-  // Accept either a bare Polygon or a Feature/FeatureCollection wrapping one,
-  // because that is what real GIS exports actually contain.
-  const geometry = extractPolygon(parsed);
-  if (!geometry) {
-    return { error: { message: "No polygon found. The boundary must be a GeoJSON Polygon (or a Feature or FeatureCollection containing one).", likelyTransposed: false } };
-  }
+  // Accept a bare Polygon, or a Feature / single-feature FeatureCollection
+  // wrapping one, because a one-polygon export from QGIS is a FeatureCollection
+  // and rejecting it would be user-hostile. A collection of MANY features is a
+  // different thing entirely — almost certainly a plots file — and says so.
+  const extracted = extractPolygon(parsed);
+  if ("error" in extracted) return extracted;
+  const geometry = extracted.polygon;
 
   const ring = geometry.coordinates[0];
   if (!ring || ring.length < 4) {
@@ -109,21 +144,49 @@ export function parseBoundary(text: string): { polygon: GeoJsonPolygon } | { err
     };
   }
 
-  return { polygon: geometry };
+  const coordinatesAmbiguous = ring.every(([lng, lat]) =>
+    lat >= NIGERIA_BOUNDS.minLng && lat <= NIGERIA_BOUNDS.maxLng && lng >= NIGERIA_BOUNDS.minLat && lng <= NIGERIA_BOUNDS.maxLat);
+
+  return { polygon: geometry, coordinatesAmbiguous };
 }
 
-function extractPolygon(value: unknown): GeoJsonPolygon | null {
-  if (!value || typeof value !== "object") return null;
+function extractPolygon(value: unknown): { polygon: GeoJsonPolygon } | { error: BoundaryValidationError } {
+  const notPolygon = (found: string): { error: BoundaryValidationError } => ({
+    error: { message: `An estate boundary must be a GeoJSON Polygon — this file contains ${found}.`, likelyTransposed: false },
+  });
+
+  if (!value || typeof value !== "object") return notPolygon("no GeoJSON object");
   const node = value as Record<string, unknown>;
-  if (node.type === "Polygon" && Array.isArray(node.coordinates)) return node as unknown as GeoJsonPolygon;
-  if (node.type === "Feature") return extractPolygon(node.geometry);
-  if (node.type === "FeatureCollection" && Array.isArray(node.features)) {
-    for (const feature of node.features) {
-      const found = extractPolygon(feature);
-      if (found) return found;
-    }
+
+  if (node.type === "Polygon" && Array.isArray(node.coordinates)) {
+    return { polygon: node as unknown as GeoJsonPolygon };
   }
-  return null;
+  if (node.type === "Feature") return extractPolygon(node.geometry);
+
+  if (node.type === "FeatureCollection" && Array.isArray(node.features)) {
+    const polygons = node.features.filter((f) => "polygon" in extractPolygon(f));
+    if (polygons.length === 1) return extractPolygon(polygons[0]);
+    if (polygons.length > 1) {
+      // The likely mistake once plot import exists: the plots file, uploaded
+      // into the boundary field.
+      return {
+        error: {
+          likelyTransposed: false,
+          message: `This file contains ${polygons.length} polygons. An estate boundary is a single Polygon — if this is your plot layout, it belongs in plot import rather than here.`,
+        },
+      };
+    }
+    return notPolygon("a FeatureCollection with no polygons in it");
+  }
+
+  return notPolygon(typeof node.type === "string" ? `a ${node.type}` : "no recognisable geometry");
+}
+
+// Converts a parsed boundary to the app's GeoPoint shape and measures it. The
+// figure is a client-side sanity aid computed before anything is saved — the
+// backend is still the authority on a stored estate's area.
+export function boundaryAreaSqm(polygon: GeoJsonPolygon): number {
+  return polygonAreaSqm(polygon.coordinates[0].map(([lng, lat]) => ({ lat, lng })));
 }
 
 function footprintToPolygon(footprint: GeoPoint[]): GeoJsonPolygon {

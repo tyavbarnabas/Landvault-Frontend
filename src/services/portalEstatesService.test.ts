@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  blockingReasonsFor, createPortalEstate, fetchEstateGeoJson, fetchPortalEstateById,
-  fetchPortalEstates, parseBoundary, statusFor,
+  BOUNDARY_TEMPLATE_JSON, blockingReasonsFor, boundaryAreaSqm, createPortalEstate,
+  fetchEstateGeoJson, fetchPortalEstateById, fetchPortalEstates, parseBoundary, statusFor,
   type EstateEligibility, type PortalScope,
 } from "./portalEstatesService";
 
@@ -63,10 +63,51 @@ describe("parseBoundary", () => {
     expect("polygon" in result).toBe(true);
   });
 
-  it("unwraps a Feature or FeatureCollection, because that's what GIS exports contain", () => {
+  it("unwraps a Feature or SINGLE-feature FeatureCollection, because that's what a one-polygon GIS export is", () => {
     const polygon = JSON.parse(ABUJA_BOUNDARY);
     expect("polygon" in parseBoundary(JSON.stringify({ type: "Feature", geometry: polygon, properties: {} }))).toBe(true);
     expect("polygon" in parseBoundary(JSON.stringify({ type: "FeatureCollection", features: [{ type: "Feature", geometry: polygon, properties: {} }] }))).toBe(true);
+  });
+
+  it("rejects a multi-polygon FeatureCollection and points at plot import, the likely mistake", () => {
+    const polygon = JSON.parse(ABUJA_BOUNDARY);
+    const plotsFile = JSON.stringify({
+      type: "FeatureCollection",
+      features: [
+        { type: "Feature", geometry: polygon, properties: { plot: "A1" } },
+        { type: "Feature", geometry: polygon, properties: { plot: "A2" } },
+        { type: "Feature", geometry: polygon, properties: { plot: "A3" } },
+      ],
+    });
+
+    const result = parseBoundary(plotsFile);
+
+    expect("error" in result).toBe(true);
+    if ("error" in result) {
+      expect(result.error.message).toContain("3 polygons");
+      expect(result.error.message).toContain("single Polygon");
+      expect(result.error.message).toContain("plot import");
+    }
+  });
+
+  it("names the geometry it actually found instead of a generic failure", () => {
+    const lineString = parseBoundary(JSON.stringify({ type: "LineString", coordinates: [[7.41, 9.10], [7.42, 9.11]] }));
+    expect("error" in lineString).toBe(true);
+    if ("error" in lineString) {
+      expect(lineString.error.message).toContain("must be a GeoJSON Polygon");
+      expect(lineString.error.message).toContain("LineString");
+    }
+  });
+
+  it("flags coordinates that would also be valid transposed, without rejecting them", () => {
+    // Abuja read correctly. Swapped it would be ~[9.1, 7.4] — still inside
+    // Nigeria, because the country's own lat/lng ranges overlap between 4 and
+    // 14. No automated check can separate the two, so this is a caution, not
+    // a rejection, and the map is what actually resolves it.
+    const result = parseBoundary(ABUJA_BOUNDARY);
+
+    expect("polygon" in result).toBe(true);
+    if ("polygon" in result) expect(result.coordinatesAmbiguous).toBe(true);
   });
 
   it("rejects a transposed boundary and says the coordinates look swapped", () => {
@@ -191,5 +232,63 @@ describe("createPortalEstate", () => {
     expect(ring[0][1]).toBeCloseTo(9.0480, 4);
     // And the ring comes back closed.
     expect(ring[0]).toEqual(ring[ring.length - 1]);
+  });
+});
+
+// One validation path, two inputs. If the file route grew its own rules the
+// two would eventually disagree about what is valid.
+describe("file upload and paste share one validation path", () => {
+  it("produces an identical result whether the template arrives as text or as a file's contents", async () => {
+    const asPaste = parseBoundary(BOUNDARY_TEMPLATE_JSON);
+
+    // What the component does with an uploaded file is exactly this: read its
+    // text, hand it to parseBoundary.
+    const file = new File([BOUNDARY_TEMPLATE_JSON], "boundary.geojson", { type: "application/geo+json" });
+    const asUpload = parseBoundary(await file.text());
+
+    expect(asUpload).toEqual(asPaste);
+    expect("polygon" in asUpload).toBe(true);
+  });
+
+  it("rejects a transposed file exactly as it rejects transposed pasted text", async () => {
+    const transposed = JSON.stringify({
+      type: "Polygon",
+      coordinates: [[[6.5244, 3.3792], [6.5300, 3.3792], [6.5300, 3.3850], [6.5244, 3.3850], [6.5244, 3.3792]]],
+    });
+    const file = new File([transposed], "swapped.geojson", { type: "application/geo+json" });
+
+    expect(parseBoundary(await file.text())).toEqual(parseBoundary(transposed));
+    expect("error" in parseBoundary(transposed)).toBe(true);
+  });
+});
+
+describe("the downloadable template", () => {
+  it("is a valid boundary that parses without editing", () => {
+    expect("polygon" in parseBoundary(BOUNDARY_TEMPLATE_JSON)).toBe(true);
+  });
+
+  it("sits in Gwarinpa, Abuja, in [lng, lat] order", () => {
+    const result = parseBoundary(BOUNDARY_TEMPLATE_JSON);
+    expect("polygon" in result).toBe(true);
+    if (!("polygon" in result)) return;
+
+    const ring = result.polygon.coordinates[0];
+    // Longitude first: ~7.41 E, then latitude ~9.11 N.
+    expect(ring[0][0]).toBeGreaterThan(7.3);
+    expect(ring[0][0]).toBeLessThan(7.5);
+    expect(ring[0][1]).toBeGreaterThan(9.0);
+    expect(ring[0][1]).toBeLessThan(9.2);
+    // And its ring closes, as the guidance says it must.
+    expect(ring[0]).toEqual(ring[ring.length - 1]);
+  });
+
+  it("measures a plausible estate-sized area, not a degree-sized one", () => {
+    const result = parseBoundary(BOUNDARY_TEMPLATE_JSON);
+    if (!("polygon" in result)) throw new Error("template should parse");
+
+    const areaSqm = boundaryAreaSqm(result.polygon);
+    // ~600m x ~500m: tens of hectares, not square degrees and not zero.
+    expect(areaSqm).toBeGreaterThan(100_000);
+    expect(areaSqm).toBeLessThan(1_000_000);
   });
 });

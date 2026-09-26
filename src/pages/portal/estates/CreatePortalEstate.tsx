@@ -1,11 +1,8 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { NIGERIAN_STATES, type NigerianState } from "../../../data/nigerianStates";
-import {
-  createPortalEstate, parseBoundary,
-  type BoundaryValidationError, type GeoJsonPolygon,
-} from "../../../services/portalEstatesService";
-import EstateBoundaryMap from "../../../components/map/EstateBoundaryMap";
+import { createPortalEstate, type GeoJsonPolygon } from "../../../services/portalEstatesService";
+import BoundaryField, { type BoundaryFieldState } from "../../../components/portal/BoundaryField";
 import { usePortalScope } from "../usePortalScope";
 import { useApp } from "../../../contexts/AppContext";
 
@@ -37,20 +34,15 @@ export default function CreatePortalEstate() {
   const [amenities, setAmenities] = useState("");
   const [branchId, setBranchId] = useState(user?.branchId ?? "");
 
-  const [boundaryText, setBoundaryText] = useState("");
   const [boundary, setBoundary] = useState<GeoJsonPolygon | null>(null);
-  const [boundaryError, setBoundaryError] = useState<BoundaryValidationError | null>(null);
+  const [boundaryUnresolved, setBoundaryUnresolved] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
 
-  const checkBoundary = () => {
-    setBoundary(null);
-    setBoundaryError(null);
-    if (!boundaryText.trim()) return;
-    const result = parseBoundary(boundaryText);
-    if ("error" in result) setBoundaryError(result.error);
-    else setBoundary(result.polygon);
+  const handleBoundaryChange = (state: BoundaryFieldState) => {
+    setBoundary(state.polygon);
+    setBoundaryUnresolved(state.hasUnresolvedInput);
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -58,7 +50,7 @@ export default function CreatePortalEstate() {
     if (!scope) return;
     if (!state) { setFormError("Choose the state this estate is in."); return; }
     if (!branchId.trim()) { setFormError("Enter the branch this estate belongs to."); return; }
-    if (boundaryText.trim() && !boundary) { setFormError("Fix the boundary, or clear it and add it later."); return; }
+    if (boundaryUnresolved) { setFormError("Fix the boundary, or clear it and add it later."); return; }
 
     setSubmitting(true);
     setFormError("");
@@ -132,52 +124,7 @@ export default function CreatePortalEstate() {
 
         <Field label="Amenities (comma separated)" value={amenities} onChange={setAmenities} placeholder="Perimeter Fencing, Motorable Roads" />
 
-        <div className="border-t border-[var(--border)] pt-5">
-          <label htmlFor="boundary" className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
-            Boundary (optional)
-          </label>
-          <p className="text-xs text-[var(--muted-foreground)] mb-2">
-            Paste a GeoJSON Polygon in <span className="font-mono-data">[longitude, latitude]</span> order. You can add this later — an
-            estate can exist as a draft before it's surveyed. Uploading a surveyor's file comes in a later release.
-          </p>
-          <textarea
-            id="boundary"
-            rows={7}
-            value={boundaryText}
-            onChange={(e) => setBoundaryText(e.target.value)}
-            onBlur={checkBoundary}
-            placeholder={EXAMPLE_BOUNDARY}
-            className="w-full px-3 py-2 bg-[var(--card)] border border-[var(--border)] rounded-md text-xs font-mono-data focus:outline-none focus:border-[var(--accent)]"
-          />
-          <div className="flex items-center gap-3 mt-2">
-            <button type="button" onClick={checkBoundary} className="text-xs font-medium text-[var(--accent)] hover:underline">Check boundary</button>
-            <button type="button" onClick={() => setBoundaryText(EXAMPLE_BOUNDARY)} className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]">Use the example</button>
-          </div>
-
-          {boundaryError && (
-            <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg" role="alert">
-              <div className="text-xs font-semibold text-amber-900 mb-0.5">
-                {boundaryError.likelyTransposed ? "Latitude and longitude look swapped" : "This boundary was rejected"}
-              </div>
-              <p className="text-xs text-amber-800 leading-relaxed">{boundaryError.message}</p>
-            </div>
-          )}
-
-          {/* Shown as soon as the boundary parses, before it is submitted:
-              the map is the only real check that it is in the right place. */}
-          {boundary && (
-            <div className="mt-3">
-              <p className="text-xs text-[var(--muted-foreground)] mb-2">
-                Check this is the right piece of ground before you save. A swapped coordinate pair can still be inside Nigeria.
-              </p>
-              <EstateBoundaryMap
-                boundary={{ type: "FeatureCollection", features: [{ type: "Feature", geometry: boundary, properties: {} }] }}
-                heightClass="h-64"
-                label="Boundary you entered, on satellite imagery"
-              />
-            </div>
-          )}
-        </div>
+        <BoundaryField onChange={handleBoundaryChange} />
 
         {formError && <p className="text-sm text-red-700">{formError}</p>}
 
