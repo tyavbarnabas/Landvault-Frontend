@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from "react-router-dom";
 import { AppProvider, useApp } from "./contexts/AppContext";
+import { isPlatformStaff, isPortalStaff } from "./services/authService";
 import Layout from "./components/Layout";
 import MarketplaceLayout from "./components/MarketplaceLayout";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -90,16 +91,17 @@ function AppPage({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Same login point as everyone else — this just also requires the "super_admin"
-// role the login response came back with. A client account is bounced to its
-// own dashboard rather than an error, since this isn't a page that exists for them.
+// Same login point as everyone else — this just also requires the platform
+// permissions the login response came back with. A user without them is
+// bounced to their own landing screen rather than shown an error, since this
+// isn't a page that exists for them.
 // The portal is gated on its permission, not on a role check, so a future
 // account that holds portal.estates.view alongside another role still reaches
 // it — same mechanism the nav already uses.
 function PortalRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, user } = useApp();
   if (!isAuthenticated) return <Navigate to="/login" replace />;
-  if (!user?.permissions?.includes("portal.estates.view")) return <Navigate to="/dashboard" replace />;
+  if (!isPortalStaff(user)) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -116,7 +118,7 @@ function PortalPage({ children }: { children: React.ReactNode }) {
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, user } = useApp();
   if (!isAuthenticated) return <Navigate to="/login" replace />;
-  if (user?.role !== "super_admin") return <Navigate to="/dashboard" replace />;
+  if (!isPlatformStaff(user)) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 

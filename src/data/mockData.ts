@@ -42,7 +42,13 @@ export interface VerificationCheck {
 // marketplaceService.ts's projectListing() derives the public marketplace
 // listing FROM this (never a second, independently-authored catalogue).
 export interface Estate {
+  // The backend's estate id is a UUID, with `slug` as a SEPARATE field — the
+  // two are never interchangeable, and nothing may route on a name-derived
+  // string. The seeded fixtures below predate that and use a readable slug as
+  // their id, so `slug` is optional and falls back to `id` for them; anything
+  // created at runtime gets a real generated id plus its own slug.
   id: string;
+  slug?: string;
   name: string;
   // Real-estate identity — `location` is a derived convenience ("area,
   // city") kept because most internal pages already render it directly;

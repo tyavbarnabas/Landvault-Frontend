@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
-  BOUNDARY_TEMPLATE_JSON, blockingReasonsFor, boundaryAreaSqm, createPortalEstate,
-  fetchEstateGeoJson, fetchPortalEstateById, fetchPortalEstates, parseBoundary, statusFor,
+  BOUNDARY_TEMPLATE_JSON, PUBLICATION_REFUSAL_CONDITIONS, blockingReasonsFor, boundaryAreaSqm,
+  conflictIsBlocking, createPortalEstate, fetchEstateGeoJson, fetchPortalEstateById,
+  fetchPortalEstates, parseBoundary, refusalFromError, statusFor,
   type EstateEligibility, type PortalScope,
 } from "./portalEstatesService";
 
@@ -158,40 +159,91 @@ describe("parseBoundary", () => {
   });
 });
 
-// DP-3: "cannot publish" without a reason sends the developer to support.
+// "Cannot publish" without a reason sends the developer to support. The
+// backend returns SEVEN fields for exactly this reason.
 describe("publication eligibility", () => {
   const allMet: EstateEligibility = {
-    publishedFlag: true, tenantVerified: true, tenantEntitled: true,
-    tenantActive: true, noBlockingConflict: true, feeScheduleDeclared: true,
+    published: true, tenantVerified: true, tenantEntitled: true,
+    tenantActive: true, feesDeclared: true, refundTermsDeclared: true, eligible: true,
   };
 
   it("names the specific failing condition rather than reporting a bare refusal", () => {
-    expect(blockingReasonsFor({ ...allMet, feeScheduleDeclared: false })).toEqual(["The fee schedule hasn't been declared"]);
-    expect(blockingReasonsFor({ ...allMet, tenantActive: false })).toEqual(["Your company's account is currently suspended"]);
+    expect(blockingReasonsFor({ ...allMet, feesDeclared: false, eligible: false }))
+      .toEqual(["The fee schedule hasn't been declared"]);
+    expect(blockingReasonsFor({ ...allMet, tenantActive: false, eligible: false }))
+      .toEqual(["Your company's account isn't active right now"]);
+    // The seventh condition an earlier pass didn't have at all.
+    expect(blockingReasonsFor({ ...allMet, refundTermsDeclared: false, eligible: false }))
+      .toEqual(["Refund terms haven't been declared"]);
   });
 
   it("names every failing condition, not just the first", () => {
-    expect(blockingReasonsFor({ ...allMet, tenantVerified: false, feeScheduleDeclared: false })).toHaveLength(2);
+    expect(blockingReasonsFor({ ...allMet, tenantVerified: false, feesDeclared: false, eligible: false })).toHaveLength(2);
   });
 
-  it("reports nothing to fix when all six conditions are met", () => {
+  it("reports nothing to fix when every condition is met", () => {
     expect(blockingReasonsFor(allMet)).toEqual([]);
   });
 
+  it("infers a blocking conflict from `eligible`, which is the only place the backend reports it", () => {
+    // Every named condition passes, yet the backend's own fold says no — a
+    // conflict is what is left. There is deliberately no boolean for it.
+    const conflicted: EstateEligibility = { ...allMet, published: false, eligible: false };
+
+    expect(conflictIsBlocking(conflicted)).toBe(true);
+    expect(blockingReasonsFor(conflicted)).toEqual(["This estate's boundary overlaps another registered boundary"]);
+    expect(statusFor(conflicted, true)).toBe("blocked");
+
+    // And it must NOT be inferred when a named condition already explains it.
+    expect(conflictIsBlocking({ ...allMet, feesDeclared: false, eligible: false })).toBe(false);
+  });
+
   it("separates 'blocked' from 'still being set up'", () => {
-    // Outside the company's immediate control → blocked.
-    expect(statusFor({ ...allMet, publishedFlag: false, tenantVerified: false }, true)).toBe("blocked");
-    expect(statusFor({ ...allMet, publishedFlag: false, noBlockingConflict: false }, true)).toBe("blocked");
-    // The company's own outstanding setup → draft.
-    expect(statusFor({ ...allMet, publishedFlag: false, feeScheduleDeclared: false }, true)).toBe("draft");
-    expect(statusFor({ ...allMet, publishedFlag: false }, false)).toBe("draft");
+    // Outside the company's immediate control -> blocked.
+    expect(statusFor({ ...allMet, published: false, tenantVerified: false, eligible: false }, true)).toBe("blocked");
+    // The company's own outstanding setup -> draft.
+    expect(statusFor({ ...allMet, published: false, feesDeclared: false, eligible: false }, true)).toBe("draft");
+    expect(statusFor({ ...allMet, published: false, refundTermsDeclared: false, eligible: false }, true)).toBe("draft");
+    expect(statusFor({ ...allMet, published: false, eligible: false }, false)).toBe("blocked");
     // Everything done, just not live yet.
-    expect(statusFor({ ...allMet, publishedFlag: false }, true)).toBe("ready_to_publish");
+    expect(statusFor({ ...allMet, published: false }, true)).toBe("ready_to_publish");
     expect(statusFor(allMet, true)).toBe("published");
   });
 
   it("shows a published estate as blocked once a condition lapses, not still live", () => {
-    expect(statusFor({ ...allMet, tenantActive: false }, true)).toBe("blocked");
+    expect(statusFor({ ...allMet, tenantActive: false, eligible: false }, true)).toBe("blocked");
+  });
+
+  it("reports UNKNOWN rather than met when the server didn't say", () => {
+    // EstateEligibility isn't on any portal read DTO yet, so a real backend
+    // leaves it null. An unknown condition must never render as a met one.
+    expect(statusFor(null, true)).toBe("unknown");
+    expect(statusFor(null, false)).toBe("unknown");
+  });
+
+  it("maps each PublicationRefused code to the condition it belongs to", () => {
+    const refusal = refusalFromError({ body: { code: "PUBLICATION_REFUND_TERMS_UNDECLARED", message: "Declare what a buyer gets back." } });
+
+    expect(refusal?.condition).toBe("refundTermsDeclared");
+    expect(refusal?.message).toContain("Declare");
+
+    expect(refusalFromError({ body: { code: "PUBLICATION_CONFLICT_OUTSTANDING", message: "x" } })?.condition).toBe("conflict");
+    expect(refusalFromError({ body: { code: "PUBLICATION_FEES_UNDECLARED", message: "x" } })?.condition).toBe("feesDeclared");
+    // An unrelated failure is not dressed up as a refusal.
+    expect(refusalFromError(new Error("network"))).toBeNull();
+  });
+
+  it("covers every refusal code the backend can send", () => {
+    // If the backend adds one, this fails rather than the UI silently showing
+    // a generic failure.
+    expect(Object.keys(PUBLICATION_REFUSAL_CONDITIONS).sort()).toEqual([
+      "PUBLICATION_CONFLICT_OUTSTANDING",
+      "PUBLICATION_ENTITLEMENT_MISSING",
+      "PUBLICATION_FEES_UNDECLARED",
+      "PUBLICATION_REFUND_TERMS_UNDECLARED",
+      "PUBLICATION_TENANT_NOT_ACTIVE",
+      "PUBLICATION_VERIFICATION_PENDING",
+    ]);
   });
 });
 
@@ -203,7 +255,11 @@ describe("createPortalEstate", () => {
       amenities: [], branchId: "heritage",
     }, HERITAGE_MANAGER);
 
-    expect(created.eligibility.publishedFlag).toBe(false);
+    expect(created.eligibility?.published).toBe(false);
+    // The id is a generated identifier, never the name slugified — the backend
+    // assigns a UUID and keeps the slug as its own field.
+    expect(created.id).not.toBe(created.slug);
+    expect(created.slug).toBe("test-draft-estate");
     expect(created.status).not.toBe("published");
     // No inventory yet — a real zero, not a placeholder.
     expect(created.totalPlots).toBe(0);

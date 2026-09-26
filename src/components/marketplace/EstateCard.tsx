@@ -72,7 +72,7 @@ export default function EstateCard({ listing, priceChangeSinceSaved }: EstateCar
             offer once fees are counted. */}
         {commitment && (
           <div className="text-xs text-[var(--foreground)] mb-1">
-            true total <MoneyRangeDisplay money={commitment.totalCommitment} compact className="font-mono-data font-semibold" />
+            true total <MoneyRangeDisplay money={commitment.totalCommitment} currency={commitment.currency} compact className="font-mono-data font-semibold" />
           </div>
         )}
         <div className="text-xs text-[var(--muted-foreground)] mb-2.5" title="Price per sqm at the lowest available tier — the honest way to compare differently sized plots">

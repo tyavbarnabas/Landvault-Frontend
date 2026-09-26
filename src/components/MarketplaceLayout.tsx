@@ -4,6 +4,7 @@
 import { Suspense } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useApp } from "../contexts/AppContext";
+import { landingRouteFor } from "../services/authService";
 import ErrorBoundary from "./ErrorBoundary";
 import PageLoading from "./PageLoading";
 
@@ -33,7 +34,7 @@ export default function MarketplaceLayout({ children }: { children: React.ReactN
               </svg>
               Wishlist
             </Link>
-            <Link to={user?.role === "super_admin" ? "/admin/dashboard" : "/dashboard"} className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">
+            <Link to={landingRouteFor(user)} className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">
               Dashboard
             </Link>
             <button onClick={handleLogout} className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">Sign out</button>

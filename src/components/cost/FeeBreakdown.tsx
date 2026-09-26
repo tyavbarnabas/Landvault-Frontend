@@ -9,13 +9,13 @@ const DUE_TRIGGER_LABELS: Record<FeeDueTrigger, string> = {
   at_application: "Due at application",
   at_allocation: "Due at allocation",
   on_construction_start: "Due when construction starts",
-  milestone_based: "Due in stages as building progresses",
+  on_milestone: "Due in stages as building progresses",
   before_occupation: "Due before occupation",
-  annually: "Due every year",
+  annual: "Due every year",
 };
 
 // Chronological, not alphabetical — the order a buyer actually meets them.
-const TRIGGER_ORDER: FeeDueTrigger[] = ["at_application", "at_allocation", "on_construction_start", "milestone_based", "before_occupation", "annually"];
+const TRIGGER_ORDER: FeeDueTrigger[] = ["at_application", "at_allocation", "on_construction_start", "on_milestone", "before_occupation", "annual"];
 
 function FeeRow({ fee }: { fee: PublicFee }) {
   return (
@@ -52,7 +52,7 @@ function FeeRow({ fee }: { fee: PublicFee }) {
       {fee.amount === null ? (
         <span className="shrink-0 text-sm text-amber-700">Amount not stated</span>
       ) : (
-        <MoneyRangeDisplay money={fee.amount} className="shrink-0 font-mono-data text-sm text-[var(--foreground)]" />
+        <MoneyRangeDisplay money={fee.amount} currency={fee.currency} className="shrink-0 font-mono-data text-sm text-[var(--foreground)]" />
       )}
     </div>
   );
@@ -75,13 +75,13 @@ export default function FeeBreakdown({ feeSchedule, tier }: { feeSchedule: Publi
   // One-off fees are everything in the schedule that isn't a yearly charge;
   // the recurring and optional lists come from the tier, which is where the
   // backend decides what sits outside the total.
-  const oneOff = feeSchedule.filter((f) => f.dueTrigger !== "annually");
-  const recurring = tier?.recurringFees ?? feeSchedule.filter((f) => f.dueTrigger === "annually");
+  const oneOff = feeSchedule.filter((f) => f.dueTrigger !== "annual");
+  const recurring = tier?.recurringFees ?? feeSchedule.filter((f) => f.dueTrigger === "annual");
   const optional = tier?.optionalFees ?? [];
 
   return (
     <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
-      {TRIGGER_ORDER.filter((t) => t !== "annually").map((trigger) => (
+      {TRIGGER_ORDER.filter((t) => t !== "annual").map((trigger) => (
         <FeeGroup key={trigger} title={DUE_TRIGGER_LABELS[trigger]} fees={oneOff.filter((f) => f.dueTrigger === trigger)} />
       ))}
 

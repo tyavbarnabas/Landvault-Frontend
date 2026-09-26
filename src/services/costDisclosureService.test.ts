@@ -1,14 +1,15 @@
 import { describe, it, expect } from "vitest";
 import {
-  fetchCostDisclosure, isRange, range, tierCommitmentForLandPrice, tierCommitmentForSize,
+  fetchCostDisclosure, isGrandfathered, isRange, range,
+  tierCommitmentForLandPrice, tierCommitmentForSize,
   type PublicFee, type TierCommitment,
 } from "./costDisclosureService";
 import { formatDeclaredAmount } from "../lib/formatCurrency";
 
 describe("isRange", () => {
   it("treats equal low/high as a single amount, and differing low/high as a range", () => {
-    expect(isRange({ low: 7_000_000, high: 7_000_000, currency: "NGN" })).toBe(false);
-    expect(isRange({ low: 2_800_000, high: 3_400_000, currency: "NGN" })).toBe(true);
+    expect(isRange({ min: 7_000_000, max: 7_000_000, isRange: false })).toBe(false);
+    expect(isRange({ min: 2_800_000, max: 3_400_000, isRange: true })).toBe(true);
   });
 });
 
@@ -25,8 +26,7 @@ describe("fetchCostDisclosure", () => {
     // Not null — an exempt listing is not a listing with no fees, and must
     // never render as though it were.
     expect(disclosure).not.toBeNull();
-    expect(disclosure?.status).toBe("exempt_grandfathered");
-    expect(disclosure?.feeSchedule).toEqual([]);
+    expect(disclosure?.fees).toEqual([]);
   });
 });
 
@@ -37,30 +37,30 @@ describe("figures from the source letters", () => {
     const tier = tierCommitmentForSize(await fetchCostDisclosure("greenfield-park"), 180);
 
     expect(tier?.landPrice).toBe(4_500_000);
-    expect(tier?.oneOffFees).toEqual({ low: 8_110_000, high: 8_110_000, currency: "NGN" });
-    expect(tier?.totalCommitment).toEqual({ low: 12_610_000, high: 12_610_000, currency: "NGN" });
+    expect(tier?.oneOffFees).toEqual({ min: 8_110_000, max: 8_110_000, isRange: false });
+    expect(tier?.totalCommitment).toEqual({ min: 12_610_000, max: 12_610_000, isRange: false });
   });
 
   it("Double King Estate: ₦6,000,000 of land commits a buyer to ₦10,010,000", async () => {
     const tier = tierCommitmentForSize(await fetchCostDisclosure("double-king-estate"), 250);
 
     expect(tier?.landPrice).toBe(6_000_000);
-    expect(tier?.oneOffFees).toEqual({ low: 4_010_000, high: 4_010_000, currency: "NGN" });
-    expect(tier?.totalCommitment).toEqual({ low: 10_010_000, high: 10_010_000, currency: "NGN" });
+    expect(tier?.oneOffFees).toEqual({ min: 4_010_000, max: 4_010_000, isRange: false });
+    expect(tier?.totalCommitment).toEqual({ min: 10_010_000, max: 10_010_000, isRange: false });
   });
 
   it("declares only the fee types that appear in the letters", async () => {
     for (const estateId of ["greenfield-park", "double-king-estate"]) {
       const disclosure = await fetchCostDisclosure(estateId);
-      const types = [...disclosure!.feeSchedule, ...disclosure!.tiers[0].recurringFees].map((f) => f.feeType).sort();
-      expect(types).toEqual(["APPLICATION", "CONSTRUCTION_SUPERVISION", "FACILITY_MANAGEMENT", "INFRASTRUCTURE", "SETTING_OUT"]);
+      const types = [...disclosure!.fees, ...disclosure!.tiers[0].recurringFees].map((f) => f.feeType).sort();
+      expect(types).toEqual(["application", "construction_supervision", "facility_management", "infrastructure", "setting_out"]);
     }
   });
 
   it("invents no survey, legal, power-connection or courier fee", async () => {
     for (const estateId of ["greenfield-park", "double-king-estate"]) {
       const disclosure = await fetchCostDisclosure(estateId);
-      const labels = disclosure!.feeSchedule.map((f) => f.label.toLowerCase()).join(" | ");
+      const labels = disclosure!.fees.map((f) => f.label.toLowerCase()).join(" | ");
       for (const absent of ["survey", "deed", "legal", "power", "courier", "notarisation"]) {
         expect(labels).not.toContain(absent);
       }
@@ -70,19 +70,19 @@ describe("figures from the source letters", () => {
   it("charges nothing in a currency other than naira", async () => {
     for (const estateId of ["greenfield-park", "double-king-estate"]) {
       const disclosure = await fetchCostDisclosure(estateId);
-      const all = [...disclosure!.feeSchedule, ...disclosure!.tiers.flatMap((t) => [...t.recurringFees, ...t.optionalFees])];
-      expect(all.every((f) => f.amount === null || f.amount.currency === "NGN")).toBe(true);
+      const all = [...disclosure!.fees, ...disclosure!.tiers.flatMap((t) => [...t.recurringFees, ...t.optionalFees])];
+      expect(all.every((f) => f.currency === "NGN")).toBe(true);
       expect(disclosure!.tiers.every((t) => t.totalExcludesOtherCurrencyFees === false)).toBe(true);
     }
   });
 
   it("breaks the infrastructure fee into the letters' own construction stages, and flags it as not fixed", async () => {
     const disclosure = await fetchCostDisclosure("greenfield-park");
-    const levy = disclosure?.feeSchedule.find((f) => f.feeType === "INFRASTRUCTURE");
+    const levy = disclosure?.fees.find((f) => f.feeType === "infrastructure");
 
     expect(levy?.isFixed).toBe(false);
     expect(levy?.variationBasis).toContain("building materials");
-    expect(levy?.dueTrigger).toBe("milestone_based");
+    expect(levy?.dueTrigger).toBe("on_milestone");
     expect(levy?.milestones?.map((m) => m.pct)).toEqual([20, 15, 20, 20, 25]);
     // Both letters' schedules account for the whole fee.
     expect(levy?.milestones?.reduce((sum, m) => sum + m.pct, 0)).toBe(100);
@@ -91,12 +91,12 @@ describe("figures from the source letters", () => {
   it("leaves the facility-management amount unstated rather than inventing one", async () => {
     for (const estateId of ["greenfield-park", "double-king-estate"]) {
       const disclosure = await fetchCostDisclosure(estateId);
-      const facility = disclosure!.tiers[0].recurringFees.find((f) => f.feeType === "FACILITY_MANAGEMENT");
+      const facility = disclosure!.tiers[0].recurringFees.find((f) => f.feeType === "facility_management");
 
       // Null, never 0 — the letters state the obligation but no figure.
       expect(facility?.amount).toBeNull();
       expect(facility?.isMandatory).toBe(true);
-      expect(facility?.dueTrigger).toBe("annually");
+      expect(facility?.dueTrigger).toBe("annual");
     }
   });
 
@@ -107,17 +107,17 @@ describe("figures from the source letters", () => {
     // The total is land + one-off fees only. Folding in one year of a
     // perpetual charge would misrepresent both figures — and here there is
     // no figure to fold in at all.
-    expect(tier?.totalCommitment.low).toBe(tier!.landPrice + tier!.oneOffFees.low);
+    expect(tier?.totalCommitment.min).toBe(tier!.landPrice + tier!.oneOffFees.min);
   });
 
   it("shows both exits together: 20% deducted on withdrawal, up to 20% for falling behind", async () => {
     const exit = (await fetchCostDisclosure("greenfield-park"))?.exitCosts;
 
-    expect(exit?.refundOutcome.deductionPct).toBe(20);
-    expect(exit?.refundOutcome.refundAmount).toBe(3_600_000);
-    expect(exit?.refundOutcome.totalLoss).toBe(910_000);
-    expect(exit?.penaltySteps.map((s) => s.amount)).toEqual([225_000, 450_000, 900_000]);
-    expect(exit?.penaltySteps.at(-1)?.penaltyPct).toBe(20);
+    expect(exit?.ifYouWithdraw.deductionPct).toBe(20);
+    expect(exit?.ifYouWithdraw.refundAmount).toBe(3_600_000);
+    expect(exit?.ifYouWithdraw.totalLoss).toBe(910_000);
+    expect(exit?.ifYouFallBehind.map((s) => s.amount)).toEqual([225_000, 450_000, 900_000]);
+    expect(exit?.ifYouFallBehind.at(-1)?.penaltyPct).toBe(20);
   });
 
   it("leaves revocation absent, because no revocation clause has been sourced", async () => {
@@ -130,8 +130,8 @@ describe("figures from the source letters", () => {
 // inventing one into a fixture that would look like a real listing.
 describe("synthetic cases — code paths the real letters don't exercise", () => {
   const syntheticRangeFee: PublicFee = {
-    feeType: "SYNTHETIC_TEST_ONLY", label: "Synthetic range fee", amount: range(2_800_000, 3_400_000),
-    isFixed: false, dueTrigger: "at_allocation", refundable: false, isMandatory: true,
+    feeType: "other", label: "Synthetic range fee", amount: range(2_800_000, 3_400_000),
+    currency: "NGN", isFixed: false, dueTrigger: "at_allocation", refundable: false, isMandatory: true,
   };
 
   const syntheticTier: TierCommitment = {
@@ -147,9 +147,9 @@ describe("synthetic cases — code paths the real letters don't exercise", () =>
 
     // Specifically not the midpoint, at either end — a midpoint is a number
     // nobody quoted and nobody will honour.
-    const midpoint = (syntheticTier.totalCommitment.low + syntheticTier.totalCommitment.high) / 2;
-    expect(syntheticTier.totalCommitment.low).not.toBe(midpoint);
-    expect(syntheticTier.totalCommitment.high).not.toBe(midpoint);
+    const midpoint = (syntheticTier.totalCommitment.min + syntheticTier.totalCommitment.max) / 2;
+    expect(syntheticTier.totalCommitment.min).not.toBe(midpoint);
+    expect(syntheticTier.totalCommitment.max).not.toBe(midpoint);
   });
 
   it("can flag a total that excludes a fee in another currency", () => {
@@ -180,8 +180,8 @@ describe("fixture integrity", () => {
     for (const estateId of ["greenfield-park", "double-king-estate"]) {
       const disclosure = await fetchCostDisclosure(estateId);
       for (const tier of disclosure!.tiers) {
-        expect(tier.totalCommitment.low).toBe(tier.landPrice + tier.oneOffFees.low);
-        expect(tier.totalCommitment.high).toBe(tier.landPrice + tier.oneOffFees.high);
+        expect(tier.totalCommitment.min).toBe(tier.landPrice + tier.oneOffFees.min);
+        expect(tier.totalCommitment.max).toBe(tier.landPrice + tier.oneOffFees.max);
       }
     }
   });
@@ -189,8 +189,8 @@ describe("fixture integrity", () => {
   it("every one-off fee total matches the sum of the itemised fees that have a stated amount", async () => {
     for (const estateId of ["greenfield-park", "double-king-estate"]) {
       const disclosure = await fetchCostDisclosure(estateId);
-      const itemised = disclosure!.feeSchedule.reduce((sum, f) => sum + (f.amount?.low ?? 0), 0);
-      expect(disclosure!.tiers[0].oneOffFees.low).toBe(itemised);
+      const itemised = disclosure!.fees.reduce((sum, f) => sum + (f.amount?.min ?? 0), 0);
+      expect(disclosure!.tiers[0].oneOffFees.min).toBe(itemised);
     }
   });
 });

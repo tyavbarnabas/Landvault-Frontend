@@ -24,7 +24,10 @@ import { fetchTenantByIdSync, tenantDisplayName, recordAuditEntry } from "./tena
 
 export type { GeoPoint };
 
-export type ConflictStatus = "open" | "investigating" | "confirmed_duplicate" | "dismissed";
+// Wire values match the backend's ConflictStatus @JsonValue strings exactly.
+// "auto_resolved" is set by the system only, never as a manual transition: it
+// is how a conflict closes itself when a corrected boundary no longer overlaps.
+export type ConflictStatus = "open" | "investigating" | "confirmed_duplicate" | "dismissed" | "auto_resolved";
 // Cross-tenant overlap is the actual fraud signal SA-3.4 targets — two
 // different companies both claiming to sell the same land. Same-tenant
 // overlap is still surfaced (it's a real data-integrity problem worth a

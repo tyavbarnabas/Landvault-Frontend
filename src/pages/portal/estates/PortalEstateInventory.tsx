@@ -5,7 +5,7 @@ import { formatAmount, type Currency } from "../../../data/mockData";
 import { STATUS_COLORS, STATUS_LABELS } from "../../../lib/plotStatus";
 import { fetchEstateGeoJson, fetchPortalEstateById } from "../../../services/portalEstatesService";
 import {
-  canonicalPlotStatus, createBlock, createPriceTier, fetchBlocks, fetchInventoryGeoJson,
+  createBlock, createPriceTier, fetchBlocks, fetchInventoryGeoJson,
   fetchPlots, fetchPriceTiers, tierDisplayLabel, validatePriceTier,
   type CreatePriceTierInput, type PortalBlock, type PortalPlot, type PortalPriceTier,
   type PortalPlotStatus, type TierType,
@@ -84,7 +84,7 @@ export default function PortalEstateInventory() {
 
 function TiersPanel({ estateId, tiers, onCreated }: { estateId: string; tiers: PortalPriceTier[]; onCreated: () => void }) {
   const scope = usePortalScope();
-  const [tierType, setTierType] = useState<TierType>("LAND_SIZE");
+  const [tierType, setTierType] = useState<TierType>("land_size");
   const [sizeSqm, setSizeSqm] = useState("");
   const [price, setPrice] = useState("");
   const [currency, setCurrency] = useState<Currency>("NGN");
@@ -99,7 +99,7 @@ function TiersPanel({ estateId, tiers, onCreated }: { estateId: string; tiers: P
       tierType,
       // Never sent for a unit type — the backend rejects it, and the database
       // constraint behind it would too.
-      sizeSqm: tierType === "LAND_SIZE" ? Number(sizeSqm) || undefined : undefined,
+      sizeSqm: tierType === "land_size" ? Number(sizeSqm) || undefined : undefined,
       price: Number(price) || 0,
       currency,
       label: label.trim() || undefined,
@@ -141,7 +141,7 @@ function TiersPanel({ estateId, tiers, onCreated }: { estateId: string; tiers: P
                   <tr key={tier.id}>
                     <td className="px-4 py-3">
                       <div className="font-medium text-[var(--foreground)]">{tierDisplayLabel(tier)}</div>
-                      <div className="text-xs text-[var(--muted-foreground)]">{tier.tierType === "LAND_SIZE" ? "Land size" : "Unit type"}</div>
+                      <div className="text-xs text-[var(--muted-foreground)]">{tier.tierType === "land_size" ? "Land size" : "Unit type"}</div>
                     </td>
                     <td className="px-4 py-3 font-mono-data text-[var(--foreground)]">{formatAmount(tier.price, tier.currency)}</td>
                     {/* Display-only comparison. A tier's price is the developer's
@@ -169,14 +169,14 @@ function TiersPanel({ estateId, tiers, onCreated }: { estateId: string; tiers: P
         <div>
           <label htmlFor="tier-type" className="block text-sm font-medium text-[var(--foreground)] mb-1.5">Tier type</label>
           <select id="tier-type" value={tierType} onChange={(e) => { setTierType(e.target.value as TierType); setSizeSqm(""); setFieldError(null); }} className={inputClass}>
-            <option value="LAND_SIZE">Land size — bare land priced by area</option>
-            <option value="UNIT_TYPE">Unit type — a built unit, described by its label</option>
+            <option value="land_size">Land size — bare land priced by area</option>
+            <option value="unit_type">Unit type — a built unit, described by its label</option>
           </select>
         </div>
 
         {/* Size belongs to a land-size tier only. A unit type has none of its
             own, which is what its label is for. */}
-        {tierType === "LAND_SIZE" && (
+        {tierType === "land_size" && (
           <TierField id="sizeSqm" label="Size (sqm)" type="number" value={sizeSqm} onChange={setSizeSqm} error={fieldError} />
         )}
 
@@ -192,11 +192,11 @@ function TiersPanel({ estateId, tiers, onCreated }: { estateId: string; tiers: P
 
         <TierField
           id="label"
-          label={tierType === "UNIT_TYPE" ? "Label (required)" : "Label (optional)"}
+          label={tierType === "unit_type" ? "Label (required)" : "Label (optional)"}
           value={label}
           onChange={setLabel}
           error={fieldError}
-          placeholder={tierType === "UNIT_TYPE" ? "3-bed terrace" : "Standard"}
+          placeholder={tierType === "unit_type" ? "3-bed terrace" : "Standard"}
         />
 
         {fieldError?.field === "form" && <p className="text-sm text-red-700">{fieldError.message}</p>}
@@ -284,7 +284,7 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData }: {
     (!tierId || p.priceTierId === tierId) &&
     (!cornerOnly || p.isCorner));
 
-  const hasFootprints = plots.some((p) => p.footprint);
+  const hasFootprints = plots.some((p) => p.hasFootprint);
 
   return (
     <div className="space-y-6">
@@ -313,7 +313,7 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData }: {
             legend={Object.entries(STATUS_LABELS).map(([key, label]) => ({ color: STATUS_COLORS[key as keyof typeof STATUS_COLORS], label }))}
           />
           <p className="text-xs text-[var(--muted-foreground)] mt-2">
-            {plots.filter((p) => p.footprint).length} of {plots.length} plots have a surveyed footprint; the rest aren't on the map.
+            {plots.filter((p) => p.hasFootprint).length} of {plots.length} plots have a surveyed footprint; the rest aren't on the map.
           </p>
         </div>
       )}
@@ -325,7 +325,9 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData }: {
           <div className="flex flex-wrap gap-3">
             <select value={status} onChange={(e) => setStatus(e.target.value as PortalPlotStatus | "")} aria-label="Filter by status" className={filterClass}>
               <option value="">All statuses</option>
-              {(["AVAILABLE", "RESERVED", "SOLD"] as PortalPlotStatus[]).map((s) => <option key={s} value={s}>{s}</option>)}
+              {/* Both availability variants, distinctly: an estate sells
+                  development and investment plots side by side. */}
+              {(Object.keys(STATUS_LABELS) as PortalPlotStatus[]).map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
             </select>
             <select value={blockId} onChange={(e) => setBlockId(e.target.value)} aria-label="Filter by block" className={filterClass}>
               <option value="">All blocks</option>
@@ -369,11 +371,21 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData }: {
                     {/* Null when there's no footprint — never the nominal size
                         standing in for a measurement nobody took. */}
                     <td className="px-4 py-3 font-mono-data text-[var(--muted-foreground)]">{plot.actualAreaSqm === null ? "Not surveyed" : `${plot.actualAreaSqm} sqm`}</td>
-                    <td className="px-4 py-3 font-mono-data text-[var(--foreground)]">{formatAmount(plot.price, plot.currency)}</td>
+                    <td className="px-4 py-3 font-mono-data text-[var(--foreground)]">
+                      {formatAmount(plot.price, plot.currency)}
+                      {/* A corner plot's price matches no tier on the price
+                          list, so the base and the premium are shown with it
+                          rather than leaving the difference unexplained. */}
+                      {plot.cornerPremiumPct !== null && (
+                        <div className="text-xs text-[var(--muted-foreground)]">
+                          {formatAmount(plot.basePrice, plot.currency)} + {plot.cornerPremiumPct}% corner
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <span className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
-                        <span className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: STATUS_COLORS[canonicalPlotStatus(plot)] }} aria-hidden="true" />
-                        {STATUS_LABELS[canonicalPlotStatus(plot)]}
+                        <span className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: STATUS_COLORS[plot.status] }} aria-hidden="true" />
+                        {STATUS_LABELS[plot.status]}
                       </span>
                     </td>
                   </tr>

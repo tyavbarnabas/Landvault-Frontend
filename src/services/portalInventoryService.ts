@@ -22,10 +22,14 @@
 //     derived at the display layer.
 
 import type { Currency, PlotStatus } from "../data/mockData";
+
+// The backend's PlotOrientation @JsonValue strings — uppercase compass points.
+export type PlotOrientation = "N" | "S" | "E" | "W" | "NE" | "NW" | "SE" | "SW";
 import { apiClient } from "../lib/apiClient";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import { polygonAreaSqm } from "../lib/geometry";
 import { fetchPortalEstateById, type GeoJsonFeature, type GeoJsonFeatureCollection, type GeoJsonPolygon, type PortalScope } from "./portalEstatesService";
+
 
 // ─── Blocks ──────────────────────────────────────────────────────────────────
 // Deliberately thin. Blocks exist because plots are addressed as "Block C,
@@ -46,9 +50,11 @@ export interface CreateBlockInput {
 
 // ─── Price tiers ─────────────────────────────────────────────────────────────
 
-// LAND_SIZE prices bare land by area. UNIT_TYPE prices a built unit, where
-// `label` ("3-bed terrace") carries the meaning a size would otherwise.
-export type TierType = "LAND_SIZE" | "UNIT_TYPE";
+// Wire values are the backend's TierType @JsonValue strings — lowercase with
+// underscores, NOT the Java constant names. "land_size" prices bare land by
+// area; "unit_type" prices a built unit, where `label` ("3-bed terrace")
+// carries the meaning a size would otherwise.
+export type TierType = "land_size" | "unit_type";
 
 export interface PortalPriceTier {
   id: string;
@@ -87,13 +93,13 @@ export interface FieldError {
 // so a clean 400 comes back rather than a constraint violation. Surfaced as a
 // field error, not a generic failure.
 export function validatePriceTier(input: CreatePriceTierInput): FieldError | null {
-  if (input.tierType === "LAND_SIZE" && (input.sizeSqm === undefined || input.sizeSqm <= 0)) {
+  if (input.tierType === "land_size" && (input.sizeSqm === undefined || input.sizeSqm <= 0)) {
     return { field: "sizeSqm", message: "A land-size tier needs the plot size in square metres." };
   }
-  if (input.tierType === "UNIT_TYPE" && input.sizeSqm !== undefined) {
+  if (input.tierType === "unit_type" && input.sizeSqm !== undefined) {
     return { field: "sizeSqm", message: "A unit-type tier has no size of its own — describe it with a label instead." };
   }
-  if (input.tierType === "UNIT_TYPE" && !input.label?.trim()) {
+  if (input.tierType === "unit_type" && !input.label?.trim()) {
     return { field: "label", message: "A unit-type tier needs a label, such as \"3-bed terrace\"." };
   }
   if (!(input.price > 0)) {
@@ -104,7 +110,32 @@ export function validatePriceTier(input: CreatePriceTierInput): FieldError | nul
 
 // ─── Plots ───────────────────────────────────────────────────────────────────
 
+// All three are the backend's own @JsonValue strings.
+//
+// PlotIntent is what the BUYER means to do with the land; ListingIntent is what
+// the SELLER is offering. Different axes, both legitimate — a plot can be
+// for_sale with an investment buyer intent, or for_rent with no buyer intent at
+// all. Folding one into the other would lose a real distinction.
+// Matches PlotCountsDto. `byStatus` carries ONLY statuses that actually occur:
+// an absent status means zero, not missing data, and an estate with no plots
+// gets total 0 with an empty map rather than a fabricated spread. A caller
+// rendering a fixed set of chips supplies its own zero — hence countFor below.
+export interface PlotCounts {
+  total: number;
+  byStatus: Partial<Record<PlotStatus, number>>;
+}
+
+export function countFor(counts: PlotCounts | null | undefined, status: PlotStatus): number {
+  return counts?.byStatus[status] ?? 0;
+}
+
+export function availableCount(counts: PlotCounts | null | undefined): number {
+  return countFor(counts, "available-dev") + countFor(counts, "available-inv");
+}
+
 export type PlotIntent = "development" | "investment";
+export type PropertyType = "land" | "built";
+export type ListingIntent = "for_sale" | "for_rent" | "both";
 
 export interface CreatePlotInput {
   plotNumber: string;
@@ -113,16 +144,25 @@ export interface CreatePlotInput {
   isCorner?: boolean;
   status: PortalPlotStatus;
   intent?: PlotIntent;
-  propertyType?: string;
-  listingIntent?: string;
-  orientation?: string;
-  // Accepted ONLY for a UNIT_TYPE tier: a terrace on its own plot has a real
+  propertyType?: PropertyType;
+  listingIntent?: ListingIntent;
+  orientation?: PlotOrientation;
+  // Accepted ONLY for a unit_type tier: a terrace on its own plot has a real
   // land area worth recording, while an apartment has none and leaves it null.
   nominalSizeSqmOverride?: number;
   footprint?: GeoJsonPolygon;
 }
 
-export type PortalPlotStatus = "AVAILABLE" | "RESERVED" | "SOLD";
+// The backend's PlotStatus @JsonValue strings ARE this repo's existing union
+// (mockData.ts's PlotStatus) — hyphenated and lowercase, adopted from the
+// frontend deliberately. So there is nothing to map.
+//
+// The two available variants are NOT redundant: an estate sells development
+// plots and investment plots side by side, and the distinction is load-bearing
+// server-side — the reservation sweeper restores a plot's PREVIOUS availability
+// variant when a hold lapses, specifically so a development plot doesn't
+// silently become an investment one.
+export type PortalPlotStatus = PlotStatus;
 
 export interface PortalPlot {
   id: string;
@@ -135,9 +175,9 @@ export interface PortalPlot {
   isCorner: boolean;
   status: PortalPlotStatus;
   intent?: PlotIntent;
-  propertyType?: string;
-  listingIntent?: string;
-  orientation?: string;
+  propertyType?: PropertyType;
+  listingIntent?: ListingIntent;
+  orientation?: PlotOrientation;
   // What was SOLD: the tier's size, or the override on a UNIT_TYPE tier.
   nominalSizeSqm: number | null;
   // What the survey MEASURED, computed from the footprint. Null when there is
@@ -145,9 +185,21 @@ export interface PortalPlot {
   // numbers on purpose (a plot sold as 250 sqm may survey at 250.36) and are
   // never reconciled or presented as a discrepancy to correct.
   actualAreaSqm: number | null;
+  // THREE price fields, as PlotDetailDto carries them, not just the final one:
+  // showing only `price` on a corner plot shows a number matching no tier on
+  // the price list, with nothing to explain the difference.
+  basePrice: number;
+  // Null when this plot is not a corner.
+  cornerPremiumPct: number | null;
   price: number;
   currency: Currency;
-  footprint?: GeoJsonPolygon;
+  // A displayed comparison, never an input to pricing. Null whenever
+  // nominalSizeSqm is — an apartment has no exclusive land area, and dividing
+  // by nothing would fabricate a rate.
+  pricePerSqm: number | null;
+  // Geometry is NOT on this row. PlotDto carries only this flag; footprints
+  // come from the estate's /geojson endpoint.
+  hasFootprint: boolean;
 }
 
 // The endpoint's own cap. A larger estate is created in several requests
@@ -161,20 +213,19 @@ export interface PlotFilters {
   isCorner?: boolean;
 }
 
-// Maps the backend's status + intent onto this repo's existing four-state plot
-// colour convention (see lib/plotStatus.ts), so the portal map and the
-// buyer-facing canvas speak one colour language.
-export function canonicalPlotStatus(plot: Pick<PortalPlot, "status" | "intent">): PlotStatus {
-  if (plot.status === "SOLD") return "sold";
-  if (plot.status === "RESERVED") return "reserved";
-  return plot.intent === "investment" ? "available-inv" : "available-dev";
-}
+// NOTE: there is deliberately no status mapper here any more. The public
+// marketplace DOES collapse availability to available/unavailable — internal
+// sales status is not a buyer's business — but that is a separate public
+// projection (see marketplaceService.ts), never the portal's model.
 
 // ─── Mock stores ─────────────────────────────────────────────────────────────
 
 const mockBlocks: PortalBlock[] = [];
 const mockTiers: PortalPriceTier[] = [];
 const mockPlots: PortalPlot[] = [];
+// Geometry lives apart from the plot row, exactly as the backend keeps it: the
+// row carries only `hasFootprint`, and shapes are served from /geojson.
+const mockFootprints = new Map<string, GeoJsonPolygon>();
 let sequence = 0;
 const nextId = (prefix: string) => `${prefix}-${++sequence}`;
 
@@ -213,6 +264,16 @@ function withLivePlotCount(tier: PortalPriceTier): PortalPriceTier {
   return { ...tier, plotCount: mockPlots.filter((p) => p.priceTierId === tier.id).length };
 }
 
+// Same grouped shape the backend returns: only statuses that occur.
+export async function fetchPlotCounts(estateId: string, scope: PortalScope): Promise<PlotCounts> {
+  if (!apiClient.isMockMode) return apiClient.get<PlotCounts>(`/api/portal/estates/${estateId}/plot-counts`);
+  if (!(await assertInScope(estateId, scope))) return { total: 0, byStatus: {} };
+  const plots = mockPlots.filter((p) => p.estateId === estateId);
+  const byStatus: Partial<Record<PlotStatus, number>> = {};
+  for (const plot of plots) byStatus[plot.status] = (byStatus[plot.status] ?? 0) + 1;
+  return { total: plots.length, byStatus };
+}
+
 export async function createPriceTier(estateId: string, input: CreatePriceTierInput, scope: PortalScope): Promise<PortalPriceTier> {
   const invalid = validatePriceTier(input);
   if (invalid) throw new Error(invalid.message);
@@ -220,7 +281,7 @@ export async function createPriceTier(estateId: string, input: CreatePriceTierIn
   if (!apiClient.isMockMode) return apiClient.post<PortalPriceTier>(`/api/portal/estates/${estateId}/price-tiers`, input);
   if (!(await assertInScope(estateId, scope))) throw new Error("Estate not found.");
 
-  const sizeSqm = input.tierType === "LAND_SIZE" ? input.sizeSqm! : null;
+  const sizeSqm = input.tierType === "land_size" ? input.sizeSqm! : null;
   const tier: PortalPriceTier = {
     id: nextId("tier"),
     estateId,
@@ -268,7 +329,11 @@ export async function createPlotBatch(estateId: string, plots: CreatePlotInput[]
   if (!apiClient.isMockMode) return apiClient.post<PortalPlot[]>(`/api/portal/estates/${estateId}/plots`, { plots });
   if (!(await assertInScope(estateId, scope))) throw new Error("Estate not found.");
 
-  const created = plots.map((input) => materialisePlot(estateId, input));
+  // The estate's own corner premium is what turns a tier's base price into a
+  // corner plot's price, so it is resolved once per batch rather than looked up
+  // from a static fixture list (which would miss anything created at runtime).
+  const estate = await fetchPortalEstateById(estateId, scope);
+  const created = plots.map((input) => materialisePlot(estateId, input, estate?.cornerPremiumPct ?? 0));
   mockPlots.push(...created);
   return created;
 }
@@ -303,13 +368,13 @@ export function planBatches(plotCount: number): number {
   return Math.ceil(plotCount / PLOT_BATCH_LIMIT);
 }
 
-function materialisePlot(estateId: string, input: CreatePlotInput): PortalPlot {
+function materialisePlot(estateId: string, input: CreatePlotInput, estateCornerPremiumPct: number): PortalPlot {
   const tier = mockTiers.find((t) => t.id === input.priceTierId);
   if (!tier) throw new Error("That price tier doesn't exist on this estate.");
 
   // The nominal size comes FROM THE TIER — never from the caller. The override
   // is honoured only where the tier has no size of its own.
-  const nominalSizeSqm = tier.tierType === "LAND_SIZE" ? tier.sizeSqm : (input.nominalSizeSqmOverride ?? null);
+  const nominalSizeSqm = tier.tierType === "land_size" ? tier.sizeSqm : (input.nominalSizeSqmOverride ?? null);
 
   // Stands in for ST_Area(footprint::geography) on write. Null with no
   // footprint — never the nominal size as a fallback.
@@ -317,8 +382,18 @@ function materialisePlot(estateId: string, input: CreatePlotInput): PortalPlot {
 
   const block = input.blockId ? mockBlocks.find((b) => b.id === input.blockId) : undefined;
 
+  // Stands in for the backend's own pricing: the tier's price is the base, and
+  // a corner plot carries the ESTATE's premium on top. A corner plot whose
+  // price silently equalled its tier's would contradict the price list.
+  const cornerPremiumPct = input.isCorner ? estateCornerPremiumPct : null;
+  const basePrice = tier.price;
+  const price = cornerPremiumPct ? Math.round(basePrice * (1 + cornerPremiumPct / 100)) : basePrice;
+
+  const id = nextId("plot");
+  if (input.footprint) mockFootprints.set(id, input.footprint);
+
   return {
-    id: nextId("plot"),
+    id,
     estateId,
     plotNumber: input.plotNumber.trim(),
     blockId: input.blockId,
@@ -333,14 +408,17 @@ function materialisePlot(estateId: string, input: CreatePlotInput): PortalPlot {
     orientation: input.orientation,
     nominalSizeSqm,
     actualAreaSqm,
-    price: tier.price,
+    basePrice,
+    cornerPremiumPct,
+    price,
     currency: tier.currency,
-    footprint: input.footprint,
+    pricePerSqm: nominalSizeSqm ? Math.round(price / nominalSizeSqm) : null,
+    hasFootprint: input.footprint !== undefined,
   };
 }
 
 export function tierDisplayLabel(tier: PortalPriceTier): string {
-  if (tier.tierType === "UNIT_TYPE") return tier.label ?? "Unit";
+  if (tier.tierType === "unit_type") return tier.label ?? "Unit";
   return tier.label ? `${tier.label} (${tier.sizeSqm} sqm)` : `${tier.sizeSqm} sqm`;
 }
 
@@ -358,14 +436,16 @@ export async function fetchInventoryGeoJson(
   boundary: GeoJsonFeatureCollection | null,
 ): Promise<GeoJsonFeatureCollection> {
   const plotFeatures: GeoJsonFeature[] = (await fetchPlots(estateId, scope, {}, { limit: PLOT_BATCH_LIMIT * 20 })).items
-    .filter((plot) => plot.footprint)
+    // A plot without a footprint is omitted entirely rather than carrying null
+    // geometry — same as the backend.
+    .filter((plot) => plot.hasFootprint && mockFootprints.has(plot.id))
     .map((plot) => ({
       type: "Feature",
-      geometry: plot.footprint!,
+      geometry: mockFootprints.get(plot.id)!,
       properties: {
         kind: "plot",
         plotNumber: plot.plotNumber,
-        canonicalStatus: canonicalPlotStatus(plot),
+        canonicalStatus: plot.status,
       },
     }));
 

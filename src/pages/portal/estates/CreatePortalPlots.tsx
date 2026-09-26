@@ -3,8 +3,9 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { useFetch } from "../../../lib/useFetch";
 import {
   PLOT_BATCH_LIMIT, createPlotsInBatches, fetchBlocks, fetchPriceTiers, planBatches, tierDisplayLabel,
-  type BatchProgress, type CreatePlotInput, type PortalPlotStatus,
+  type BatchProgress, type CreatePlotInput, type PlotOrientation, type PortalPlotStatus,
 } from "../../../services/portalInventoryService";
+import { STATUS_LABELS } from "../../../lib/plotStatus";
 import { fetchPortalEstateById, parseBoundary } from "../../../services/portalEstatesService";
 import RepeatableFieldList from "../../../components/onboarding/RepeatableFieldList";
 import { usePortalScope } from "../usePortalScope";
@@ -21,18 +22,20 @@ interface PlotRow {
   isCorner: boolean;
   status: PortalPlotStatus;
   intent: "" | "development" | "investment";
-  orientation: string;
+  orientation: "" | PlotOrientation;
   // Accepted only where the chosen tier is UNIT_TYPE, which has no size of
   // its own. An apartment leaves it empty; a terrace on its own plot doesn't.
   nominalSizeSqmOverride: string;
   footprintJson: string;
 }
 
+const ORIENTATIONS: PlotOrientation[] = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+
 let rowSeq = 0;
 const blankRow = (priceTierId = ""): PlotRow => ({
   key: `row-${++rowSeq}`,
   plotNumber: "", blockId: "", priceTierId, isCorner: false,
-  status: "AVAILABLE", intent: "", orientation: "", nominalSizeSqmOverride: "", footprintJson: "",
+  status: "available-dev", intent: "", orientation: "", nominalSizeSqmOverride: "", footprintJson: "",
 });
 
 export default function CreatePortalPlots() {
@@ -85,9 +88,9 @@ export default function CreatePortalPlots() {
         isCorner: row.isCorner,
         status: row.status,
         intent: row.intent || undefined,
-        orientation: row.orientation.trim() || undefined,
+        orientation: row.orientation || undefined,
         // Only ever sent for a unit-type tier; the backend rejects it otherwise.
-        nominalSizeSqmOverride: tier?.tierType === "UNIT_TYPE" && row.nominalSizeSqmOverride
+        nominalSizeSqmOverride: tier?.tierType === "unit_type" && row.nominalSizeSqmOverride
           ? Number(row.nominalSizeSqmOverride)
           : undefined,
         footprint,
@@ -162,21 +165,26 @@ export default function CreatePortalPlots() {
                     size input for a land-size plot, by design. */}
                 {tier && (
                   <p className="text-xs text-[var(--muted-foreground)]">
-                    {tier.tierType === "LAND_SIZE"
+                    {tier.tierType === "land_size"
                       ? `Sold as ${tier.sizeSqm} sqm, from this tier. Size comes from the tier, so there's nothing to enter here.`
                       : "A unit-type tier has no size of its own. If this unit sits on its own plot, record that land area below."}
                   </p>
                 )}
 
                 <div className="grid sm:grid-cols-3 gap-3">
+                  {/* Both availability variants offered separately — the
+                      backend keeps them apart on purpose, and the reservation
+                      sweeper restores whichever one a plot had. */}
                   <Select id={`status-${index}`} label="Status" value={row.status} onChange={(v) => update(index, { status: v as PortalPlotStatus })}
-                    options={[{ value: "AVAILABLE", label: "Available" }, { value: "RESERVED", label: "Reserved" }, { value: "SOLD", label: "Sold" }]} />
+                    options={(Object.keys(STATUS_LABELS) as PortalPlotStatus[]).map((s) => ({ value: s, label: STATUS_LABELS[s] }))} />
                   <Select id={`intent-${index}`} label="Intent (optional)" value={row.intent} onChange={(v) => update(index, { intent: v as PlotRow["intent"] })}
                     options={[{ value: "", label: "Unspecified" }, { value: "development", label: "Development" }, { value: "investment", label: "Investment" }]} />
-                  <Field id={`orientation-${index}`} label="Orientation (optional)" value={row.orientation} onChange={(v) => update(index, { orientation: v })} placeholder="NE" />
+                  <Select id={`orientation-${index}`} label="Orientation (optional)" value={row.orientation}
+                    onChange={(v) => update(index, { orientation: v as PlotOrientation | "" })}
+                    options={[{ value: "", label: "Unspecified" }, ...ORIENTATIONS.map((o) => ({ value: o, label: o }))]} />
                 </div>
 
-                {tier?.tierType === "UNIT_TYPE" && (
+                {tier?.tierType === "unit_type" && (
                   <Field id={`override-${index}`} label="Land area for this unit (sqm, optional)" type="number"
                     value={row.nominalSizeSqmOverride} onChange={(v) => update(index, { nominalSizeSqmOverride: v })}
                     hint="Leave empty for an apartment, which has no land of its own." />

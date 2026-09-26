@@ -12,7 +12,7 @@ import { formatDeclaredAmount } from "../../lib/formatCurrency";
 import MoneyRangeDisplay from "./MoneyRangeDisplay";
 import FeeBreakdown from "./FeeBreakdown";
 import ExitCostsPanel from "./ExitCostsPanel";
-import type { EstateCostDisclosure, TierCommitment } from "../../services/costDisclosureService";
+import { isGrandfathered, type EstateCostDisclosure, type TierCommitment } from "../../services/costDisclosureService";
 
 interface CostDisclosureSectionProps {
   disclosure: EstateCostDisclosure | null;
@@ -30,7 +30,7 @@ export default function CostDisclosureSection({ disclosure, tier, loading }: Cos
   // not an empty section header implying there is nothing to pay.
   if (!disclosure) return null;
 
-  if (disclosure.status === "exempt_grandfathered") {
+  if (isGrandfathered(disclosure)) {
     return (
       <div className="bg-[var(--muted)] border border-[var(--border)] rounded-xl p-5">
         <div className="text-sm font-medium text-[var(--foreground)] mb-1">Fees have not been declared for this listing</div>
@@ -53,18 +53,18 @@ export default function CostDisclosureSection({ disclosure, tier, loading }: Cos
             </div>
             <div>
               <div className="text-xs text-[var(--muted-foreground)] mb-0.5">Fees on top</div>
-              <MoneyRangeDisplay money={tier.oneOffFees} className="font-mono-data font-semibold text-[var(--foreground)] block" />
+              <MoneyRangeDisplay money={tier.oneOffFees} currency={tier.currency} className="font-mono-data font-semibold text-[var(--foreground)] block" />
             </div>
             <div>
               <div className="text-xs text-[var(--muted-foreground)] mb-0.5">Total commitment</div>
-              <MoneyRangeDisplay money={tier.totalCommitment} className="font-mono-data font-semibold text-lg text-[var(--foreground)] block" />
+              <MoneyRangeDisplay money={tier.totalCommitment} currency={tier.currency} className="font-mono-data font-semibold text-lg text-[var(--foreground)] block" />
             </div>
           </div>
 
           {tier.totalCommitmentIfCorner && (
             <p className="text-xs text-[var(--muted-foreground)] mt-3 pt-3 border-t border-[var(--border)]">
               On a corner plot, the total commitment is{" "}
-              <MoneyRangeDisplay money={tier.totalCommitmentIfCorner} className="font-mono-data text-[var(--foreground)]" />.
+              <MoneyRangeDisplay money={tier.totalCommitmentIfCorner} currency={tier.currency} className="font-mono-data text-[var(--foreground)]" />.
             </p>
           )}
 
@@ -80,7 +80,7 @@ export default function CostDisclosureSection({ disclosure, tier, loading }: Cos
         </div>
       )}
 
-      <FeeBreakdown feeSchedule={disclosure.feeSchedule} tier={tier} />
+      <FeeBreakdown feeSchedule={disclosure.fees} tier={tier} />
 
       {disclosure.exitCosts && (
         <div>

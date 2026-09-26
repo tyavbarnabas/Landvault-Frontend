@@ -10,11 +10,16 @@
 import type { Currency, KYCStatus } from "../data/mockData";
 import { apiClient, setAuthToken } from "../lib/apiClient";
 
-// Three audiences, three surfaces: buyers (/dashboard, /marketplace,
-// /portfolio), a company's own staff (/portal/*), and the platform operator
-// (/admin/*). The portal is neither of the other two and is never folded into
-// them.
-export type UserRole = "client" | "developer" | "super_admin";
+// The backend emits exactly two role strings — see AuthService's
+// `ctx.superAdmin() ? "super_admin" : "client"`. There is NO "developer"
+// role: a company's portal staff arrive as "client" carrying
+// portal.estates.* permissions.
+//
+// So roles are a coarse summary and must never be what a surface is gated on.
+// Use the permission helpers below: permissions are the backend's real
+// authorisation surface, and a user holding portal.estates.view is portal
+// staff whatever their role string says.
+export type UserRole = "client" | "super_admin";
 
 export interface AuthUser {
   name: string;
@@ -27,9 +32,24 @@ export interface AuthUser {
   twoFAEnabled: boolean;
   role: UserRole;
   permissions: string[];
+  // Present only for a Super Admin bootstrapped with a temporary password.
+  mustChangePassword?: boolean;
+  // True for platform staff who hold the platform-scope RLS bypass but
+  // haven't confirmed 2FA. Login is deliberately NOT blocked on it — that
+  // would strand the bootstrapped Super Admin, who can't set 2FA up without
+  // signing in first — so the frontend routes on this flag instead.
+  mustSetUpTwoFa?: boolean;
+  // 0 when 2FA is off.
+  recoveryCodesRemaining?: number;
   // Which company this user acts for, and — for branch-scoped staff — which
-  // branch. The backend's JWT already carries both, so these close a contract
-  // gap rather than inventing mock-only fields.
+  // branch.
+  //
+  // CONTRACT GAP (see the backend note at the end of this slice): the login
+  // response (`AuthUserResponse`) carries NEITHER today. `tenantId` has to be
+  // read from `GET /api/me`, and `branchId` is exposed only by
+  // `/api/me/tenant-scope`, which its own Javadoc calls a debug endpoint. Both
+  // are optional here for exactly that reason, and every consumer must cope
+  // with them being absent rather than assuming a scope.
   //
   // A null/absent branchId means NOT branch-scoped: an Executive Director
   // sees across their company's branches. Buyers and platform staff have
@@ -75,6 +95,41 @@ const PORTAL_PERMISSIONS = [
   "portal.estates.view",
   "portal.estates.manage",
 ];
+
+// ─── Surface helpers — permissions, never role strings ───────────────────────
+
+export const PORTAL_VIEW_PERMISSION = "portal.estates.view";
+export const ADMIN_VIEW_PERMISSION = "admin.dashboard.view";
+
+function can(user: AuthUser | null | undefined, permission: string): boolean {
+  return user?.permissions?.includes(permission) ?? false;
+}
+
+// A company's own staff. Holding the portal permission is what makes someone
+// portal staff — the backend never labels them with a distinct role.
+export function isPortalStaff(user: AuthUser | null | undefined): boolean {
+  return can(user, PORTAL_VIEW_PERMISSION);
+}
+
+export function isPlatformStaff(user: AuthUser | null | undefined): boolean {
+  return can(user, ADMIN_VIEW_PERMISSION) || user?.role === "super_admin";
+}
+
+// A buyer is whoever is neither of the above. Derived rather than asserted, so
+// buyer-only chrome (the KYC pill, the display-currency selector) can't leak
+// into a surface it makes no sense on.
+export function isBuyer(user: AuthUser | null | undefined): boolean {
+  return !!user && !isPortalStaff(user) && !isPlatformStaff(user);
+}
+
+// Where a session should land after signing in. Three audiences, three home
+// screens — a developer dropped on the buyer dashboard would see a portfolio
+// they don't have.
+export function landingRouteFor(user: AuthUser | null | undefined): string {
+  if (isPlatformStaff(user)) return "/admin/dashboard";
+  if (isPortalStaff(user)) return "/portal/estates";
+  return "/dashboard";
+}
 
 export const MOCK_CLIENT_USER: AuthUser = {
   name: "Emeka Okonkwo",
@@ -122,7 +177,9 @@ const MOCK_PORTAL_DIRECTOR: AuthUser = {
   kycStatus: "approved",
   kycType: "local",
   twoFAEnabled: true,
-  role: "developer",
+  // "client", not a bespoke role — this is exactly what the backend sends for
+  // a tenant's staff member. The portal permissions are what matter.
+  role: "client",
   permissions: PORTAL_PERMISSIONS,
   tenantId: "estintin-group",
   branchId: null,
@@ -137,7 +194,7 @@ const MOCK_PORTAL_BRANCH_MANAGER: AuthUser = {
   kycStatus: "approved",
   kycType: "local",
   twoFAEnabled: true,
-  role: "developer",
+  role: "client",
   permissions: PORTAL_PERMISSIONS,
   tenantId: "estintin-group",
   branchId: "heritage",

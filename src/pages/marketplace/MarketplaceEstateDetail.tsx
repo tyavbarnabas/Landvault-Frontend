@@ -55,9 +55,7 @@ export default function MarketplaceEstateDetail() {
   // a blend across tiers.
   const commitmentTier =
     tierCommitmentForSize(disclosure, selectedSizeSqm ?? -1) ??
-    (disclosure?.status === "declared"
-      ? disclosure.tiers.reduce<typeof disclosure.tiers[number] | null>((cheapest, t) => (!cheapest || t.landPrice < cheapest.landPrice ? t : cheapest), null)
-      : null);
+    (disclosure?.tiers.reduce<typeof disclosure.tiers[number] | null>((cheapest, t) => (!cheapest || t.landPrice < cheapest.landPrice ? t : cheapest), null) ?? null);
 
   return (
     <div className="max-w-5xl mx-auto p-6">

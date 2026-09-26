@@ -57,3 +57,27 @@ These aren't just "point at a new URL" — they need actual backend-shaped rewor
 - **Reviews**: any logged-in user can currently post a review. The real system's rule is that only a buyer with a verified, finance-approved *completed transaction* on that estate may review it — not enforced here since there's no transaction data to check against yet.
 - **Multi-tenancy**: this UI has no concept of tenants/companies/branches at all — it assumes a single company. The real platform is hierarchically multi-tenant (Super Admin → company → branch), which will need real UI work (tenant-scoped views, branding), not just API wiring.
 - **Plot geometry**: plots are a simple `row`/`col` grid grouped into visual "blocks" for the street-map look. The real backend stores actual PostGIS polygons — `PlotCanvas.tsx` will need real rework to render real geometry, not just point at a new endpoint.
+
+
+## Asks for the backend session (2026-09-26 contract audit)
+
+Two gaps the frontend cannot close on its own. Everything else found in the audit has been fixed on this side; these two would mean degrading the product to match a missing capability, so they are written up instead.
+
+### 1. Expose `EstateEligibility` on `EstateDetailDto`
+
+The backend already computes all seven booleans (`published`, `tenantVerified`, `tenantEntitled`, `tenantActive`, `feesDeclared`, `refundTermsDeclared`, `eligible`) in `marketplace_estate_eligibility`, and `EstateEligibility`'s own Javadoc says they are separate *precisely so* the failing one can be named. But the record isn't on any portal read DTO, so the only way the portal can learn about a failure is to attempt a publish and catch `PublicationRefused`.
+
+The portal's readiness panel therefore renders every condition as **Unknown** against a real backend — it must never show an unknown condition as met, so it cannot guess. Adding the record to `EstateDetailDto` turns the panel on with no other frontend change; the field is already modelled as `eligibility: EstateEligibility | null` and the null branch simply stops being taken.
+
+Worth noting the conflict check has no boolean of its own: the frontend infers a blocking conflict from "every named condition passes but `eligible` is false". An explicit `noBlockingConflict` (or exposing `ConflictPublicationCheck`) would remove that inference.
+
+### 2. Put `tenantId` and `branchId` on `AuthUserResponse`
+
+`AuthUserResponse` carries neither today. `tenantId` is available from `GET /api/me`, and `branchId` only from `GET /api/me/tenant-scope` — whose own Javadoc calls it a debug endpoint for observing the tenant-context filter, not a product endpoint.
+
+Branch scoping is enforced server-side by RLS either way; this is about the portal knowing its own scope well enough to label the UI honestly ("your branch's estates" vs "every estate across your company's branches") without a second round trip to a debug surface. `AuthUser.tenantId`/`branchId` are already optional on the frontend for exactly this reason.
+
+### Also worth a look, lower priority
+
+- `POST /api/auth/login`'s Javadoc says "OTP is a TODO", but `TwoFactorController` and `TwoFactorChallengeResponse` exist. The frontend's login still runs a **cosmetic** OTP step that accepts any six digits; it should be wired to the real challenge/verify pair, which needs the login response's shape for a 2FA-required outcome pinned down.
+- `AuthUserResponse` carries `mustChangePassword`, `mustSetUpTwoFa` and `recoveryCodesRemaining`, which the frontend now models but does not yet route on — no change-password or 2FA-setup screen exists.

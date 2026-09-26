@@ -48,6 +48,9 @@ export function conflictStatusBadge(status: ConflictStatus): { label: string; va
     case "investigating": return { label: "Investigating", variant: "warning" };
     case "confirmed_duplicate": return { label: "Confirmed duplicate", variant: "error" };
     case "dismissed": return { label: "Dismissed", variant: "neutral" };
+    // The system closed it because the geometry no longer overlaps — a fixed
+    // survey error, not a decision anyone had to make.
+    case "auto_resolved": return { label: "Auto-resolved", variant: "success" };
   }
 }
 
@@ -57,5 +60,9 @@ export function portalEstateStatusBadge(status: PortalEstateStatus): { label: st
     case "ready_to_publish": return { label: "Ready to publish", variant: "info" };
     case "published": return { label: "Published", variant: "success" };
     case "blocked": return { label: "Blocked", variant: "warning" };
+    // The backend doesn't expose eligibility on a read yet, so readiness can
+    // be genuinely unknown. Neutral, never positive — an unknown condition is
+    // not a met one.
+    case "unknown": return { label: "Readiness unknown", variant: "neutral" };
   }
 }

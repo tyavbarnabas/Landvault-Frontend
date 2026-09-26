@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useApp } from "../contexts/AppContext"
+import { isBuyer, isPlatformStaff, isPortalStaff } from "../services/authService";
 import ErrorBoundary from "./ErrorBoundary"
 
 // One nav config for the whole app, not a per-role branch. Every item names
@@ -247,10 +248,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [showNotifs, setShowNotifs] = useState(false)
 
   const unread = notifications.filter((n) => !n.read).length
-  const isSuperAdmin = user?.role === "super_admin"
+  // Derived from PERMISSIONS, not role strings: the backend sends portal staff
+  // as role "client", so any check against a "developer" role would never fire
+  // and a company's staff would silently get buyer chrome.
+  const platformStaff = isPlatformStaff(user)
+  const portalStaff = isPortalStaff(user)
   // KYC standing and a display-currency preference are buyer concerns. Neither
   // a platform operator nor a company's own staff has any use for them.
-  const isBuyer = user?.role === "client"
+  const buyer = isBuyer(user)
 
   const visibleNavSections = NAV_SECTIONS
     .map((section) => ({
@@ -281,19 +286,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             LandVault
           </span>
           <span className="block text-[10px] text-white/40 mt-0.5 font-mono-data uppercase tracking-wider">
-            {isSuperAdmin ? "Platform Console" : user?.role === "developer" ? "Developer Portal" : "Real Estate Platform"}
+            {platformStaff ? "Platform Console" : portalStaff ? "Developer Portal" : "Real Estate Platform"}
           </span>
         </div>
 
         {/* KYC pill (buyer accounts only — not meaningful for the platform
             operator, nor for a company's own staff) */}
-        {isBuyer && user?.kycStatus === "approved" && (
+        {buyer && user?.kycStatus === "approved" && (
           <div className="mx-3 mt-3 px-3 py-1.5 bg-white/8 rounded-md flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
             <span className="text-[11px] text-white/70">KYC verified</span>
           </div>
         )}
-        {isBuyer && user?.kycStatus === "under_review" && (
+        {buyer && user?.kycStatus === "under_review" && (
           <div className="mx-3 mt-3 px-3 py-1.5 bg-amber-500/20 rounded-md flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
             <span className="text-[11px] text-white/70">KYC under review</span>
@@ -399,7 +404,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
           {/* Currency (buyer accounts only — a display preference for buyers,
               not for the platform operator or a company's staff) */}
-          {isBuyer && (
+          {buyer && (
             <select
               value={currency}
               onChange={(e) => setCurrency(e.target.value as any)}

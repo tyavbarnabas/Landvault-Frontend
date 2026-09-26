@@ -14,15 +14,27 @@ import { formatDeclaredAmount } from "../../lib/formatCurrency";
 import type { ExitCosts } from "../../services/costDisclosureService";
 
 export default function ExitCostsPanel({ exitCosts }: { exitCosts: ExitCosts }) {
-  const { refundOutcome: refund, penaltySteps, revocation, currency, basisLandPrice } = exitCosts;
+  // Field names are the backend's: ifYouWithdraw / ifYouFallBehind.
+  const { ifYouWithdraw: refund, ifYouFallBehind: penaltySteps, revocation, currency, basisLandPrice, basisTierLabel } = exitCosts;
 
   return (
     <div>
+      {/* The backend's own "no free exit" determination — read, never
+          re-derived here, so the two can't disagree about it. */}
+      {exitCosts.bothPathsCarryACost && (
+        <p className="text-sm text-[var(--foreground)] mb-3">
+          Both ways out of this purchase cost something: falling behind is penalised, and withdrawing forfeits part of what you paid.
+        </p>
+      )}
+
       <div className="grid md:grid-cols-2 gap-4">
         {/* Withdrawal — the naira figure, not the percentage. "20%
             administrative charge" is abstract; this is what a buyer reacts to. */}
         <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
           <h3 className="text-sm font-semibold text-[var(--foreground)] mb-2">If you withdraw</h3>
+          {/* An illustration of one tier, assuming payment in full — a maximum
+              exposure, not this buyer's position. Nothing here knows that. */}
+          <p className="text-xs text-[var(--muted-foreground)] mb-2">Illustrated against the {basisTierLabel} tier, assuming payment in full.</p>
           <p className="text-sm text-[var(--foreground)] leading-relaxed">
             You receive <span className="font-mono-data font-semibold">{formatDeclaredAmount(refund.refundAmount, currency)}</span> — a loss of{" "}
             <span className="font-mono-data font-semibold">{formatDeclaredAmount(refund.totalLoss, currency)}</span>
