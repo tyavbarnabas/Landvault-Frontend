@@ -35,6 +35,15 @@ const NAV_SECTIONS = [
       { path: "/settings", label: "Settings", icon: GearIcon, permission: "client.settings.view" },
     ],
   },
+  // A company managing its own estates — the third surface, gated on the
+  // portal permissions. Same NAV_SECTIONS mechanism as the other two; no
+  // fourth nav pattern and no forked Layout.
+  {
+    label: "My company",
+    items: [
+      { path: "/portal/estates", label: "Estates", icon: MapIcon, permission: "portal.estates.view" },
+    ],
+  },
   {
     label: "Platform",
     items: [
@@ -239,6 +248,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const unread = notifications.filter((n) => !n.read).length
   const isSuperAdmin = user?.role === "super_admin"
+  // KYC standing and a display-currency preference are buyer concerns. Neither
+  // a platform operator nor a company's own staff has any use for them.
+  const isBuyer = user?.role === "client"
 
   const visibleNavSections = NAV_SECTIONS
     .map((section) => ({
@@ -269,18 +281,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             LandVault
           </span>
           <span className="block text-[10px] text-white/40 mt-0.5 font-mono-data uppercase tracking-wider">
-            {isSuperAdmin ? "Platform Console" : "Real Estate Platform"}
+            {isSuperAdmin ? "Platform Console" : user?.role === "developer" ? "Developer Portal" : "Real Estate Platform"}
           </span>
         </div>
 
-        {/* KYC pill (client accounts only — not meaningful for the platform operator) */}
-        {!isSuperAdmin && user?.kycStatus === "approved" && (
+        {/* KYC pill (buyer accounts only — not meaningful for the platform
+            operator, nor for a company's own staff) */}
+        {isBuyer && user?.kycStatus === "approved" && (
           <div className="mx-3 mt-3 px-3 py-1.5 bg-white/8 rounded-md flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
             <span className="text-[11px] text-white/70">KYC verified</span>
           </div>
         )}
-        {!isSuperAdmin && user?.kycStatus === "under_review" && (
+        {isBuyer && user?.kycStatus === "under_review" && (
           <div className="mx-3 mt-3 px-3 py-1.5 bg-amber-500/20 rounded-md flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
             <span className="text-[11px] text-white/70">KYC under review</span>
@@ -384,8 +397,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {/* Page breadcrumb placeholder */}
           <div className="flex-1" />
 
-          {/* Currency (client accounts only — a display preference for buyers, not the platform operator) */}
-          {!isSuperAdmin && (
+          {/* Currency (buyer accounts only — a display preference for buyers,
+              not for the platform operator or a company's staff) */}
+          {isBuyer && (
             <select
               value={currency}
               onChange={(e) => setCurrency(e.target.value as any)}

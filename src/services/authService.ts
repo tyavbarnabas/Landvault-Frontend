@@ -10,7 +10,11 @@
 import type { Currency, KYCStatus } from "../data/mockData";
 import { apiClient, setAuthToken } from "../lib/apiClient";
 
-export type UserRole = "client" | "super_admin";
+// Three audiences, three surfaces: buyers (/dashboard, /marketplace,
+// /portfolio), a company's own staff (/portal/*), and the platform operator
+// (/admin/*). The portal is neither of the other two and is never folded into
+// them.
+export type UserRole = "client" | "developer" | "super_admin";
 
 export interface AuthUser {
   name: string;
@@ -23,6 +27,19 @@ export interface AuthUser {
   twoFAEnabled: boolean;
   role: UserRole;
   permissions: string[];
+  // Which company this user acts for, and — for branch-scoped staff — which
+  // branch. The backend's JWT already carries both, so these close a contract
+  // gap rather than inventing mock-only fields.
+  //
+  // A null/absent branchId means NOT branch-scoped: an Executive Director
+  // sees across their company's branches. Buyers and platform staff have
+  // neither field.
+  //
+  // Scoping itself is enforced server-side by RLS. These are here so the
+  // mock layer can stand in for that, and so the UI can say whose estates it
+  // is showing — never so the frontend can re-filter or widen a scope.
+  tenantId?: string;
+  branchId?: string | null;
 }
 
 const CLIENT_PERMISSIONS = [
@@ -49,6 +66,14 @@ const SUPER_ADMIN_PERMISSIONS = [
   "admin.tenants.view",
   "admin.tenants.manage",
   "admin.marketplace.conflicts",
+];
+
+// Only what this slice actually builds (DP-1 to DP-6: reach the portal, list
+// estates, create one, see its boundary). Inventory, disclosure and
+// publication add their own slugs here as those screens land.
+const PORTAL_PERMISSIONS = [
+  "portal.estates.view",
+  "portal.estates.manage",
 ];
 
 export const MOCK_CLIENT_USER: AuthUser = {
@@ -81,11 +106,55 @@ const MOCK_SUPER_ADMIN_USER: AuthUser = {
   permissions: SUPER_ADMIN_PERMISSIONS,
 };
 
+// Demo developer-portal accounts, both staff of the seeded Estintin Group
+// tenant. Two of them on purpose: branch scoping is invisible with only one
+// account, because a wrongly-scoped list just looks shorter than expected.
+//
+// Chidi is an Executive Director (no branch — sees all of Estintin's
+// estates); Tunde manages the Heritage branch and is the same person named as
+// Heritage's manager in tenantsService.ts's seed data.
+const MOCK_PORTAL_DIRECTOR: AuthUser = {
+  name: "Chidi Okeke",
+  email: "director@estintin.com",
+  phone: "+234 803 111 2222",
+  country: "NG",
+  currency: "NGN",
+  kycStatus: "approved",
+  kycType: "local",
+  twoFAEnabled: true,
+  role: "developer",
+  permissions: PORTAL_PERMISSIONS,
+  tenantId: "estintin-group",
+  branchId: null,
+};
+
+const MOCK_PORTAL_BRANCH_MANAGER: AuthUser = {
+  name: "Tunde Bakare",
+  email: "heritage@estintin.com",
+  phone: "+234 803 333 4444",
+  country: "NG",
+  currency: "NGN",
+  kycStatus: "approved",
+  kycType: "local",
+  twoFAEnabled: true,
+  role: "developer",
+  permissions: PORTAL_PERMISSIONS,
+  tenantId: "estintin-group",
+  branchId: "heritage",
+};
+
+// Still one login form for every account type — this table stands in for the
+// real backend returning whichever user the credentials belong to, with their
+// actual role, permissions and tenant/branch claims.
+const MOCK_ACCOUNTS_BY_EMAIL: Record<string, AuthUser> = {
+  [MOCK_SUPER_ADMIN_USER.email]: MOCK_SUPER_ADMIN_USER,
+  [MOCK_PORTAL_DIRECTOR.email]: MOCK_PORTAL_DIRECTOR,
+  [MOCK_PORTAL_BRANCH_MANAGER.email]: MOCK_PORTAL_BRANCH_MANAGER,
+};
+
 export async function login(email: string, password?: string): Promise<AuthUser> {
   if (apiClient.isMockMode) {
-    return email.trim().toLowerCase() === MOCK_SUPER_ADMIN_USER.email
-      ? MOCK_SUPER_ADMIN_USER
-      : MOCK_CLIENT_USER;
+    return MOCK_ACCOUNTS_BY_EMAIL[email.trim().toLowerCase()] ?? MOCK_CLIENT_USER;
   }
   const { user, token } = await apiClient.post<{ user: AuthUser; token: string }>("/api/auth/login", { email, password });
   setAuthToken(token);

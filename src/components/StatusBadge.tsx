@@ -3,6 +3,7 @@
 
 import type { TenantStatus, VerificationState } from "../services/tenantsService";
 import type { ConflictStatus } from "../services/listingConflictsService";
+import type { PortalEstateStatus } from "../services/portalEstatesService";
 
 export type BadgeVariant = "neutral" | "info" | "warning" | "success" | "error";
 
@@ -47,5 +48,14 @@ export function conflictStatusBadge(status: ConflictStatus): { label: string; va
     case "investigating": return { label: "Investigating", variant: "warning" };
     case "confirmed_duplicate": return { label: "Confirmed duplicate", variant: "error" };
     case "dismissed": return { label: "Dismissed", variant: "neutral" };
+  }
+}
+
+export function portalEstateStatusBadge(status: PortalEstateStatus): { label: string; variant: BadgeVariant } {
+  switch (status) {
+    case "draft": return { label: "Draft", variant: "neutral" };
+    case "ready_to_publish": return { label: "Ready to publish", variant: "info" };
+    case "published": return { label: "Published", variant: "success" };
+    case "blocked": return { label: "Blocked", variant: "warning" };
   }
 }

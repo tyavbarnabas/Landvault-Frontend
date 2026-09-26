@@ -3,6 +3,17 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
 import { completePendingWishlistIntent } from "../../lib/pendingWishlist";
 import { consumePendingIntent } from "../../lib/pendingIntent";
+import type { AuthUser } from "../../services/authService";
+
+// Three audiences, three home screens. A developer landing on the buyer
+// dashboard would see a portfolio they don't have.
+function landingRouteFor(role: AuthUser["role"]): string {
+  switch (role) {
+    case "super_admin": return "/admin/dashboard";
+    case "developer": return "/portal/estates";
+    case "client": return "/dashboard";
+  }
+}
 
 export default function Login() {
   const navigate = useNavigate();
@@ -55,7 +66,7 @@ export default function Login() {
         }
 
         const returnUrl = searchParams.get("returnUrl");
-        navigate(returnUrl || (loggedInUser.role === "super_admin" ? "/admin/dashboard" : "/dashboard"));
+        navigate(returnUrl || landingRouteFor(loggedInUser.role));
       } catch {
         setLoading(false);
         setError("Sign-in failed. Please try again.");

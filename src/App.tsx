@@ -40,6 +40,9 @@ import Support from "./pages/support/Support";
 
 // Super Admin (platform operator console) — lazy: an entire surface a
 // client-role session never navigates into at all.
+const PortalEstateList = lazy(() => import("./pages/portal/estates/PortalEstateList"));
+const CreatePortalEstate = lazy(() => import("./pages/portal/estates/CreatePortalEstate"));
+const PortalEstateDetail = lazy(() => import("./pages/portal/estates/PortalEstateDetail"));
 const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
 const TenantDirectory = lazy(() => import("./pages/admin/tenants/TenantDirectory"));
 const CreateTenant = lazy(() => import("./pages/admin/tenants/CreateTenant"));
@@ -88,6 +91,26 @@ function AppPage({ children }: { children: React.ReactNode }) {
 // Same login point as everyone else — this just also requires the "super_admin"
 // role the login response came back with. A client account is bounced to its
 // own dashboard rather than an error, since this isn't a page that exists for them.
+// The portal is gated on its permission, not on a role check, so a future
+// account that holds portal.estates.view alongside another role still reaches
+// it — same mechanism the nav already uses.
+function PortalRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, user } = useApp();
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!user?.permissions?.includes("portal.estates.view")) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
+
+function PortalPage({ children }: { children: React.ReactNode }) {
+  return (
+    <PortalRoute>
+      <Layout>
+        <Suspense fallback={<PageLoading />}>{children}</Suspense>
+      </Layout>
+    </PortalRoute>
+  );
+}
+
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, user } = useApp();
   if (!isAuthenticated) return <Navigate to="/login" replace />;
@@ -165,6 +188,12 @@ function AppRoutes() {
       <Route path="/enquiries" element={<AppPage><Enquiries /></AppPage>} />
 
       {/* Super Admin (platform operator console — same login point, gated by role) */}
+      {/* Developer portal — a company managing its own estates */}
+      <Route path="/portal" element={<Navigate to="/portal/estates" replace />} />
+      <Route path="/portal/estates" element={<PortalPage><PortalEstateList /></PortalPage>} />
+      <Route path="/portal/estates/new" element={<PortalPage><CreatePortalEstate /></PortalPage>} />
+      <Route path="/portal/estates/:estateId" element={<PortalPage><PortalEstateDetail /></PortalPage>} />
+
       <Route path="/admin/dashboard" element={<AdminPage><AdminDashboard /></AdminPage>} />
       <Route path="/admin/tenants" element={<AdminPage><TenantDirectory /></AdminPage>} />
       <Route path="/admin/tenants/new" element={<AdminPage><CreateTenant /></AdminPage>} />
