@@ -15,11 +15,12 @@
 
 import { ESTATES, type Estate, type GeoPoint } from "../data/mockData";
 import { polygonAreaSqm } from "../lib/geometry";
-import { apiClient } from "../lib/apiClient";
+import { apiClient, ApiError } from "../lib/apiClient";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import { fetchTenantByIdSync } from "./tenantsService";
 import { fetchConflicts } from "./listingConflictsService";
 import { fetchCostDisclosure, isGrandfathered } from "./costDisclosureService";
+import { mockHasDeclaredFees, mockHasDeclaredRefundTerms } from "./estateDisclosureService";
 import type { NigerianState } from "../data/nigerianStates";
 
 // ─── GeoJSON ─────────────────────────────────────────────────────────────────
@@ -201,73 +202,72 @@ function footprintToPolygon(footprint: GeoPoint[]): GeoJsonPolygon {
 
 // ─── Publication eligibility ────────────────────────────────────────────────
 
-// Mirrors the backend's `EstateEligibility` record field for field. SEVEN
-// fields, not six: `refundTermsDeclared` is a condition in its own right, and
-// `eligible` is the backend's own fold of everything.
+// Mirrors the backend's `EstateEligibilityDto` field for field — EIGHT
+// booleans, carried on `EstateDetailDto.eligibility`. Every one is a fact the
+// server computed; none is inferred here.
 //
-// Note what is NOT here: there is no `noBlockingConflict` boolean. The
-// conflict check exists only inside `eligible`, so a blocking conflict shows
-// up as `eligible: false` while all six named conditions pass — see
-// `conflictIsBlocking` below, which says that plainly rather than inventing a
-// boolean the backend never sends.
+// `noBlockingConflict` is explicit. An earlier version of this type had seven
+// fields and inferred a conflict from "every named condition passes but
+// `eligible` is false" — correct until the day a ninth condition is added and
+// not exposed, when it would silently tell a developer the wrong reason.
 //
 // Grandfathered estates report TRUE for both declaration conditions.
 export interface EstateEligibility {
+  // Intent: the developer's own switch. Not the same as being live.
   published: boolean;
   tenantVerified: boolean;
   tenantEntitled: boolean;
   tenantActive: boolean;
   feesDeclared: boolean;
   refundTermsDeclared: boolean;
-  // The backend's fold of all six above PLUS the conflict check.
+  noBlockingConflict: boolean;
+  // Current state: the conjunction of all of the above, and exactly what the
+  // public feed filters on at read time.
   eligible: boolean;
 }
 
-export type PortalEstateStatus = "draft" | "ready_to_publish" | "published" | "blocked" | "unknown";
+export type EligibilityConditionKey = keyof Omit<EstateEligibility, "eligible" | "published">;
 
-// Each named condition, in the order a developer meets them, with copy they
-// can act on. Kept beside the conditions so a real backend's eligibility
-// response flows through exactly the same mapping as the mock's.
-export const ELIGIBILITY_CONDITIONS: { key: keyof Omit<EstateEligibility, "eligible">; label: string; reason: string }[] = [
-  { key: "published", label: "Listed on the public marketplace", reason: "This estate isn't listed yet" },
+// "published_not_live": the flag is set but a condition has lapsed — a
+// suspension, a new HIGH conflict — so the listing is off the marketplace
+// without having been unpublished. It returns by itself once the condition
+// clears, because the flag was never touched.
+export type PortalEstateStatus = "draft" | "ready_to_publish" | "published" | "published_not_live" | "blocked" | "unknown";
+
+// Each condition the backend checks before listing, in the order a developer
+// meets them, with copy they can act on. `published` is not among them — it is
+// the developer's intent, not a condition — and is rendered separately.
+export const ELIGIBILITY_CONDITIONS: { key: EligibilityConditionKey; label: string; reason: string }[] = [
   { key: "tenantVerified", label: "Company verification complete", reason: "Your company's verification isn't complete yet" },
   { key: "tenantEntitled", label: "Marketplace publishing enabled on your plan", reason: "Marketplace publishing isn't enabled on your company's plan" },
-  { key: "tenantActive", label: "Company account in good standing", reason: "Your company's account isn't active right now" },
+  { key: "tenantActive", label: "Company account active", reason: "Your company's account isn't active right now" },
   { key: "feesDeclared", label: "Fee schedule declared", reason: "The fee schedule hasn't been declared" },
   { key: "refundTermsDeclared", label: "Refund terms declared", reason: "Refund terms haven't been declared" },
+  // Never names the other party. Both sides of a boundary dispute believe
+  // they are right, and the platform does not introduce them.
+  { key: "noBlockingConflict", label: "No unresolved boundary conflict", reason: "This estate's boundary overlaps another registered boundary" },
 ];
 
 // Conditions outside the company's immediate control.
-const HARD_BLOCKER_KEYS: (keyof EstateEligibility)[] = ["tenantVerified", "tenantEntitled", "tenantActive"];
+const HARD_BLOCKER_KEYS: EligibilityConditionKey[] = ["tenantVerified", "tenantEntitled", "tenantActive", "noBlockingConflict"];
 // Setup the company still has to finish itself.
-const OUTSTANDING_SETUP_KEYS: (keyof EstateEligibility)[] = ["feesDeclared", "refundTermsDeclared"];
+const OUTSTANDING_SETUP_KEYS: EligibilityConditionKey[] = ["feesDeclared", "refundTermsDeclared"];
 
-// A blocking conflict is the one condition with no boolean of its own: the
-// backend folds it into `eligible` only. If every named condition passes and
-// `eligible` is still false, a conflict is what is left.
 export function conflictIsBlocking(eligibility: EstateEligibility): boolean {
-  const namedConditionsPass = ELIGIBILITY_CONDITIONS
-    .filter((c) => c.key !== "published")
-    .every((c) => eligibility[c.key]);
-  return namedConditionsPass && !eligibility.eligible;
+  return !eligibility.noBlockingConflict;
 }
 
 export function blockingReasonsFor(eligibility: EstateEligibility): string[] {
-  const reasons = ELIGIBILITY_CONDITIONS
-    .filter((c) => c.key !== "published" && !eligibility[c.key])
-    .map((c) => c.reason);
-  if (conflictIsBlocking(eligibility)) {
-    reasons.push("This estate's boundary overlaps another registered boundary");
-  }
-  return reasons;
+  return ELIGIBILITY_CONDITIONS.filter((c) => !eligibility[c.key]).map((c) => c.reason);
 }
 
-// "unknown" when the backend didn't tell us — see PortalEstate.eligibility.
-// An unknown condition is never reported as met.
+// "unknown" when the backend didn't tell us — a list row, whose
+// EstateSummaryDto carries no eligibility. An unknown condition is never
+// reported as met.
 export function statusFor(eligibility: EstateEligibility | null, hasBoundary: boolean): PortalEstateStatus {
   if (!eligibility) return "unknown";
-  if (HARD_BLOCKER_KEYS.some((k) => !eligibility[k]) || conflictIsBlocking(eligibility)) return "blocked";
-  if (eligibility.published) return "published";
+  if (eligibility.published) return eligibility.eligible ? "published" : "published_not_live";
+  if (HARD_BLOCKER_KEYS.some((k) => !eligibility[k])) return "blocked";
   if (!hasBoundary || OUTSTANDING_SETUP_KEYS.some((k) => !eligibility[k])) return "draft";
   return "ready_to_publish";
 }
@@ -275,44 +275,86 @@ export function statusFor(eligibility: EstateEligibility | null, hasBoundary: bo
 // ─── Publication ─────────────────────────────────────────────────────────────
 
 // The codes the backend's PublicationRefused carries, each mapped to the
-// condition it belongs to. This is how a failed publish stays specific even
-// though eligibility itself isn't exposed on any read endpoint yet.
-export const PUBLICATION_REFUSAL_CONDITIONS: Record<string, keyof Omit<EstateEligibility, "eligible"> | "conflict"> = {
+// condition it names.
+export const PUBLICATION_REFUSAL_CONDITIONS: Record<string, EligibilityConditionKey> = {
   PUBLICATION_VERIFICATION_PENDING: "tenantVerified",
   PUBLICATION_ENTITLEMENT_MISSING: "tenantEntitled",
   PUBLICATION_TENANT_NOT_ACTIVE: "tenantActive",
   PUBLICATION_FEES_UNDECLARED: "feesDeclared",
   PUBLICATION_REFUND_TERMS_UNDECLARED: "refundTermsDeclared",
-  PUBLICATION_CONFLICT_OUTSTANDING: "conflict",
+  PUBLICATION_CONFLICT_OUTSTANDING: "noBlockingConflict",
 };
 
+// PublicationDto.
 export interface PublicationResult {
   estateId: string;
   published: boolean;
-  publishedAt?: string;
+  publishedAt: string | null;
   // MEDIUM conflicts: one company's own boundaries overlapping. These don't
-  // refuse publication, but the developer should be told. Always 0/absent on
+  // refuse publication, but the developer should be told. Always 0/null on
   // unpublish.
   warningConflictCount: number;
-  warning?: string;
+  warning: string | null;
 }
 
 export interface PublicationRefusal {
   code: string;
-  // Which condition the code points at, so the readiness panel can mark that
-  // specific row rather than showing a bare failure.
-  condition: keyof Omit<EstateEligibility, "eligible"> | "conflict" | "unknown";
+  // The condition the code names, so the readiness panel can mark that row.
+  condition: EligibilityConditionKey;
+  // The backend's `message` names EVERY failing condition, while `code` names
+  // only the first — so the message is shown in full, never replaced.
   message: string;
 }
 
 export function refusalFromError(error: unknown): PublicationRefusal | null {
   const body = (error as { body?: { code?: string; message?: string } } | undefined)?.body;
   if (!body?.code || !(body.code in PUBLICATION_REFUSAL_CONDITIONS)) return null;
+  const condition = PUBLICATION_REFUSAL_CONDITIONS[body.code];
   return {
     code: body.code,
-    condition: PUBLICATION_REFUSAL_CONDITIONS[body.code] ?? "unknown",
-    message: body.message ?? "This estate can't be published yet.",
+    condition,
+    message: body.message ?? ELIGIBILITY_CONDITIONS.find((c) => c.key === condition)!.reason,
   };
+}
+
+// PB-1. One deliberate action; never a side effect of creating or editing.
+// Re-publishing an already-published estate re-checks every condition, which
+// is how a developer finds out why a published estate isn't live.
+export async function publishEstate(id: string, scope: PortalScope): Promise<PublicationResult> {
+  if (!apiClient.isMockMode) return apiClient.post<PublicationResult>(`/api/portal/estates/${id}/publish`);
+
+  const estate = ownedMockEstate(id, scope);
+  const eligibility = (await projectPortalEstate(estate)).eligibility!;
+  // The same order as PortalEstateService.requirePublishable: `code` is the
+  // first failure, the message names all of them.
+  const failing = ELIGIBILITY_CONDITIONS.filter((c) => !eligibility[c.key]);
+  if (failing.length > 0) {
+    const code = Object.keys(PUBLICATION_REFUSAL_CONDITIONS).find((k) => PUBLICATION_REFUSAL_CONDITIONS[k] === failing[0].key)!;
+    const message = failing.map((c) => `${c.reason}.`).join(" ");
+    throw new ApiError(409, message, { code, message });
+  }
+  if (!estate.published) {
+    estate.published = true;
+    estate.publishedDate = new Date().toISOString().slice(0, 10);
+  }
+  return { estateId: id, published: true, publishedAt: estate.publishedDate, warningConflictCount: 0, warning: null };
+}
+
+// PB-4. Only the flag changes; the estate and its plots are untouched.
+export async function unpublishEstate(id: string, scope: PortalScope): Promise<PublicationResult> {
+  if (!apiClient.isMockMode) return apiClient.post<PublicationResult>(`/api/portal/estates/${id}/unpublish`);
+
+  const estate = ownedMockEstate(id, scope);
+  estate.published = false;
+  return { estateId: id, published: false, publishedAt: null, warningConflictCount: 0, warning: null };
+}
+
+function ownedMockEstate(id: string, scope: PortalScope): Estate {
+  const estate = mockStore().find((e) => e.id === id);
+  if (!estate || estate.tenantId !== scope.tenantId || (scope.branchId && estate.branchId !== scope.branchId)) {
+    throw new ApiError(404, "Estate not found.", { code: "ESTATE_NOT_FOUND", message: "Estate not found." });
+  }
+  return estate;
 }
 
 // ─── The portal's estate row ─────────────────────────────────────────────────
@@ -343,15 +385,108 @@ export interface PortalEstate {
   priceTo: number;
   currency: "NGN";
   hasBoundary: boolean;
-  // NULL when the backend didn't report it. `EstateEligibility` is computed
-  // server-side but is not currently on any portal read DTO — a real backend
-  // therefore leaves this null and the UI must render every condition as
-  // UNKNOWN rather than met. See the backend note for the change that fixes
-  // this.
+  // From `EstateDetailDto.eligibility`. NULL on a list row: EstateSummaryDto
+  // carries no eligibility, so a list can only say "unknown" — never met.
   eligibility: EstateEligibility | null;
   status: PortalEstateStatus;
   blockingReasons: string[];
   publishedDate?: string;
+}
+
+// ─── Wire shapes ─────────────────────────────────────────────────────────────
+//
+// What the portal endpoints actually return. `PortalEstate` is this app's
+// view model; these are the backend's records, mapped onto it below rather
+// than cast — a cast would compile and then read `undefined` for every field
+// the two shapes don't share.
+
+interface PlotCountsDto {
+  total: number;
+  byStatus: Partial<Record<string, number>>;
+}
+
+interface EstateSummaryDto {
+  id: string;
+  branchId: string;
+  name: string;
+  slug: string;
+  area: string;
+  city: string;
+  state: NigerianState;
+  intent: string;
+  published: boolean;
+  publishedAt: string | null;
+  hasFootprint: boolean;
+  footprintAreaSqm: number | null;
+  plotCounts: PlotCountsDto | null;
+  createdAt: string;
+}
+
+interface EstateDetailDto extends EstateSummaryDto {
+  tenantId: string;
+  description: string | null;
+  address: string | null;
+  cornerPremiumPct: number | null;
+  amenities: string[] | null;
+  priceTiers: { price: number; currency: string }[] | null;
+  title: { titleType: Estate["titleType"] } | null;
+  verificationChecks: unknown[] | null;
+  eligibility: EstateEligibility;
+}
+
+function countOf(counts: PlotCountsDto | null, ...statuses: string[]): number {
+  return statuses.reduce((n, s) => n + (counts?.byStatus[s] ?? 0), 0);
+}
+
+function fromSummaryDto(dto: EstateSummaryDto, tenantId: string, eligibility: EstateEligibility | null): PortalEstate {
+  return {
+    id: dto.id,
+    slug: dto.slug,
+    name: dto.name,
+    description: "",
+    area: dto.area,
+    city: dto.city,
+    state: dto.state,
+    branchId: dto.branchId,
+    tenantId,
+    cornerPremiumPct: 0,
+    amenities: [],
+    titleType: "Gazette",
+    titleVerified: false,
+    totalPlots: dto.plotCounts?.total ?? 0,
+    availablePlots: countOf(dto.plotCounts, "available-dev", "available-inv"),
+    soldPlots: countOf(dto.plotCounts, "sold"),
+    reservedPlots: countOf(dto.plotCounts, "reserved"),
+    // A summary carries no tiers. Zero is what the list already treats as
+    // "no price to show" — it hides the range rather than printing ₦0.
+    priceFrom: 0,
+    priceTo: 0,
+    currency: "NGN",
+    hasBoundary: dto.hasFootprint,
+    eligibility,
+    status: statusFor(eligibility, dto.hasFootprint),
+    blockingReasons: eligibility ? blockingReasonsFor(eligibility) : [],
+    publishedDate: dto.publishedAt ?? undefined,
+  };
+}
+
+// Selection, not arithmetic: the lowest and highest of the tier prices the
+// server returned, in naira only — prices in other currencies are never set
+// against them.
+function fromDetailDto(dto: EstateDetailDto): PortalEstate {
+  const ngnPrices = (dto.priceTiers ?? []).filter((t) => t.currency === "NGN").map((t) => t.price);
+  return {
+    ...fromSummaryDto(dto, dto.tenantId, dto.eligibility),
+    description: dto.description ?? "",
+    cornerPremiumPct: dto.cornerPremiumPct ?? 0,
+    amenities: dto.amenities ?? [],
+    titleType: dto.title?.titleType ?? "Gazette",
+    // Title verification lives in verificationChecks, which this slice does
+    // not interpret. Never shown as verified by default.
+    titleVerified: false,
+    priceFrom: ngnPrices.length ? Math.min(...ngnPrices) : 0,
+    priceTo: ngnPrices.length ? Math.max(...ngnPrices) : 0,
+  };
 }
 
 export interface PortalScope {
@@ -377,27 +512,29 @@ async function projectPortalEstate(estate: Estate): Promise<PortalEstate> {
   ]);
 
   const blockingConflict = conflicts.items.some((c) => c.estateAId === estate.id || c.estateBId === estate.id);
-  // A disclosure existing at all means fees were declared — including an
-  // explicitly empty schedule, and including a grandfathered estate, which the
-  // backend reports as declared too.
-  const feesDeclared = disclosure !== null;
-  const refundTermsDeclared = disclosure !== null && (disclosure.exitCosts !== null || isGrandfathered(disclosure));
+  // A buyer-facing disclosure existing at all means fees were declared —
+  // including an explicitly empty schedule, and including a grandfathered
+  // estate, which the backend reports as declared too. A declaration made
+  // through the portal in this session counts the same way.
+  const feesDeclared = disclosure !== null || mockHasDeclaredFees(estate.id);
+  const refundTermsDeclared = (disclosure !== null && (disclosure.exitCosts !== null || isGrandfathered(disclosure)))
+    || mockHasDeclaredRefundTerms(estate.id);
 
-  const named = {
-    published: estate.published,
+  const conditions = {
     tenantVerified: tenant?.verificationState === "verified",
     tenantEntitled: tenant?.entitlements.marketplacePublishing === true,
     tenantActive: tenant?.status === "active",
     feesDeclared,
     refundTermsDeclared,
+    noBlockingConflict: !blockingConflict,
   };
 
-  // `eligible` folds in every named condition PLUS the conflict check — the
-  // same fold the backend does, which is why the conflict has no boolean of
-  // its own anywhere in this shape.
+  // `eligible` is the conjunction of the flag and every condition — the same
+  // fold the backend's eligibility view does, evaluated now, at read time.
   const eligibility: EstateEligibility = {
-    ...named,
-    eligible: Object.values(named).every(Boolean) && !blockingConflict,
+    published: estate.published,
+    ...conditions,
+    eligible: estate.published && Object.values(conditions).every(Boolean),
   };
 
   const hasBoundary = estate.footprint.length >= 3;
@@ -439,7 +576,8 @@ export async function fetchPortalEstates(
 ): Promise<Page<PortalEstate>> {
   if (!apiClient.isMockMode) {
     const qp = new URLSearchParams({ ...(filters as Record<string, string>), ...(params as Record<string, string>) });
-    return apiClient.get<Page<PortalEstate>>(`/api/portal/estates?${qp}`);
+    const page = await apiClient.get<Page<EstateSummaryDto>>(`/api/portal/estates?${qp}`);
+    return { ...page, items: page.items.map((dto) => fromSummaryDto(dto, scope.tenantId, null)) };
   }
 
   // Standing in for RLS: tenant always, branch too when the user is
@@ -466,7 +604,7 @@ export async function fetchPortalEstates(
 
 export async function fetchPortalEstateById(id: string, scope: PortalScope): Promise<PortalEstate | null> {
   if (!apiClient.isMockMode) {
-    try { return await apiClient.get<PortalEstate>(`/api/portal/estates/${id}`); } catch { return null; }
+    try { return fromDetailDto(await apiClient.get<EstateDetailDto>(`/api/portal/estates/${id}`)); } catch { return null; }
   }
   const estate = mockStore().find((e) => e.id === id);
   if (!estate) return null;
@@ -508,7 +646,9 @@ export interface CreateEstateInput {
 // a later slice) — there is no create-and-publish shortcut on purpose.
 export async function createPortalEstate(input: CreateEstateInput, scope: PortalScope): Promise<PortalEstate> {
   if (!apiClient.isMockMode) {
-    return apiClient.post<PortalEstate>("/api/portal/estates", input);
+    // EstateDto: the summary's fields without plot counts — a new estate has none.
+    const dto = await apiClient.post<Omit<EstateSummaryDto, "plotCounts"> & { tenantId: string }>("/api/portal/estates", input);
+    return fromSummaryDto({ ...dto, plotCounts: null }, dto.tenantId, null);
   }
 
   const footprint: GeoPoint[] = input.boundary
@@ -559,8 +699,10 @@ export async function createPortalEstate(input: CreateEstateInput, scope: Portal
 }
 
 // Estates created during a session live alongside the seeded ones, same idiom
-// as tenantsService.ts's mock store. Seeded estates are never mutated here —
-// the backend has no update endpoints, so the portal offers no edit path.
+// as tenantsService.ts's mock store. The only mutation of a seeded estate is
+// its `published` flag, via publish/unpublish — the backend has no other update
+// endpoint, so the portal offers no edit path. Flipping the canonical record
+// keeps the portal and the marketplace agreeing about what is listed.
 const mockCreated: Estate[] = [];
 
 function mockStore(): Estate[] {

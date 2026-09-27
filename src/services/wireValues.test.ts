@@ -24,6 +24,8 @@ import type { ListingIntent, PlotIntent, PlotOrientation, PropertyType, TierType
 import type { Currency, PlotStatus, PaymentPlan } from "../data/mockData";
 import type { TitleType } from "./marketplaceService";
 import { AUTH_ERROR_CODES, type TwoFactorChallenge, type UserRole } from "./authService";
+import { DUE_TRIGGERS, FEE_CURRENCIES, FEE_TYPES, type RefundAppliesTo, type FeeSchedule } from "./estateDisclosureService";
+import { ELIGIBILITY_CONDITIONS, PUBLICATION_REFUSAL_CONDITIONS, type EstateEligibility, type PublicationResult } from "./portalEstatesService";
 
 // Each list is exhaustive: the `satisfies` clause makes TypeScript fail the
 // build if a union gains or loses a member without this test being updated.
@@ -75,6 +77,52 @@ describe("cost disclosure enums", () => {
       "application", "setting_out", "infrastructure", "construction_supervision", "facility_management", "survey", "legal", "other",
     ] satisfies readonly FeeType[]))
       .toEqual(["application", "setting_out", "infrastructure", "construction_supervision", "facility_management", "survey", "legal", "other"]);
+  });
+});
+
+// Portal disclosure (PD) and publication (PP). Transcribed from
+// RefundAppliesTo, FeeType, DueTrigger and Currency, from EstateEligibilityDto,
+// PublicationDto and FeeScheduleDto, and from the codes
+// PortalEstateService.requirePublishable throws.
+describe("portal disclosure and publication", () => {
+  it("RefundAppliesTo — two values, and the form offers exactly these", () => {
+    expect(wireValues(["amount_paid", "total_price"] satisfies readonly RefundAppliesTo[])).toEqual(["amount_paid", "total_price"]);
+  });
+
+  it("the fee form's option lists are the backend enums, not a subset", () => {
+    expect([...FEE_TYPES].sort()).toEqual(
+      ["application", "construction_supervision", "facility_management", "infrastructure", "legal", "other", "setting_out", "survey"]);
+    expect([...DUE_TRIGGERS].sort()).toEqual(
+      ["annual", "at_allocation", "at_application", "before_occupation", "on_construction_start", "on_milestone"]);
+    expect([...FEE_CURRENCIES].sort()).toEqual(["EUR", "GBP", "NGN", "USD"]);
+  });
+
+  it("EstateEligibility has eight fields, including noBlockingConflict", () => {
+    const eligibility: EstateEligibility = {
+      published: true, tenantVerified: true, tenantEntitled: true, tenantActive: true,
+      feesDeclared: true, refundTermsDeclared: true, noBlockingConflict: true, eligible: true,
+    };
+    expect(Object.keys(eligibility)).toHaveLength(8);
+    expect(ELIGIBILITY_CONDITIONS).toHaveLength(6);
+  });
+
+  it("PublicationRefused codes, exactly", () => {
+    expect(Object.keys(PUBLICATION_REFUSAL_CONDITIONS).sort()).toEqual([
+      "PUBLICATION_CONFLICT_OUTSTANDING", "PUBLICATION_ENTITLEMENT_MISSING", "PUBLICATION_FEES_UNDECLARED",
+      "PUBLICATION_REFUND_TERMS_UNDECLARED", "PUBLICATION_TENANT_NOT_ACTIVE", "PUBLICATION_VERIFICATION_PENDING",
+    ]);
+  });
+
+  it("FeeScheduleDto: silence is a null declaredAt, not an empty list", () => {
+    const silent: FeeSchedule = { version: 0, declaredAt: null, fees: [] };
+    const none: FeeSchedule = { version: 1, declaredAt: "2026-09-27T00:00:00Z", fees: [] };
+    expect(silent.fees).toEqual(none.fees);
+    expect(silent.declaredAt).not.toEqual(none.declaredAt);
+  });
+
+  it("PublicationDto field names", () => {
+    const result: PublicationResult = { estateId: "x", published: true, publishedAt: null, warningConflictCount: 0, warning: null };
+    expect(Object.keys(result).sort()).toEqual(["estateId", "published", "publishedAt", "warning", "warningConflictCount"]);
   });
 });
 

@@ -337,6 +337,12 @@ const MOCK_DISCLOSURES: Record<string, EstateCostDisclosure> = {
   },
 };
 
+// Synchronous read of the same fixtures, for other mock stores that must agree
+// with them at module load (estateDisclosureService's seeded fee schedules).
+export function mockCostDisclosureFixture(estateId: string): EstateCostDisclosure | null {
+  return MOCK_DISCLOSURES[estateId] ?? null;
+}
+
 // Null means this estate has declared nothing. Callers render NOTHING for a
 // null — never a zero, never an estimate.
 export async function fetchCostDisclosure(estateId: string): Promise<EstateCostDisclosure | null> {

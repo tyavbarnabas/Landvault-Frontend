@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
-  BOUNDARY_TEMPLATE_JSON, PUBLICATION_REFUSAL_CONDITIONS, blockingReasonsFor, boundaryAreaSqm,
+  BOUNDARY_TEMPLATE_JSON, ELIGIBILITY_CONDITIONS, PUBLICATION_REFUSAL_CONDITIONS, blockingReasonsFor, boundaryAreaSqm,
   conflictIsBlocking, createPortalEstate, fetchEstateGeoJson, fetchPortalEstateById,
-  fetchPortalEstates, parseBoundary, refusalFromError, statusFor,
+  fetchPortalEstates, parseBoundary, publishEstate, refusalFromError, statusFor, unpublishEstate,
   type EstateEligibility, type PortalScope,
 } from "./portalEstatesService";
+import { declareFees, declareRefundTerms } from "./estateDisclosureService";
 
 const DIRECTOR: PortalScope = { tenantId: "estintin-group", branchId: null };
 const HERITAGE_MANAGER: PortalScope = { tenantId: "estintin-group", branchId: "heritage" };
@@ -160,19 +161,31 @@ describe("parseBoundary", () => {
 });
 
 // "Cannot publish" without a reason sends the developer to support. The
-// backend returns SEVEN fields for exactly this reason.
+// backend returns EIGHT booleans for exactly this reason.
 describe("publication eligibility", () => {
   const allMet: EstateEligibility = {
-    published: true, tenantVerified: true, tenantEntitled: true,
-    tenantActive: true, feesDeclared: true, refundTermsDeclared: true, eligible: true,
+    published: true, tenantVerified: true, tenantEntitled: true, tenantActive: true,
+    feesDeclared: true, refundTermsDeclared: true, noBlockingConflict: true, eligible: true,
   };
+
+  it("has a row for every condition the backend reports, and only those", () => {
+    // Eight fields: `published` is intent, `eligible` the fold, and the six
+    // between them are the conditions. If the DTO gains a ninth, this fails
+    // instead of the panel silently omitting it.
+    const fields: (keyof EstateEligibility)[] = [
+      "published", "tenantVerified", "tenantEntitled", "tenantActive",
+      "feesDeclared", "refundTermsDeclared", "noBlockingConflict", "eligible",
+    ];
+    expect(Object.keys(allMet).sort()).toEqual([...fields].sort());
+    expect(ELIGIBILITY_CONDITIONS.map((c) => c.key).sort())
+      .toEqual(fields.filter((f) => f !== "published" && f !== "eligible").sort());
+  });
 
   it("names the specific failing condition rather than reporting a bare refusal", () => {
     expect(blockingReasonsFor({ ...allMet, feesDeclared: false, eligible: false }))
       .toEqual(["The fee schedule hasn't been declared"]);
     expect(blockingReasonsFor({ ...allMet, tenantActive: false, eligible: false }))
       .toEqual(["Your company's account isn't active right now"]);
-    // The seventh condition an earlier pass didn't have at all.
     expect(blockingReasonsFor({ ...allMet, refundTermsDeclared: false, eligible: false }))
       .toEqual(["Refund terms haven't been declared"]);
   });
@@ -185,57 +198,56 @@ describe("publication eligibility", () => {
     expect(blockingReasonsFor(allMet)).toEqual([]);
   });
 
-  it("infers a blocking conflict from `eligible`, which is the only place the backend reports it", () => {
-    // Every named condition passes, yet the backend's own fold says no — a
-    // conflict is what is left. There is deliberately no boolean for it.
-    const conflicted: EstateEligibility = { ...allMet, published: false, eligible: false };
+  it("reads a conflict from its own boolean, never by elimination", () => {
+    const conflicted: EstateEligibility = { ...allMet, published: false, noBlockingConflict: false, eligible: false };
 
     expect(conflictIsBlocking(conflicted)).toBe(true);
+    // The reason names the overlap and nothing about who it overlaps.
     expect(blockingReasonsFor(conflicted)).toEqual(["This estate's boundary overlaps another registered boundary"]);
     expect(statusFor(conflicted, true)).toBe("blocked");
 
-    // And it must NOT be inferred when a named condition already explains it.
-    expect(conflictIsBlocking({ ...allMet, feesDeclared: false, eligible: false })).toBe(false);
+    // `eligible: false` with everything else met is NOT read as a conflict:
+    // there is no inference left to do.
+    expect(conflictIsBlocking({ ...allMet, eligible: false })).toBe(false);
   });
 
   it("separates 'blocked' from 'still being set up'", () => {
-    // Outside the company's immediate control -> blocked.
     expect(statusFor({ ...allMet, published: false, tenantVerified: false, eligible: false }, true)).toBe("blocked");
-    // The company's own outstanding setup -> draft.
     expect(statusFor({ ...allMet, published: false, feesDeclared: false, eligible: false }, true)).toBe("draft");
     expect(statusFor({ ...allMet, published: false, refundTermsDeclared: false, eligible: false }, true)).toBe("draft");
-    expect(statusFor({ ...allMet, published: false, eligible: false }, false)).toBe("blocked");
-    // Everything done, just not live yet.
-    expect(statusFor({ ...allMet, published: false }, true)).toBe("ready_to_publish");
+    expect(statusFor({ ...allMet, published: false, eligible: false }, false)).toBe("draft");
+    expect(statusFor({ ...allMet, published: false, eligible: false }, true)).toBe("ready_to_publish");
     expect(statusFor(allMet, true)).toBe("published");
   });
 
-  it("shows a published estate as blocked once a condition lapses, not still live", () => {
-    expect(statusFor({ ...allMet, tenantActive: false, eligible: false }, true)).toBe("blocked");
+  it("shows a published estate whose conditions lapsed as published-but-not-live, not unpublished", () => {
+    // PP-5: a suspension or a new HIGH conflict takes the listing down without
+    // touching the flag. The status must say both things at once.
+    expect(statusFor({ ...allMet, tenantActive: false, eligible: false }, true)).toBe("published_not_live");
+    expect(statusFor({ ...allMet, noBlockingConflict: false, eligible: false }, true)).toBe("published_not_live");
   });
 
   it("reports UNKNOWN rather than met when the server didn't say", () => {
-    // EstateEligibility isn't on any portal read DTO yet, so a real backend
-    // leaves it null. An unknown condition must never render as a met one.
+    // A list row: EstateSummaryDto carries no eligibility.
     expect(statusFor(null, true)).toBe("unknown");
     expect(statusFor(null, false)).toBe("unknown");
   });
 
-  it("maps each PublicationRefused code to the condition it belongs to", () => {
+  it("maps each PublicationRefused code to the condition it names", () => {
     const refusal = refusalFromError({ body: { code: "PUBLICATION_REFUND_TERMS_UNDECLARED", message: "Declare what a buyer gets back." } });
 
     expect(refusal?.condition).toBe("refundTermsDeclared");
     expect(refusal?.message).toContain("Declare");
 
-    expect(refusalFromError({ body: { code: "PUBLICATION_CONFLICT_OUTSTANDING", message: "x" } })?.condition).toBe("conflict");
+    expect(refusalFromError({ body: { code: "PUBLICATION_CONFLICT_OUTSTANDING", message: "x" } })?.condition).toBe("noBlockingConflict");
     expect(refusalFromError({ body: { code: "PUBLICATION_FEES_UNDECLARED", message: "x" } })?.condition).toBe("feesDeclared");
+    expect(refusalFromError({ body: { code: "PUBLICATION_VERIFICATION_PENDING" } })?.message)
+      .toBe("Your company's verification isn't complete yet");
     // An unrelated failure is not dressed up as a refusal.
     expect(refusalFromError(new Error("network"))).toBeNull();
   });
 
-  it("covers every refusal code the backend can send", () => {
-    // If the backend adds one, this fails rather than the UI silently showing
-    // a generic failure.
+  it("covers every refusal code the backend can send, each pointing at a real condition", () => {
     expect(Object.keys(PUBLICATION_REFUSAL_CONDITIONS).sort()).toEqual([
       "PUBLICATION_CONFLICT_OUTSTANDING",
       "PUBLICATION_ENTITLEMENT_MISSING",
@@ -244,6 +256,54 @@ describe("publication eligibility", () => {
       "PUBLICATION_TENANT_NOT_ACTIVE",
       "PUBLICATION_VERIFICATION_PENDING",
     ]);
+    const conditionKeys = ELIGIBILITY_CONDITIONS.map((c) => c.key);
+    expect(Object.values(PUBLICATION_REFUSAL_CONDITIONS).every((k) => conditionKeys.includes(k))).toBe(true);
+  });
+});
+
+// PP-2 / PP-3 / PP-4, against the mock standing in for the backend.
+describe("publish and unpublish", () => {
+  const newDraft = () => createPortalEstate({
+    name: "Publication Test Estate", description: "", area: "Guzape", city: "Abuja",
+    state: "Federal Capital Territory (Abuja)", address: "", cornerPremiumPct: 0, amenities: [],
+    boundary: JSON.parse(ABUJA_BOUNDARY), branchId: "heritage",
+  }, DIRECTOR);
+
+  it("refuses an estate with nothing declared, naming the first condition in the code and all of them in the message", async () => {
+    const draft = await newDraft();
+    const error = await publishEstate(draft.id, DIRECTOR).catch((e) => e);
+    const refusal = refusalFromError(error);
+
+    expect(refusal?.code).toBe("PUBLICATION_FEES_UNDECLARED");
+    expect(refusal?.condition).toBe("feesDeclared");
+    expect(refusal?.message).toContain("fee schedule");
+    expect(refusal?.message).toContain("Refund terms");
+    expect((await fetchPortalEstateById(draft.id, DIRECTOR))?.eligibility?.published).toBe(false);
+  });
+
+  it("publishes once fees (even none) and refund terms are declared, and unpublishes without touching anything else", async () => {
+    const draft = await newDraft();
+    await declareFees(draft.id, { fees: [] });
+    await declareRefundTerms(draft.id, { deductionPct: 20, processingDays: 90, appliesTo: "total_price", nonRefundableFeeTypes: [], notes: null });
+
+    expect((await fetchPortalEstateById(draft.id, DIRECTOR))?.status).toBe("ready_to_publish");
+
+    const published = await publishEstate(draft.id, DIRECTOR);
+    expect(published.published).toBe(true);
+    expect((await fetchPortalEstateById(draft.id, DIRECTOR))?.status).toBe("published");
+
+    const unpublished = await unpublishEstate(draft.id, DIRECTOR);
+    expect(unpublished.published).toBe(false);
+    const after = await fetchPortalEstateById(draft.id, DIRECTOR);
+    expect(after?.status).toBe("ready_to_publish");
+    expect(after?.hasBoundary).toBe(true);
+    expect(after?.eligibility?.feesDeclared).toBe(true);
+  });
+
+  it("will not publish another branch's estate", async () => {
+    const draft = await newDraft();
+    const error = await publishEstate(draft.id, { tenantId: "estintin-group", branchId: "premium" }).catch((e) => e);
+    expect(error.status).toBe(404);
   });
 });
 

@@ -58,11 +58,15 @@ export function portalEstateStatusBadge(status: PortalEstateStatus): { label: st
   switch (status) {
     case "draft": return { label: "Draft", variant: "neutral" };
     case "ready_to_publish": return { label: "Ready to publish", variant: "info" };
-    case "published": return { label: "Published", variant: "success" };
+    case "published": return { label: "Live", variant: "success" };
+    // Published by the developer, but a condition has lapsed since, so the
+    // marketplace isn't showing it. Not "unpublished" — the flag is intact
+    // and the listing returns by itself when the condition clears.
+    case "published_not_live": return { label: "Published · not live", variant: "warning" };
     case "blocked": return { label: "Blocked", variant: "warning" };
-    // The backend doesn't expose eligibility on a read yet, so readiness can
-    // be genuinely unknown. Neutral, never positive — an unknown condition is
-    // not a met one.
+    // A list row: EstateSummaryDto carries no eligibility, so readiness is
+    // genuinely unknown there. Neutral, never positive — an unknown condition
+    // is not a met one.
     case "unknown": return { label: "Readiness unknown", variant: "neutral" };
   }
 }

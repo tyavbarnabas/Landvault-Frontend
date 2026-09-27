@@ -111,6 +111,15 @@ export function isPortalStaff(user: AuthUser | null | undefined): boolean {
   return can(user, PORTAL_VIEW_PERMISSION);
 }
 
+// Declaring terms and publishing write under `portal.estates.manage`; reading
+// them needs only `.view`. A sales manager who can see the fee schedule they
+// are asked about all day is not thereby able to change it.
+export const PORTAL_MANAGE_PERMISSION = "portal.estates.manage";
+
+export function canManageEstates(user: AuthUser | null | undefined): boolean {
+  return can(user, PORTAL_MANAGE_PERMISSION);
+}
+
 export function isPlatformStaff(user: AuthUser | null | undefined): boolean {
   return can(user, ADMIN_VIEW_PERMISSION) || user?.role === "super_admin";
 }

@@ -127,7 +127,9 @@ function EstateRow({ estate }: { estate: PortalEstate }) {
       {estate.blockingReasons.length > 0 && estate.status !== "published" && (
         <ul className="mt-3 pt-3 border-t border-[var(--border)] space-y-1">
           {estate.blockingReasons.map((reason) => (
-            <li key={reason} className="text-xs text-amber-700">Cannot publish — {reason.toLowerCase()}</li>
+            <li key={reason} className="text-xs text-amber-700">
+              {estate.status === "published_not_live" ? "Not live" : "Cannot publish"} — {reason.toLowerCase()}
+            </li>
           ))}
         </ul>
       )}
