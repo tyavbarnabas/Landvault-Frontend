@@ -71,9 +71,11 @@ Two gaps the frontend cannot close on its own. Everything else found in the audi
 
 ## Asks for the backend session (2026-09-30 cross-check)
 
-### A. The refresh flow cannot work as wired
+### A. Refresh — resolved 2026-09-30 (backend `91024a3` + `cf8983e`)
 
-`apiClient`'s refresh posts `/api/auth/refresh` with **no body**, relying on a cookie; `RefreshRequest` requires `{ refreshToken }` in the body, and the frontend never stores the `refreshToken` that login returns. So every refresh fails, and **any** 401 signs the user out. This is a frontend fix (store the refresh token, send it, store the rotated one), but it involves the storage decision already flagged in `apiClient.ts` (httpOnly cookie vs. localStorage), so it's written up rather than half-done. Until then, `change-password` opts out with `skipAuthRefresh`, because its 401 means "wrong current password", not "expired session". Login and 2FA verify have the same 401-is-an-answer shape and don't opt out yet.
+The refresh token is the HttpOnly `lv_refresh` cookie; no body carries it and no frontend code touches it. Refresh returns `{ user, token }`, and one refresh on page load restores the session (`AppContext`; mock mode keeps its demo user). Refresh is serialised across tabs with `navigator.locks` ("lv-refresh"), and a tab that waited reuses a token another tab already obtained instead of refreshing again. Without `navigator.locks` (a LAN IP over http, or Node) it falls back to per-tab single-flight, and the backend's 10-second grace window covers the rest. Logout takes the same lock and drops the access token even if the call fails. Login, register, 2FA verify and change-password send `credentials: "include"`. Login, 2FA verify and change-password also skip the refresh interceptor.
+
+**Origin, as it actually behaves:** from a disallowed origin, Spring's CORS check rejects the request before the Origin guard runs, so the browser sees "Failed to fetch", not a readable 403 `ORIGIN_NOT_ALLOWED`. Confirmed live from `localhost:5199`. Both are shown as a configuration banner, never as a sign-out. The backend docs still describe it as a 403.
 
 ### B. No list endpoints for blocks or price tiers, and no per-tier plot count
 

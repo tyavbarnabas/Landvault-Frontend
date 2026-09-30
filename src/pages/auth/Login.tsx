@@ -19,7 +19,7 @@ type Step = "credentials" | "challenge";
 export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { login, completeTwoFactor, toggleWishlistItem } = useApp();
+  const { login, completeTwoFactor, toggleWishlistItem, signOutNotice, clearSignOutNotice } = useApp();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [step, setStep] = useState<Step>("credentials");
@@ -129,6 +129,15 @@ export default function Login() {
           New here? <Link to="/register" className="text-[var(--accent)] hover:underline">Create an account</Link>
         </p>
 
+
+        {/* Why the last session ended — a suspension, or a session that
+            expired — said once, then cleared on the next sign-in. */}
+        {signOutNotice && (
+          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-4" role="status">
+            {signOutNotice}{" "}
+            <button type="button" onClick={clearSignOutNotice} className="underline text-xs">Dismiss</button>
+          </p>
+        )}
 
         {step === "credentials" ? (
           <form onSubmit={handleCredentials} className="space-y-4">

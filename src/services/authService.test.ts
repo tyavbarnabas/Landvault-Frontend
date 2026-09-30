@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   AUTH_ERROR_CODES, MOCK_DEMO_CODES, changePassword, confirmTwoFactor, disableTwoFactor, errorCodeOf,
   forgotPassword, isBuyer, isPlatformStaff, isPortalStaff, landingRouteFor, login,
-  regenerateRecoveryCodes, resetPassword, setupTwoFactor, verifyTwoFactor,
+  regenerateRecoveryCodes, resetPassword, restoreSession, setupTwoFactor, verifyTwoFactor,
   type AuthUser,
 } from "./authService";
 
@@ -242,8 +242,15 @@ describe("errorCodeOf", () => {
       "ACCOUNT_DEACTIVATED", "ACCOUNT_SUSPENDED", "EMAIL_ALREADY_REGISTERED",
       "INVALID_CREDENTIALS", "INVALID_OR_EXPIRED_CODE", "INVALID_REFRESH_TOKEN",
       "INVALID_TWO_FACTOR_CHALLENGE", "INVALID_TWO_FACTOR_CODE",
+      "ORIGIN_NOT_ALLOWED", "REFRESH_TOKEN_MISSING",
       "TENANT_NOT_ACTIVE", "TWO_FACTOR_LOCKED_OUT", "TWO_FACTOR_MANDATORY",
       "TWO_FACTOR_NOT_ENABLED", "TWO_FACTOR_SETUP_REQUIRED",
     ]);
+  });
+});
+
+describe("session restore in mock mode", () => {
+  it("has no cookie and no backend, so it keeps the demo user rather than calling refresh", async () => {
+    await expect(restoreSession()).resolves.toEqual({ kind: "mock" });
   });
 });

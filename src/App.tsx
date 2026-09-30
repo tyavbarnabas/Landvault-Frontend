@@ -72,8 +72,11 @@ import Inspections from "./pages/inspections/Inspections";
 import Enquiries from "./pages/enquiries/Enquiries";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useApp();
+  const { isAuthenticated, restoringSession } = useApp();
   const location = useLocation();
+  // Waits for the startup refresh — otherwise a signed-in user reloading any
+  // page would be bounced to /login for the length of one request.
+  if (restoringSession) return <PageLoading />;
   return isAuthenticated ? <>{children}</> : <Navigate to={`/login?returnUrl=${encodeURIComponent(location.pathname)}`} replace />;
 }
 
@@ -103,7 +106,8 @@ function AppPage({ children }: { children: React.ReactNode }) {
 // account that holds portal.estates.view alongside another role still reaches
 // it — same mechanism the nav already uses.
 function PortalRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, user } = useApp();
+  const { isAuthenticated, user, restoringSession } = useApp();
+  if (restoringSession) return <PageLoading />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (!isPortalStaff(user)) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
@@ -120,7 +124,8 @@ function PortalPage({ children }: { children: React.ReactNode }) {
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, user } = useApp();
+  const { isAuthenticated, user, restoringSession } = useApp();
+  if (restoringSession) return <PageLoading />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (!isPlatformStaff(user)) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
@@ -133,6 +138,21 @@ function AdminPage({ children }: { children: React.ReactNode }) {
         <Suspense fallback={<PageLoading />}>{children}</Suspense>
       </Layout>
     </AdminRoute>
+  );
+}
+
+// A configuration problem is not an expired session, and is never shown as
+// one — treating it as a sign-out would send a developer chasing the wrong
+// thing. Neither case signs anybody out.
+function SessionProblemBanner() {
+  const { sessionProblem } = useApp();
+  if (!sessionProblem) return null;
+  return (
+    <div role="alert" className="px-4 py-2 text-sm bg-amber-50 text-amber-800 border-b border-amber-200">
+      {sessionProblem === "origin_not_allowed"
+        ? `Configuration problem: the backend doesn't accept requests from ${window.location.origin}. Add it to CORS_ALLOWED_ORIGINS (default http://localhost:8443) — this isn't an expired session.`
+        : "Couldn't reach the server to renew your session. If you're online, check that this page's origin is in the backend's CORS_ALLOWED_ORIGINS — a refused origin looks exactly like this from the browser."}
+    </div>
   );
 }
 
@@ -226,6 +246,7 @@ export default function App() {
     <ErrorBoundary section="LandVault">
       <BrowserRouter>
         <AppProvider>
+          <SessionProblemBanner />
           <AppRoutes />
         </AppProvider>
       </BrowserRouter>

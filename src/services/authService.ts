@@ -8,7 +8,7 @@
 // DP-1.4 / Super Admin's SA-2.1 stories) is additive, not a rewrite.
 
 import type { Currency, KYCStatus } from "../data/mockData";
-import { apiClient, setAuthToken } from "../lib/apiClient";
+import { apiClient, logoutSession, refreshSession, setAuthToken } from "../lib/apiClient";
 
 // The backend emits exactly two role strings — see AuthService's
 // `ctx.superAdmin() ? "super_admin" : "client"`. There is NO "developer"
@@ -224,10 +224,9 @@ const MOCK_ACCOUNTS_BY_EMAIL: Record<string, AuthUser> = {
 
 // ─── Login, and the second step when 2FA is on ───────────────────────────────
 
-// `POST /api/auth/login` returns EITHER tokens or a challenge. The two response
-// shapes deliberately share no field name — the challenge carries no `token`,
-// no `refreshToken` and no `user` — so a client cannot mistake one for the
-// other. We discriminate on `twoFactorRequired`, which the challenge states
+// `POST /api/auth/login` returns EITHER a session or a challenge. The two
+// response shapes deliberately share no field name — the challenge carries no
+// `token` and no `user` — so a client cannot mistake one for the other. We discriminate on `twoFactorRequired`, which the challenge states
 // outright.
 //
 // (The endpoint's OpenAPI description says to "check for a `challengeId`
@@ -243,11 +242,21 @@ export type LoginOutcome =
   | { kind: "authenticated"; user: AuthUser }
   | { kind: "two_factor_required"; challenge: TwoFactorChallenge };
 
+// AuthResponse: `{ user, token }` from login, register, 2FA verify — and from
+// refresh, which is how a page load restores a session. There is no refresh
+// token in any body: it is an HttpOnly cookie the browser holds, which this
+// code never reads or stores.
 interface AuthResponseBody {
   user: AuthUser;
   token: string;
-  refreshToken: string;
 }
+
+// Every call whose response sets the refresh cookie needs `credentials:
+// "include"`, or the browser silently discards the Set-Cookie. Login and 2FA
+// verify also answer a wrong password or code with 401 — an answer, not an
+// expired session — so they must not trigger the refresh interceptor either.
+const SETS_SESSION_COOKIE = { credentials: "include" as const };
+const ANSWERS_WITH_401 = { skipAuthRefresh: true };
 
 function isChallenge(body: AuthResponseBody | TwoFactorChallenge): body is TwoFactorChallenge {
   return (body as TwoFactorChallenge).twoFactorRequired === true;
@@ -265,7 +274,8 @@ export async function login(email: string, password?: string): Promise<LoginOutc
     return { kind: "authenticated", user };
   }
 
-  const body = await apiClient.post<AuthResponseBody | TwoFactorChallenge>("/api/auth/login", { email, password });
+  const body = await apiClient.post<AuthResponseBody | TwoFactorChallenge>(
+    "/api/auth/login", { email, password }, { ...SETS_SESSION_COOKIE, ...ANSWERS_WITH_401 });
   if (isChallenge(body)) return { kind: "two_factor_required", challenge: body };
   setAuthToken(body.token);
   return { kind: "authenticated", user: body.user };
@@ -275,7 +285,8 @@ export async function login(email: string, password?: string): Promise<LoginOutc
 // call a protected endpoint, and it is never stored as a session token.
 export async function verifyTwoFactor(challengeToken: string, code: string): Promise<AuthUser> {
   if (apiClient.isMockMode) return verifyMockChallenge(challengeToken, code);
-  const body = await apiClient.post<AuthResponseBody>("/api/auth/2fa/verify", { challengeToken, code });
+  const body = await apiClient.post<AuthResponseBody>(
+    "/api/auth/2fa/verify", { challengeToken, code }, { ...SETS_SESSION_COOKIE, ...ANSWERS_WITH_401 });
   setAuthToken(body.token);
   return body.user;
 }
@@ -360,9 +371,11 @@ export async function resetPassword(input: ResetPasswordInput): Promise<void> {
 // response a bad password gets at login. `skipAuthRefresh` keeps apiClient
 // from reading that 401 as an expired session and signing the user out.
 //
-// On success the backend revokes every refresh token for the account, this
-// session's included. An access token already issued is NOT severed: it rides
-// out its remaining lifetime, up to 15 minutes. Never describe this as instant.
+// On success the backend revokes every OTHER session's refresh token and sets
+// a fresh cookie for this browser — hence `credentials: "include"`, without
+// which the browser drops that cookie and this session ends at its next
+// refresh after all. Other sessions' access tokens are NOT severed: they ride
+// out their remaining lifetime, up to 15 minutes. Never describe it as instant.
 export interface ChangePasswordInput {
   currentPassword: string;
   newPassword: string;
@@ -370,7 +383,7 @@ export interface ChangePasswordInput {
 
 export async function changePassword(input: ChangePasswordInput, email: string): Promise<void> {
   if (apiClient.isMockMode) return mockChangePassword(input, email);
-  await apiClient.post("/api/auth/change-password", input, { skipAuthRefresh: true });
+  await apiClient.post("/api/auth/change-password", input, { ...SETS_SESSION_COOKIE, ...ANSWERS_WITH_401 });
 }
 
 export interface RegisterInput {
@@ -403,13 +416,59 @@ export async function register(input: RegisterInput): Promise<AuthUser> {
       permissions: CLIENT_PERMISSIONS,
     };
   }
-  const { user, token } = await apiClient.post<{ user: AuthUser; token: string }>("/api/auth/register", input);
+  const { user, token } = await apiClient.post<AuthResponseBody>("/api/auth/register", input, SETS_SESSION_COOKIE);
   setAuthToken(token);
   return user;
 }
 
-export function logout(): void {
-  setAuthToken(null);
+// Ends this browser's session only (other devices stay signed in), then drops
+// the access token — which would otherwise still work server-side for up to
+// 15 minutes. Serialised with refresh across tabs; see apiClient.
+export function logout(): Promise<void> {
+  return logoutSession();
+}
+
+// ─── Restoring a session on page load ────────────────────────────────────────
+
+// One refresh at startup: `{ user, token }` back means signed in, with the same
+// user login returns, read fresh. Mock mode has no cookies and no backend, and
+// keeps its demo user.
+export type RestoreOutcome =
+  | { kind: "mock" }
+  | { kind: "signed_in"; user: AuthUser }
+  | { kind: "signed_out"; code: string; message?: string }
+  | { kind: "config_problem"; problem: "origin_not_allowed" | "unreachable" };
+
+export async function restoreSession(): Promise<RestoreOutcome> {
+  if (apiClient.isMockMode) return { kind: "mock" };
+  const outcome = await refreshSession(null);
+  switch (outcome.kind) {
+    // A refresh with no user (a backend older than cf8983e returns only
+    // `{ token }`) restores nobody — never a session with a fabricated user.
+    case "refreshed":
+      return outcome.user ? { kind: "signed_in", user: outcome.user as AuthUser } : { kind: "signed_out", code: "NO_USER" };
+    // Not reachable with a null staleToken; treated as signed out rather
+    // than inventing a user.
+    case "reused": return { kind: "signed_out", code: "NO_USER" };
+    case "signed_out":
+      setAuthToken(null);
+      return { kind: "signed_out", code: outcome.code, message: outcome.message };
+    case "origin_not_allowed":
+    case "unreachable":
+      return { kind: "config_problem", problem: outcome.kind };
+  }
+}
+
+// Why a session ended, in words a person can act on. REFRESH_TOKEN_MISSING
+// (never signed in here) needs no message at all.
+export function signOutReason(code: string): string | null {
+  switch (code) {
+    case "ACCOUNT_SUSPENDED": return "Your account has been suspended. Please contact support.";
+    case "ACCOUNT_DEACTIVATED": return "Your account has been deactivated. Please contact support.";
+    case "TENANT_NOT_ACTIVE": return "Your organisation's account isn't active. Contact your administrator.";
+    case "INVALID_REFRESH_TOKEN": return "Your session has ended. Please sign in again.";
+    default: return null;
+  }
 }
 
 // ─── Mock-mode implementations ───────────────────────────────────────────────
@@ -425,6 +484,8 @@ export const AUTH_ERROR_CODES = [
   "ACCOUNT_DEACTIVATED",
   "TENANT_NOT_ACTIVE",
   "INVALID_REFRESH_TOKEN",
+  "REFRESH_TOKEN_MISSING",
+  "ORIGIN_NOT_ALLOWED",
   "INVALID_OR_EXPIRED_CODE",
   "INVALID_TWO_FACTOR_CODE",
   "INVALID_TWO_FACTOR_CHALLENGE",

@@ -2,9 +2,10 @@ import { createContext, useContext, useState, useEffect, ReactNode } from "react
 import type { Currency } from "../data/mockData";
 import {
   login as loginRequest, logout as logoutRequest, register as registerRequest,
-  verifyTwoFactor as verifyTwoFactorRequest,
+  verifyTwoFactor as verifyTwoFactorRequest, restoreSession, signOutReason,
   MOCK_CLIENT_USER, type AuthUser, type LoginOutcome, type RegisterInput,
 } from "../services/authService";
+import { IS_MOCK_MODE, onSessionEvent } from "../lib/apiClient";
 import { fetchNotifications, markNotificationRead as markNotificationReadRequest, addNotification as addNotificationRequest, type Notification } from "../services/notificationsService";
 import type { WishlistItem } from "../services/marketplaceService";
 
@@ -15,6 +16,17 @@ type User = AuthUser;
 interface AppContextValue {
   user: User | null;
   isAuthenticated: boolean;
+  // True only while the startup refresh is deciding whether anyone is signed
+  // in. Route guards wait on it rather than bouncing a signed-in user to
+  // /login for the length of one request.
+  restoringSession: boolean;
+  // Why the last session ended, when there is something to say (a suspension,
+  // an ended session) — shown once on the sign-in page.
+  signOutNotice: string | null;
+  clearSignOutNotice: () => void;
+  // A CONFIGURATION problem, not an expired session: this page's origin isn't
+  // allowed by the backend, or the backend can't be reached to renew.
+  sessionProblem: "origin_not_allowed" | "unreachable" | null;
   // Returns an OUTCOME, not a user: login either authenticates or hands back a
   // two-factor challenge, and nothing is signed in until a code verifies.
   login: (email: string, password?: string) => Promise<LoginOutcome>;
@@ -42,16 +54,47 @@ interface AppContextValue {
   toggleWishlistItem: (listingId: string, currentFromPrice: number, listingType: WishlistItem["listingType"]) => void;
 }
 
-// Signed-in on load for prototype convenience — swap for a real session check
-// (e.g. a token in localStorage + a "me" request) once the backend exists.
-// Defaults to the client account; visit /login as admin@landvault.com to see
-// the Super Admin console instead.
+// Mock mode only: signed in on load as the demo buyer for prototype
+// convenience (visit /login as admin@landvault.com for the Super Admin
+// console). Against a real backend NOBODY is assumed — the session is
+// restored from the refresh cookie on load, or there isn't one.
 const DEFAULT_USER: User = MOCK_CLIENT_USER;
 
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(DEFAULT_USER);
+  const [user, setUser] = useState<User | null>(IS_MOCK_MODE ? DEFAULT_USER : null);
+  const [restoringSession, setRestoringSession] = useState(!IS_MOCK_MODE);
+  const [signOutNotice, setSignOutNotice] = useState<string | null>(null);
+  const [sessionProblem, setSessionProblem] = useState<"origin_not_allowed" | "unreachable" | null>(null);
+
+  // One refresh on load restores the whole session — `{ user, token }`, the
+  // same user login returns.
+  useEffect(() => {
+    let cancelled = false;
+    restoreSession().then((outcome) => {
+      if (cancelled) return;
+      if (outcome.kind === "signed_in") { setUser(outcome.user); setCurrencyState(outcome.user.currency); }
+      if (outcome.kind === "signed_out") setSignOutNotice(signOutReason(outcome.code));
+      if (outcome.kind === "config_problem") setSessionProblem(outcome.problem);
+      setRestoringSession(false);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Session changes that happen inside ordinary requests.
+  useEffect(() => onSessionEvent((event) => {
+    if (event.kind === "refreshed") {
+      // Read fresh server-side: permissions, KYC and 2FA flags can change.
+      if (event.user) setUser(event.user as User);
+      setSessionProblem(null);
+    } else if (event.kind === "signed_out") {
+      setUser(null);
+      setSignOutNotice(signOutReason(event.code));
+    } else {
+      setSessionProblem(event.problem);
+    }
+  }), []);
   const [savedPlots, setSavedPlots] = useState<string[]>(["peaceland:2-7", "sunrise-gardens:5-3"]);
   const [wishlist, setWishlist] = useState<WishlistItem[]>([]);
   const [currency, setCurrencyState] = useState<Currency>(DEFAULT_USER.currency);
@@ -67,6 +110,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const signIn = (loggedInUser: AuthUser) => {
     setUser(loggedInUser);
+    setSignOutNotice(null);
+    setSessionProblem(null);
     setCurrencyState(loggedInUser.currency);
     return loggedInUser;
   };
@@ -83,9 +128,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const register = async (input: RegisterInput) => signIn(await registerRequest(input));
 
+  // Signed out in the UI at once; the server call and dropping the access
+  // token follow under the cross-tab lock (see apiClient.logoutSession).
   const logout = () => {
-    logoutRequest();
     setUser(null);
+    void logoutRequest();
   };
 
   const passwordChanged = () => {
@@ -122,7 +169,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ user, isAuthenticated: !!user, login, completeTwoFactor, register, logout, passwordChanged, savedPlots, toggleSavedPlot, currency, setCurrency, notifications, markNotificationRead, addNotification, wishlist, isWishlisted, toggleWishlistItem }}>
+    <AppContext.Provider value={{ user, isAuthenticated: !!user, restoringSession, signOutNotice, clearSignOutNotice: () => setSignOutNotice(null), sessionProblem, login, completeTwoFactor, register, logout, passwordChanged, savedPlots, toggleSavedPlot, currency, setCurrency, notifications, markNotificationRead, addNotification, wishlist, isWishlisted, toggleWishlistItem }}>
       {children}
     </AppContext.Provider>
   );

@@ -24,7 +24,7 @@ type FieldKey = "currentPassword" | "newPassword" | "confirm";
 
 export default function ChangePassword() {
   const navigate = useNavigate();
-  const { user, logout, passwordChanged } = useApp();
+  const { user, passwordChanged } = useApp();
   const [current, setCurrent] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -68,11 +68,6 @@ export default function ChangePassword() {
     }
   };
 
-  const signInAgain = () => {
-    logout();
-    navigate("/login");
-  };
-
   return (
     <AuthShell>
       <div className="w-full max-w-sm mx-auto">
@@ -106,22 +101,18 @@ export default function ChangePassword() {
         {done && (
           <>
             <p className="text-sm text-[var(--foreground)] mb-3">Your password has been changed.</p>
-            {/* Honest about reach: refresh tokens are revoked now, but an
-                access token already issued rides out its remaining lifetime —
-                up to 15 minutes. This session is no exception. */}
+            {/* Honest about reach. This browser gets a fresh session cookie and
+                stays signed in. Every other session's refresh is revoked now,
+                but an access token already issued rides out its remaining
+                lifetime — up to 15 minutes. Not instant. */}
             <p className="text-sm text-[var(--muted-foreground)] mb-8">
-              No session — this one included — can renew itself with the old sign-in any more. That isn't instant: a session
-              that's already open, on this device or another, keeps working until its current access expires, which can take
-              up to 15 minutes. After that, it asks for your new password.
+              You stay signed in here. Everywhere else you're signed in has been told to stop renewing — but that isn't
+              instant: a session already open on another device can keep working for up to 15 minutes before it asks for
+              your new password.
             </p>
-            <div className="space-y-2">
-              <button onClick={() => navigate(landingRouteFor(user))} className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium hover:opacity-90">
-                Continue
-              </button>
-              <button onClick={signInAgain} className="w-full py-2.5 border border-[var(--border)] text-[var(--foreground)] rounded-md text-sm font-medium hover:bg-[var(--muted)]">
-                Sign in again now
-              </button>
-            </div>
+            <button onClick={() => navigate(landingRouteFor(user))} className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium hover:opacity-90">
+              Continue
+            </button>
           </>
         )}
       </div>

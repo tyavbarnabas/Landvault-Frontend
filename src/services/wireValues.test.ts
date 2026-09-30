@@ -193,6 +193,7 @@ describe("auth response shapes and error codes", () => {
       "ACCOUNT_DEACTIVATED", "ACCOUNT_SUSPENDED", "EMAIL_ALREADY_REGISTERED",
       "INVALID_CREDENTIALS", "INVALID_OR_EXPIRED_CODE", "INVALID_REFRESH_TOKEN",
       "INVALID_TWO_FACTOR_CHALLENGE", "INVALID_TWO_FACTOR_CODE",
+      "ORIGIN_NOT_ALLOWED", "REFRESH_TOKEN_MISSING",
       "TENANT_NOT_ACTIVE", "TWO_FACTOR_LOCKED_OUT", "TWO_FACTOR_MANDATORY",
       "TWO_FACTOR_NOT_ENABLED", "TWO_FACTOR_SETUP_REQUIRED",
     ]);
@@ -210,6 +211,13 @@ describe("auth response shapes and error codes", () => {
     // mistaken for the other.
     expect("token" in challenge).toBe(false);
     expect("user" in challenge).toBe(false);
+  });
+
+  it("refresh returns the same { user, token } as login, and NO refresh token anywhere", () => {
+    // RefreshResponse(AuthUserResponse user, String token) since cf8983e. The
+    // refresh token is the HttpOnly lv_refresh cookie; no body carries it.
+    const refreshed = { user: {}, token: "access" };
+    expect(Object.keys(refreshed).sort()).toEqual(["token", "user"]);
   });
 
   it("UserRole carries only what the backend emits", () => {
