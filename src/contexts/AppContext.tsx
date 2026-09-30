@@ -23,6 +23,9 @@ interface AppContextValue {
   completeTwoFactor: (challengeToken: string, code: string) => Promise<User>;
   register: (input: RegisterInput) => Promise<User>;
   logout: () => void;
+  // The server clears `mustChangePassword` on a successful change; this
+  // mirrors that on the user already in hand rather than re-fetching it.
+  passwordChanged: () => void;
   savedPlots: string[];
   toggleSavedPlot: (id: string) => void;
   currency: Currency;
@@ -85,6 +88,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
+  const passwordChanged = () => {
+    setUser((prev) => (prev ? { ...prev, mustChangePassword: false } : prev));
+  };
+
   const toggleSavedPlot = (id: string) => {
     setSavedPlots((prev) => prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]);
   };
@@ -115,7 +122,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ user, isAuthenticated: !!user, login, completeTwoFactor, register, logout, savedPlots, toggleSavedPlot, currency, setCurrency, notifications, markNotificationRead, addNotification, wishlist, isWishlisted, toggleWishlistItem }}>
+    <AppContext.Provider value={{ user, isAuthenticated: !!user, login, completeTwoFactor, register, logout, passwordChanged, savedPlots, toggleSavedPlot, currency, setCurrency, notifications, markNotificationRead, addNotification, wishlist, isWishlisted, toggleWishlistItem }}>
       {children}
     </AppContext.Provider>
   );

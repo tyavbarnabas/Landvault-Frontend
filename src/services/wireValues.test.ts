@@ -20,10 +20,14 @@ import type { ConflictSeverity, ConflictStatus } from "./listingConflictsService
 import type { CompanyType, DocumentStatus, DocumentType, GovIdType, TenantStatus, VerificationState } from "./tenantsService";
 import type { KycBuyerType, KycDocType, KycStatus } from "./kycService";
 import type { FeeDueTrigger, FeeType } from "./costDisclosureService";
-import type { ListingIntent, PlotIntent, PlotOrientation, PropertyType, TierType } from "./portalInventoryService";
+import {
+  countFor,
+  type ListingIntent, type PlotCounts, type PlotIntent, type PlotOrientation, type PriceTierDto, type PriceTierImpact,
+  type PriceTierSizeChange, type PriceTierUpdate, type PropertyType, type TierType, type UpdateBlockInput, type UpdatePriceTierInput,
+} from "./portalInventoryService";
 import type { Currency, PlotStatus, PaymentPlan } from "../data/mockData";
 import type { TitleType } from "./marketplaceService";
-import { AUTH_ERROR_CODES, type TwoFactorChallenge, type UserRole } from "./authService";
+import { AUTH_ERROR_CODES, type AuthUser, type ChangePasswordInput, type TwoFactorChallenge, type UserRole } from "./authService";
 import { DUE_TRIGGERS, FEE_CURRENCIES, FEE_TYPES, type RefundAppliesTo, type FeeSchedule } from "./estateDisclosureService";
 import { ELIGIBILITY_CONDITIONS, PUBLICATION_REFUSAL_CONDITIONS, type EstateEligibility, type PublicationResult } from "./portalEstatesService";
 
@@ -227,5 +231,58 @@ describe("shared enums", () => {
 
   it("PaymentPlan", () => {
     expect(wireValues(["outright", "milestone", "installment"] satisfies readonly PaymentPlan[])).toEqual(["outright", "milestone", "installment"]);
+  });
+});
+
+// Inventory editing (IE-1, IE-2) and change-password. Transcribed from
+// UpdatePriceTierRequest, PriceTierUpdateDto (+ SizeChange), PriceTierImpactDto,
+// PriceTierDto, UpdateBlockRequest, PlotCountsDto and ChangePasswordRequest.
+// `Required<>` plus an exact key list means a field renamed or added on either
+// side fails here rather than on the first real request.
+describe("inventory editing and change-password shapes", () => {
+  it("ChangePasswordRequest — currentPassword and newPassword, nothing else", () => {
+    const body: Required<ChangePasswordInput> = { currentPassword: "a", newPassword: "b" };
+    expect(Object.keys(body).sort()).toEqual(["currentPassword", "newPassword"]);
+  });
+
+  it("UpdatePriceTierRequest — five fields, tierType and currency included so a form can round-trip them", () => {
+    const body: Required<UpdatePriceTierInput> = { price: 1, label: "", sizeSqm: 1, tierType: "land_size", currency: "NGN" };
+    expect(Object.keys(body).sort()).toEqual(["currency", "label", "price", "sizeSqm", "tierType"]);
+  });
+
+  it("UpdateBlockRequest — name and label", () => {
+    const body: Required<UpdateBlockInput> = { name: "Block D", label: "" };
+    expect(Object.keys(body).sort()).toEqual(["label", "name"]);
+  });
+
+  it("PriceTierDto — seven fields; no plot count and no per-sqm figure on the wire", () => {
+    const dto: PriceTierDto = { id: "t", estateId: "e", tierType: "land_size", sizeSqm: 450, price: 1, currency: "NGN", label: null };
+    expect(Object.keys(dto).sort()).toEqual(["currency", "estateId", "id", "label", "price", "sizeSqm", "tierType"]);
+  });
+
+  it("PriceTierUpdate — tier plus sizeChange, and sizeChange's five fields", () => {
+    const sizeChange: PriceTierSizeChange = {
+      previousSizeSqm: 450, newSizeSqm: 500, plotsUpdated: 104, keptPreviousSize: { total: 16, byStatus: { reserved: 8, sold: 8 } }, note: "",
+    };
+    const update: PriceTierUpdate = { tier: { id: "t", estateId: "e", tierType: "land_size", sizeSqm: 500, price: 1, currency: "NGN", label: null }, sizeChange };
+    expect(Object.keys(update).sort()).toEqual(["sizeChange", "tier"]);
+    expect(Object.keys(sizeChange).sort()).toEqual(["keptPreviousSize", "newSizeSqm", "note", "plotsUpdated", "previousSizeSqm"]);
+  });
+
+  it("PriceTierImpact — tierId and plots", () => {
+    const impact: PriceTierImpact = { tierId: "t", plots: { total: 0, byStatus: {} } };
+    expect(Object.keys(impact).sort()).toEqual(["plots", "tierId"]);
+  });
+
+  it("PlotCountsDto — keyed by the hyphenated status wire value; an absent status is zero", () => {
+    const counts: PlotCounts = { total: 120, byStatus: { "available-dev": 112, reserved: 8 } };
+    expect(Object.keys(counts).sort()).toEqual(["byStatus", "total"]);
+    expect(countFor(counts, "sold")).toBe(0);
+    expect(countFor(counts, "reserved")).toBe(8);
+  });
+
+  it("AuthUserResponse carries tenantId and branchId; a null branchId means organisation-wide", () => {
+    const director: Pick<AuthUser, "tenantId" | "branchId"> = { tenantId: "7c1e…", branchId: null };
+    expect(director.branchId).toBeNull();
   });
 });

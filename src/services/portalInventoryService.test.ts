@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import {
-  PLOT_BATCH_LIMIT, availableCount, countFor, createBlock, createPlotBatch, createPlotsInBatches,
-  createPriceTier, fetchInventoryGeoJson, fetchPlotCounts, fetchPlots, fetchPriceTiers,
-  planBatches, tierDisplayLabel, validatePriceTier,
+  InventoryEditError, PLOT_BATCH_LIMIT, availableCount, countFor, createBlock, createPlotBatch, createPlotsInBatches,
+  createPriceTier, fetchBlocks, fetchInventoryGeoJson, fetchPlotCounts, fetchPlots, fetchPriceTierImpact, fetchPriceTiers,
+  planBatches, tierDisplayLabel, updateBlock, updatePriceTier, validatePriceTier,
   type BatchProgress, type CreatePlotInput, type PortalPriceTier,
 } from "./portalInventoryService";
 import { createPortalEstate, type PortalScope } from "./portalEstatesService";
@@ -317,5 +317,119 @@ describe("blocks", () => {
   it("rejects a duplicate name within the estate", async () => {
     await createBlock(estateId, { name: "Block Q" }, SCOPE);
     await expect(createBlock(estateId, { name: "block q" }, SCOPE)).rejects.toThrow(/already has a block/);
+  });
+});
+
+// ─── Editing (IE-1, IE-2) ────────────────────────────────────────────────────
+
+describe("tier impact preview", () => {
+  it("counts by status, with an absent status meaning zero", async () => {
+    const tier = await createPriceTier(estateId, { tierType: "land_size", sizeSqm: 410, price: 20_000_000, currency: "NGN" }, SCOPE);
+    const empty = await fetchPriceTierImpact(estateId, tier.id, SCOPE);
+    expect(empty).toEqual({ tierId: tier.id, plots: { total: 0, byStatus: {} } });
+
+    await createPlotBatch(estateId, [
+      { plotNumber: "I1", priceTierId: tier.id, status: "available-dev" },
+      { plotNumber: "I2", priceTierId: tier.id, status: "reserved" },
+    ], SCOPE);
+    const { plots } = await fetchPriceTierImpact(estateId, tier.id, SCOPE);
+    expect(plots.total).toBe(2);
+    expect(countFor(plots, "reserved")).toBe(1);
+    // Never a fabricated spread: sold is absent, and absent reads as zero.
+    expect("sold" in plots.byStatus).toBe(false);
+    expect(countFor(plots, "sold")).toBe(0);
+  });
+});
+
+describe("editing a price tier", () => {
+  async function tierWithPlots(sizeSqm: number) {
+    const tier = await createPriceTier(estateId, { tierType: "land_size", sizeSqm, price: 10_000_000, currency: "NGN" }, SCOPE);
+    const plots = await createPlotBatch(estateId, [
+      { plotNumber: `${sizeSqm}-1`, priceTierId: tier.id, status: "available-dev" },
+      { plotNumber: `${sizeSqm}-2`, priceTierId: tier.id, status: "available-inv" },
+      { plotNumber: `${sizeSqm}-3`, priceTierId: tier.id, status: "reserved" },
+      { plotNumber: `${sizeSqm}-4`, priceTierId: tier.id, status: "sold" },
+    ], SCOPE);
+    return { tier, plots };
+  }
+
+  it("a price change reaches every plot, and sizeChange is null because the size didn't change", async () => {
+    const { tier } = await tierWithPlots(510);
+    const result = await updatePriceTier(estateId, tier.id, { price: 12_000_000 }, SCOPE);
+
+    expect(result.tier.price).toBe(12_000_000);
+    // Null means the size did not change — not that nothing happened.
+    expect(result.sizeChange).toBeNull();
+    const { items } = await fetchPlots(estateId, SCOPE, { priceTierId: tier.id });
+    expect(items.every((p) => p.basePrice === 12_000_000)).toBe(true);
+  });
+
+  it("a size change reaches available plots only, and says what it skipped, by status", async () => {
+    const { tier } = await tierWithPlots(520);
+    const result = await updatePriceTier(estateId, tier.id, { sizeSqm: 540 }, SCOPE);
+
+    expect(result.sizeChange).toMatchObject({ previousSizeSqm: 520, newSizeSqm: 540, plotsUpdated: 2 });
+    expect(result.sizeChange!.keptPreviousSize).toEqual({ total: 2, byStatus: { reserved: 1, sold: 1 } });
+    expect(result.sizeChange!.note).toContain("keep the size their buyer agreed to");
+
+    const { items } = await fetchPlots(estateId, SCOPE, { priceTierId: tier.id });
+    const sizeOf = (status: string) => items.find((p) => p.status === status)!.nominalSizeSqm;
+    expect(sizeOf("available-dev")).toBe(540);
+    expect(sizeOf("available-inv")).toBe(540);
+    // What's on a reserved or sold buyer's deed does not move under them.
+    expect(sizeOf("reserved")).toBe(520);
+    expect(sizeOf("sold")).toBe(520);
+  });
+
+  it("accepts the current tierType and currency echoed back — a full round trip works", async () => {
+    const { tier } = await tierWithPlots(530);
+    const result = await updatePriceTier(estateId, tier.id,
+      { price: tier.price, label: "", sizeSqm: 530, tierType: "land_size", currency: "NGN" }, SCOPE);
+    expect(result.sizeChange).toBeNull();
+  });
+
+  it("refuses a different tierType or currency on that field, with the reason", async () => {
+    const { tier } = await tierWithPlots(550);
+
+    const typeErr = await updatePriceTier(estateId, tier.id, { tierType: "unit_type" }, SCOPE).catch((e) => e);
+    expect(typeErr).toBeInstanceOf(InventoryEditError);
+    expect(typeErr).toMatchObject({ field: "tierType", code: "TIER_TYPE_IMMUTABLE" });
+    expect(typeErr.message).toContain("Create a new tier");
+
+    const currencyErr = await updatePriceTier(estateId, tier.id, { currency: "USD" }, SCOPE).catch((e) => e);
+    expect(currencyErr).toMatchObject({ field: "currency", code: "TIER_CURRENCY_IMMUTABLE" });
+  });
+
+  it("refuses a size that another tier on the estate already has, on the size field", async () => {
+    const { tier } = await tierWithPlots(560);
+    const err = await updatePriceTier(estateId, tier.id, { sizeSqm: 250 }, SCOPE).catch((e) => e);
+    expect(err).toMatchObject({ field: "sizeSqm", code: "DUPLICATE_RECORD" });
+  });
+
+  it("refuses a size on a unit-type tier", async () => {
+    const err = await updatePriceTier(estateId, unitTier.id, { sizeSqm: 100 }, SCOPE).catch((e) => e);
+    expect(err).toMatchObject({ field: "sizeSqm" });
+  });
+});
+
+describe("renaming a block", () => {
+  it("renames, and a clash is a clean message about the name — never a constraint", async () => {
+    const a = await createBlock(estateId, { name: "Rename A" }, SCOPE);
+    await createBlock(estateId, { name: "Rename B" }, SCOPE);
+
+    const renamed = await updateBlock(estateId, a.id, { name: "Rename C", label: "North" }, SCOPE);
+    expect(renamed).toMatchObject({ name: "Rename C", label: "North" });
+
+    const err = await updateBlock(estateId, a.id, { name: "rename b" }, SCOPE).catch((e) => e);
+    expect(err).toMatchObject({ field: "name", code: "DUPLICATE_RECORD" });
+    expect(err.message).not.toMatch(/uq_|constraint/i);
+
+    expect((await fetchBlocks(estateId, SCOPE)).find((b) => b.id === a.id)?.name).toBe("Rename C");
+  });
+
+  it("refuses a blank name, and an empty label clears the label", async () => {
+    const block = await createBlock(estateId, { name: "Rename D", label: "Old" }, SCOPE);
+    await expect(updateBlock(estateId, block.id, { name: "  " }, SCOPE)).rejects.toMatchObject({ field: "name" });
+    expect((await updateBlock(estateId, block.id, { label: "" }, SCOPE)).label).toBeUndefined();
   });
 });

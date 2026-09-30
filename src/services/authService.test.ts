@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
-  AUTH_ERROR_CODES, MOCK_DEMO_CODES, confirmTwoFactor, disableTwoFactor, errorCodeOf,
+  AUTH_ERROR_CODES, MOCK_DEMO_CODES, changePassword, confirmTwoFactor, disableTwoFactor, errorCodeOf,
   forgotPassword, isBuyer, isPlatformStaff, isPortalStaff, landingRouteFor, login,
   regenerateRecoveryCodes, resetPassword, setupTwoFactor, verifyTwoFactor,
   type AuthUser,
@@ -169,6 +169,39 @@ describe("password reset", () => {
 
     await expect(resetPassword({ email: BUYER, code: MOCK_DEMO_CODES.reset, newPassword: "second" }))
       .rejects.toMatchObject({ body: { code: "INVALID_OR_EXPIRED_CODE" } });
+  });
+});
+
+// Proves knowledge of the CURRENT password — not control of a mailbox. No
+// code is requested and none is needed.
+describe("change password", () => {
+  const EMAIL = "changer@example.com";
+
+  it("succeeds with the correct current password, and the old one stops working", async () => {
+    await expect(changePassword({ currentPassword: MOCK_DEMO_CODES.currentPassword, newPassword: "a brand new one" }, EMAIL))
+      .resolves.toBeUndefined();
+
+    const reused = await changePassword({ currentPassword: MOCK_DEMO_CODES.currentPassword, newPassword: "again" }, EMAIL).catch((e) => e);
+    expect(errorCodeOf(reused)).toBe("INVALID_CREDENTIALS");
+
+    await expect(changePassword({ currentPassword: "a brand new one", newPassword: "and again" }, EMAIL)).resolves.toBeUndefined();
+  });
+
+  it("fails with a wrong current password using login's own code, not a code of its own", async () => {
+    const err = await changePassword({ currentPassword: "not it", newPassword: "whatever" }, "other@example.com").catch((e) => e);
+    expect(errorCodeOf(err)).toBe("INVALID_CREDENTIALS");
+  });
+
+  it("adds no strength rule of its own — registration's rule is the only one", async () => {
+    // A one-character password is acceptable at registration (@NotBlank only),
+    // so it must be acceptable here too.
+    await expect(changePassword({ currentPassword: MOCK_DEMO_CODES.currentPassword, newPassword: "x" }, "short@example.com"))
+      .resolves.toBeUndefined();
+  });
+
+  it("leaves the reset flow untouched — a separate path for a forgotten password", async () => {
+    await forgotPassword("changer2@example.com");
+    await expect(resetPassword({ email: "changer2@example.com", code: MOCK_DEMO_CODES.reset, newPassword: "via reset" })).resolves.toBeUndefined();
   });
 });
 

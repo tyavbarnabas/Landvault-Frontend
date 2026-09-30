@@ -42,14 +42,11 @@ export interface AuthUser {
   // 0 when 2FA is off.
   recoveryCodesRemaining?: number;
   // Which company this user acts for, and — for branch-scoped staff — which
-  // branch.
-  //
-  // CONTRACT GAP (see the backend note at the end of this slice): the login
-  // response (`AuthUserResponse`) carries NEITHER today. `tenantId` has to be
-  // read from `GET /api/me`, and `branchId` is exposed only by
-  // `/api/me/tenant-scope`, which its own Javadoc calls a debug endpoint. Both
-  // are optional here for exactly that reason, and every consumer must cope
-  // with them being absent rather than assuming a scope.
+  // branch. Both arrive on `AuthUserResponse` itself (no second call to
+  // `/api/me` or the `/api/me/tenant-scope` debug endpoint). They stay
+  // optional because a buyer, platform staff and an independent agent carry
+  // neither — every consumer must cope with them being absent rather than
+  // assuming a scope.
   //
   // A null/absent branchId means NOT branch-scoped: an Executive Director
   // sees across their company's branches. Buyers and platform staff have
@@ -347,6 +344,35 @@ export async function resetPassword(input: ResetPasswordInput): Promise<void> {
   await apiClient.post("/api/auth/reset-password", input);
 }
 
+// ─── Change password ─────────────────────────────────────────────────────────
+
+// NOT a reset. A reset proves control of a mailbox; this proves knowledge of
+// the password being replaced — which is what a change-password screen means,
+// and it works on a deployment with no mail configured, so a bootstrapped
+// admin can retire a temporary credential without email.
+//
+// `newPassword` carries exactly the rule registration does (@NotBlank) and no
+// stricter one: a password acceptable at registration cannot become
+// unacceptable when it is changed. So nothing here adds a strength rule the
+// backend would not enforce.
+//
+// A wrong current password comes back as 401 INVALID_CREDENTIALS — the same
+// response a bad password gets at login. `skipAuthRefresh` keeps apiClient
+// from reading that 401 as an expired session and signing the user out.
+//
+// On success the backend revokes every refresh token for the account, this
+// session's included. An access token already issued is NOT severed: it rides
+// out its remaining lifetime, up to 15 minutes. Never describe this as instant.
+export interface ChangePasswordInput {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export async function changePassword(input: ChangePasswordInput, email: string): Promise<void> {
+  if (apiClient.isMockMode) return mockChangePassword(input, email);
+  await apiClient.post("/api/auth/change-password", input, { skipAuthRefresh: true });
+}
+
 export interface RegisterInput {
   name: string;
   email: string;
@@ -448,6 +474,11 @@ interface MockChallenge {
 
 const mockChallenges = new Map<string, MockChallenge>();
 const mockResetCodes = new Map<string, string>();
+// Mock login accepts any password, so change-password needs a known "current"
+// one to verify against. Every account starts on the demo password; a
+// successful change replaces it, so the old one stops working — as it would.
+const MOCK_CURRENT_PASSWORD = "landvault-demo";
+const mockPasswords = new Map<string, string>();
 // Recovery codes are single-use, so a consumed one is remembered.
 const mockUsedRecoveryCodes = new Set<string>();
 let mockPendingSecret: string | null = null;
@@ -534,6 +565,15 @@ function mockResetPassword({ email, code }: ResetPasswordInput): void {
   mockResetCodes.delete(email.trim().toLowerCase());
 }
 
+function mockChangePassword({ currentPassword, newPassword }: ChangePasswordInput, email: string): void {
+  const key = email.trim().toLowerCase();
+  if (currentPassword !== (mockPasswords.get(key) ?? MOCK_CURRENT_PASSWORD)) {
+    // The backend's own response for a wrong current password — login's.
+    throw new MockAuthError("INVALID_CREDENTIALS", "Invalid email or password.");
+  }
+  mockPasswords.set(key, newPassword);
+}
+
 // Exported for the demo screens only, so a tester knows what to type. Never
 // rendered into a URL, and never logged.
-export const MOCK_DEMO_CODES = { totp: MOCK_TOTP_CODE, reset: MOCK_RESET_CODE };
+export const MOCK_DEMO_CODES = { totp: MOCK_TOTP_CODE, reset: MOCK_RESET_CODE, currentPassword: MOCK_CURRENT_PASSWORD };

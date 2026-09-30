@@ -146,6 +146,12 @@ export interface RequestOptions extends RequestInit {
    * without one, POST/DELETE are never retried even on a 5xx or network
    * error, since the server may have already applied the first attempt. */
   idempotencyKey?: string;
+  /** For the few endpoints where a 401 is the ANSWER, not an expired session —
+   * change-password returns 401 for a wrong current password. Without this,
+   * a mistyped password would be taken as a dead session: a refresh attempt,
+   * then the token wiped and a redirect to /login. The 401 is thrown as an
+   * ordinary ApiError instead, carrying the server's code. */
+  skipAuthRefresh?: boolean;
   /** Internal — set on the recursive retry-after-refresh call so a second
    * 401 doesn't loop forever. */
   _retriedAfterRefresh?: boolean;
@@ -158,7 +164,7 @@ async function request<T>(path: string, options: RequestOptions = {}, attempt = 
     throw new Error(`apiClient called for "${path}" with no VITE_API_BASE_URL set. Set it in .env, or fix the calling service's mock-mode branch.`);
   }
 
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, idempotencyKey, _retriedAfterRefresh, signal: callerSignal, ...init } = options;
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, idempotencyKey, skipAuthRefresh, _retriedAfterRefresh, signal: callerSignal, ...init } = options;
   const method = (init.method ?? "GET").toUpperCase();
 
   const timeoutController = new AbortController();
@@ -203,7 +209,7 @@ async function request<T>(path: string, options: RequestOptions = {}, attempt = 
   clearTimeout(timeoutId);
   callerSignal?.removeEventListener("abort", onCallerAbort);
 
-  if (res.status === 401 && !_retriedAfterRefresh) {
+  if (res.status === 401 && !_retriedAfterRefresh && !skipAuthRefresh) {
     const refreshed = await refreshAccessToken();
     if (refreshed) return request<T>(path, { ...options, _retriedAfterRefresh: true }, attempt);
     redirectToLogin();

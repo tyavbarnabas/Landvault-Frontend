@@ -63,25 +63,29 @@ These aren't just "point at a new URL" — they need actual backend-shaped rewor
 
 Two gaps the frontend cannot close on its own. Everything else found in the audit has been fixed on this side; these two would mean degrading the product to match a missing capability, so they are written up instead.
 
-### 1. Expose `EstateEligibility` on `EstateDetailDto`
+### 1–3. Resolved by the backend (2026-09-27/28), wired or confirmed here 2026-09-30
 
-The backend already computes all seven booleans (`published`, `tenantVerified`, `tenantEntitled`, `tenantActive`, `feesDeclared`, `refundTermsDeclared`, `eligible`) in `marketplace_estate_eligibility`, and `EstateEligibility`'s own Javadoc says they are separate *precisely so* the failing one can be named. But the record isn't on any portal read DTO, so the only way the portal can learn about a failure is to attempt a publish and catch `PublicationRefused`.
+- **`EstateEligibility` on `EstateDetailDto`** — arrives as `EstateEligibilityDto`, eight booleans including an explicit `noBlockingConflict`. The frontend type already matched field for field, so the estate detail's readiness panel shows real conditions with no change. List rows still read "Readiness unknown", correctly: `EstateSummaryDto` carries no eligibility.
+- **`tenantId` / `branchId` on `AuthUserResponse`** — populated from the tenant scope. `usePortalScope` reads them straight off the signed-in user; nothing in the frontend calls `/api/me` or `/api/me/tenant-scope`.
+- **`POST /api/auth/change-password`** — `/change-password` now verifies against the current password. The forgot → reset workaround is gone from that screen; `/forgot-password` → `/reset-password` is unchanged for people who have actually forgotten.
 
-The portal's readiness panel therefore renders every condition as **Unknown** against a real backend — it must never show an unknown condition as met, so it cannot guess. Adding the record to `EstateDetailDto` turns the panel on with no other frontend change; the field is already modelled as `eligibility: EstateEligibility | null` and the null branch simply stops being taken.
+## Asks for the backend session (2026-09-30 cross-check)
 
-Worth noting the conflict check has no boolean of its own: the frontend infers a blocking conflict from "every named condition passes but `eligible` is false". An explicit `noBlockingConflict` (or exposing `ConflictPublicationCheck`) would remove that inference.
+### A. The refresh flow cannot work as wired
 
-### 2. Put `tenantId` and `branchId` on `AuthUserResponse`
+`apiClient`'s refresh posts `/api/auth/refresh` with **no body**, relying on a cookie; `RefreshRequest` requires `{ refreshToken }` in the body, and the frontend never stores the `refreshToken` that login returns. So every refresh fails, and **any** 401 signs the user out. This is a frontend fix (store the refresh token, send it, store the rotated one), but it involves the storage decision already flagged in `apiClient.ts` (httpOnly cookie vs. localStorage), so it's written up rather than half-done. Until then, `change-password` opts out with `skipAuthRefresh`, because its 401 means "wrong current password", not "expired session". Login and 2FA verify have the same 401-is-an-answer shape and don't opt out yet.
 
-`AuthUserResponse` carries neither today. `tenantId` is available from `GET /api/me`, and `branchId` only from `GET /api/me/tenant-scope` — whose own Javadoc calls it a debug endpoint for observing the tenant-context filter, not a product endpoint.
+### B. No list endpoints for blocks or price tiers, and no per-tier plot count
 
-Branch scoping is enforced server-side by RLS either way; this is about the portal knowing its own scope well enough to label the UI honestly ("your branch's estates" vs "every estate across your company's branches") without a second round trip to a debug surface. `AuthUser.tenantId`/`branchId` are already optional on the frontend for exactly this reason.
+There is no `GET .../blocks`, `GET .../price-tiers` or `GET .../plot-counts`; the inventory service was calling all three. They are now read off `GET /api/portal/estates/{id}` (`blocks`, `priceTiers`, `plotCounts`). `PriceTierDto` has no plot count, so the tier table takes each tier's total from `.../impact` (one request per tier — a handful). A `plotCount` on `PriceTierDto`, or the same `PlotCountsDto` per tier, would save those requests.
 
-### 3. Add a session-authenticated change-password endpoint
+### C. `pricePerSqm` isn't on `PriceTierDto` (or `PlotDto`)
 
-`mustChangePassword` is returned and now routed on, but **there is no endpoint to change a password with the current one**. `SuperAdminBootstrap` says so in as many words: *"the endpoint doesn't exist"*.
+The tier table's "Per sqm" comparison column reads "—" against a real backend. The frontend deliberately doesn't divide one out (figures arrive computed). If the comparison is wanted, it needs to come from the server.
 
-So `/change-password` completes using the two endpoints that DO exist — `forgot-password` to email a code, then `reset-password`. That works, but it verifies against the account's mailbox rather than against the password the user just typed, and it means a bootstrapped admin needs working email before they can retire a temporary password. A `POST /api/auth/change-password` taking `{currentPassword, newPassword}` would let the screen do what its name says.
+### D. Estates show their branch as a raw UUID
+
+`PortalEstateList` and `PortalEstateDetail` render `{estate.branchId} branch`. That read fine against mock slugs ("heritage branch"), but against the backend it prints a UUID. A branch name on the estate DTOs, or a branch lookup, would fix it.
 
 ### Also worth a look, lower priority
 

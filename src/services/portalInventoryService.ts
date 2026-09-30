@@ -25,7 +25,7 @@ import type { Currency, PlotStatus } from "../data/mockData";
 
 // The backend's PlotOrientation @JsonValue strings — uppercase compass points.
 export type PlotOrientation = "N" | "S" | "E" | "W" | "NE" | "NW" | "SE" | "SW";
-import { apiClient } from "../lib/apiClient";
+import { ApiError, apiClient } from "../lib/apiClient";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import { polygonAreaSqm } from "../lib/geometry";
 import { fetchPortalEstateById, type GeoJsonFeature, type GeoJsonFeatureCollection, type GeoJsonPolygon, type PortalScope } from "./portalEstatesService";
@@ -66,13 +66,17 @@ export interface PortalPriceTier {
   currency: Currency;
   label?: string;
   // How many plots point at this tier. A tier with none shows zero — the real
-  // count, never an estimate.
+  // count, never an estimate. `PriceTierDto` does not carry it, so against a
+  // real backend it is the server's own `.../impact` total for the tier.
   plotCount: number;
   // Display-only comparison figure. AGENTS.md is explicit that price is the
   // developer's own figure per tier and is NEVER derived from a per-sqm rate:
   // 180 sqm at ₦18,000/sqm beside 600 sqm at ₦14,500/sqm is ordinary market
   // behaviour, not an inconsistency to flag. Null for UNIT_TYPE, where a
   // per-square-metre figure has no meaning — null, not zero.
+  //
+  // Also null against a real backend: `PriceTierDto` carries no such figure,
+  // and figures arrive computed — this module does not divide one out.
   pricePerSqm: number | null;
 }
 
@@ -106,6 +110,75 @@ export function validatePriceTier(input: CreatePriceTierInput): FieldError | nul
     return { field: "price", message: "Enter the price for this tier." };
   }
   return null;
+}
+
+// ─── Editing tiers and blocks ────────────────────────────────────────────────
+
+// `PUT .../price-tiers/{tierId}` — UpdatePriceTierRequest. Every field is
+// optional and one left out stays as it is. `tierType` and `currency` are
+// accepted ONLY so a form can round-trip the current values: a different value
+// is refused (TIER_TYPE_IMMUTABLE / TIER_CURRENCY_IMMUTABLE), because a
+// different type or currency is a different tier, not an edit to this one.
+// `label: ""` clears the label. `sizeSqm` is for land_size tiers only.
+export interface UpdatePriceTierInput {
+  price?: number;
+  label?: string;
+  sizeSqm?: number;
+  tierType?: TierType;
+  currency?: Currency;
+}
+
+// PriceTierSizeChange. Present ONLY when the size actually changed; null means
+// the size did not change — not that nothing happened.
+//
+// A size change reaches available plots only. `nominal_size_sqm` is what
+// appears on a deed, and a reservation locks the price but not the size, so
+// changing it under a buyer who has already reserved would alter what they
+// agreed to buy. `keptPreviousSize` is those plots, by status — same shape and
+// same absent-means-zero rule as PlotCounts.
+export interface PriceTierSizeChange {
+  previousSizeSqm: number;
+  newSizeSqm: number;
+  plotsUpdated: number;
+  keptPreviousSize: PlotCounts;
+  note: string;
+}
+
+// PriceTierUpdate — the tier as it now stands (a bare PriceTierDto: no plot
+// count, no per-sqm figure), plus what a size change reached.
+export interface PriceTierUpdate {
+  tier: PriceTierDto;
+  sizeChange: PriceTierSizeChange | null;
+}
+
+// PriceTierImpact — how many plots point at this tier, by status, BEFORE an
+// edit. A price change applies to all of them, though a buyer who reserved
+// keeps the price captured at reservation; a size change applies to available
+// plots only.
+export interface PriceTierImpact {
+  tierId: string;
+  plots: PlotCounts;
+}
+
+// `PUT .../blocks/{blockId}` — UpdateBlockRequest. `name` must not be blank
+// when sent; `label: ""` clears the label. Names are unique within the estate.
+export interface UpdateBlockInput {
+  name?: string;
+  label?: string;
+}
+
+// An edit the server refused, pinned to the field a form should show it on.
+// `code` is the server's stable code; `message` is written for people. Thrown
+// identically in mock and real mode so a form branches on one shape.
+export class InventoryEditError extends Error {
+  field: string;
+  code: string;
+  constructor(field: string, code: string, message: string) {
+    super(message);
+    this.name = "InventoryEditError";
+    this.field = field;
+    this.code = code;
+  }
 }
 
 // ─── Plots ───────────────────────────────────────────────────────────────────
@@ -233,10 +306,62 @@ async function assertInScope(estateId: string, scope: PortalScope): Promise<bool
   return (await fetchPortalEstateById(estateId, scope)) !== null;
 }
 
+// ─── Wire shapes ─────────────────────────────────────────────────────────────
+//
+// The backend has NO list endpoint for blocks or tiers, and no /plot-counts:
+// all three arrive on `GET /api/portal/estates/{id}` (EstateDetailDto). So the
+// real-mode reads below take that one response apart rather than calling
+// endpoints that would 404.
+
+export interface PriceTierDto {
+  id: string;
+  estateId: string;
+  tierType: TierType;
+  sizeSqm: number | null;
+  price: number;
+  currency: Currency;
+  label: string | null;
+}
+
+interface BlockDto {
+  id: string;
+  estateId: string;
+  name: string;
+  label: string | null;
+}
+
+interface InventoryDetailDto {
+  blocks: BlockDto[] | null;
+  priceTiers: PriceTierDto[] | null;
+  plotCounts: PlotCounts | null;
+}
+
+function fetchInventoryDetail(estateId: string): Promise<InventoryDetailDto> {
+  return apiClient.get<InventoryDetailDto>(`/api/portal/estates/${estateId}`);
+}
+
+function fromBlockDto(dto: BlockDto): PortalBlock {
+  return { id: dto.id, estateId: dto.estateId, name: dto.name, label: dto.label ?? undefined };
+}
+
+function fromPriceTierDto(dto: PriceTierDto, plotCount: number): PortalPriceTier {
+  return {
+    id: dto.id,
+    estateId: dto.estateId,
+    tierType: dto.tierType,
+    sizeSqm: dto.sizeSqm,
+    price: dto.price,
+    currency: dto.currency,
+    label: dto.label ?? undefined,
+    plotCount,
+    pricePerSqm: null,
+  };
+}
+
 // ─── Blocks API ──────────────────────────────────────────────────────────────
 
 export async function fetchBlocks(estateId: string, scope: PortalScope): Promise<PortalBlock[]> {
-  if (!apiClient.isMockMode) return apiClient.get<PortalBlock[]>(`/api/portal/estates/${estateId}/blocks`);
+  if (!apiClient.isMockMode) return ((await fetchInventoryDetail(estateId)).blocks ?? []).map(fromBlockDto);
   if (!(await assertInScope(estateId, scope))) return [];
   return mockBlocks.filter((b) => b.estateId === estateId);
 }
@@ -252,10 +377,74 @@ export async function createBlock(estateId: string, input: CreateBlockInput, sco
   return block;
 }
 
+// Blocks are deliberately thin — nothing depends on a name beyond display — so
+// a rename is low-risk. The one rule is uniqueness within the estate
+// (uq_blocks_estate_name), surfaced as a message about the NAME rather than a
+// constraint violation.
+export async function updateBlock(estateId: string, blockId: string, input: UpdateBlockInput, scope: PortalScope): Promise<PortalBlock> {
+  if (input.name !== undefined && !input.name.trim()) {
+    throw new InventoryEditError("name", "INVALID_REQUEST", "A block name can't be blank.");
+  }
+
+  if (!apiClient.isMockMode) {
+    try {
+      return fromBlockDto(await apiClient.put<BlockDto>(`/api/portal/estates/${estateId}/blocks/${blockId}`, input));
+    } catch (err) {
+      throw blockEditError(err, input);
+    }
+  }
+
+  if (!(await assertInScope(estateId, scope))) throw new InventoryEditError("form", "ESTATE_NOT_FOUND", "Estate not found.");
+  const block = mockBlocks.find((b) => b.id === blockId && b.estateId === estateId);
+  if (!block) throw new InventoryEditError("form", "RELATED_RECORD_NOT_FOUND", "This block no longer exists on this estate.");
+
+  if (input.name !== undefined) {
+    const name = input.name.trim();
+    const clash = mockBlocks.some((b) => b.estateId === estateId && b.id !== blockId && b.name.toLowerCase() === name.toLowerCase());
+    if (clash) throw new InventoryEditError("name", "DUPLICATE_RECORD", duplicateBlockMessage(name));
+    block.name = name;
+    // Plot rows carry the block's name for display; the backend joins it at
+    // read time, so a rename shows everywhere at once.
+    for (const plot of mockPlots) if (plot.blockId === blockId) plot.blockName = name;
+  }
+  if (input.label !== undefined) block.label = input.label.trim() || undefined;
+  return { ...block };
+}
+
+function duplicateBlockMessage(name: string): string {
+  return `Another block on this estate is already called "${name}". Block names must be unique within an estate.`;
+}
+
+function blockEditError(err: unknown, input: UpdateBlockInput): Error {
+  if (!(err instanceof ApiError)) return err instanceof Error ? err : new Error("Couldn't rename the block.");
+  const body = err.body;
+  // 409 from either the pre-check or uq_blocks_estate_name itself. The name is
+  // the only unique field on a block, so the message is about the name — never
+  // the raw constraint the handler's fallback would echo.
+  if (err.status === 409) return new InventoryEditError("name", "DUPLICATE_RECORD", duplicateBlockMessage(input.name?.trim() ?? ""));
+  if (err.status === 404) return new InventoryEditError("form", body?.code ?? "NOT_FOUND", "This block no longer exists on this estate.");
+  const fieldError = firstFieldError(body?.fieldErrors);
+  if (fieldError) return new InventoryEditError(fieldError.field, "VALIDATION", fieldError.message);
+  if (body?.code === "INVALID_REQUEST") return new InventoryEditError("name", body.code, body.message ?? "That block name isn't valid.");
+  return new InventoryEditError("form", body?.code ?? "UNKNOWN", body?.message ?? "Couldn't rename the block.");
+}
+
+function firstFieldError(fieldErrors: Record<string, string> | undefined): { field: string; message: string } | null {
+  const entry = fieldErrors ? Object.entries(fieldErrors)[0] : undefined;
+  return entry ? { field: entry[0], message: entry[1] } : null;
+}
+
 // ─── Price tiers API ─────────────────────────────────────────────────────────
 
 export async function fetchPriceTiers(estateId: string, scope: PortalScope): Promise<PortalPriceTier[]> {
-  if (!apiClient.isMockMode) return apiClient.get<PortalPriceTier[]>(`/api/portal/estates/${estateId}/price-tiers`);
+  if (!apiClient.isMockMode) {
+    const tiers = (await fetchInventoryDetail(estateId)).priceTiers ?? [];
+    // One impact read per tier — an estate has a handful of tiers, not
+    // hundreds — so the count shown is the server's, never a recount of a plot
+    // page that may be truncated.
+    const impacts = await Promise.all(tiers.map((t) => fetchPriceTierImpact(estateId, t.id, scope)));
+    return tiers.map((t, i) => fromPriceTierDto(t, impacts[i].plots.total));
+  }
   if (!(await assertInScope(estateId, scope))) return [];
   return mockTiers.filter((t) => t.estateId === estateId).map(withLivePlotCount);
 }
@@ -266,7 +455,7 @@ function withLivePlotCount(tier: PortalPriceTier): PortalPriceTier {
 
 // Same grouped shape the backend returns: only statuses that occur.
 export async function fetchPlotCounts(estateId: string, scope: PortalScope): Promise<PlotCounts> {
-  if (!apiClient.isMockMode) return apiClient.get<PlotCounts>(`/api/portal/estates/${estateId}/plot-counts`);
+  if (!apiClient.isMockMode) return (await fetchInventoryDetail(estateId)).plotCounts ?? { total: 0, byStatus: {} };
   if (!(await assertInScope(estateId, scope))) return { total: 0, byStatus: {} };
   const plots = mockPlots.filter((p) => p.estateId === estateId);
   const byStatus: Partial<Record<PlotStatus, number>> = {};
@@ -296,6 +485,132 @@ export async function createPriceTier(estateId: string, input: CreatePriceTierIn
   };
   mockTiers.push(tier);
   return tier;
+}
+
+// Same grouped shape as PlotCounts: only statuses that occur.
+function countByStatus(plots: PortalPlot[]): PlotCounts {
+  const byStatus: Partial<Record<PlotStatus, number>> = {};
+  for (const plot of plots) byStatus[plot.status] = (byStatus[plot.status] ?? 0) + 1;
+  return { total: plots.length, byStatus };
+}
+
+const isAvailable = (status: PlotStatus) => status === "available-dev" || status === "available-inv";
+
+export async function fetchPriceTierImpact(estateId: string, tierId: string, scope: PortalScope): Promise<PriceTierImpact> {
+  if (!apiClient.isMockMode) return apiClient.get<PriceTierImpact>(`/api/portal/estates/${estateId}/price-tiers/${tierId}/impact`);
+  if (!(await assertInScope(estateId, scope))) throw new Error("Estate not found.");
+  if (!mockTiers.some((t) => t.id === tierId && t.estateId === estateId)) throw new Error("This tier no longer exists on this estate.");
+  return { tierId, plots: countByStatus(mockPlots.filter((p) => p.priceTierId === tierId)) };
+}
+
+// Mirrors the server's own wording, so both modes read the same.
+const SIZE_NOTE_ALL = "Every plot on this tier now carries the new size.";
+const SIZE_NOTE_KEPT = "Reserved and sold plots keep the size their buyer agreed to. A reserved plot "
+  + "that returns to the market takes the tier's size at that point.";
+const TIER_TYPE_IMMUTABLE = "A tier's type cannot change. Create a new tier and move the plots to it.";
+const TIER_CURRENCY_IMMUTABLE = "A tier's currency cannot change. Create a new tier in that currency and move the plots to it.";
+
+export async function updatePriceTier(
+  estateId: string,
+  tierId: string,
+  input: UpdatePriceTierInput,
+  scope: PortalScope,
+): Promise<PriceTierUpdate> {
+  // The request's own @Positive constraints, checked before the round trip.
+  if (input.price !== undefined && !(input.price > 0)) throw new InventoryEditError("price", "VALIDATION", "Enter a price above zero.");
+  if (input.sizeSqm !== undefined && !(input.sizeSqm > 0)) throw new InventoryEditError("sizeSqm", "VALIDATION", "Enter a size above zero.");
+
+  if (!apiClient.isMockMode) {
+    try {
+      return await apiClient.put<PriceTierUpdate>(`/api/portal/estates/${estateId}/price-tiers/${tierId}`, input);
+    } catch (err) {
+      throw tierEditError(err, input);
+    }
+  }
+
+  if (!(await assertInScope(estateId, scope))) throw new InventoryEditError("form", "ESTATE_NOT_FOUND", "Estate not found.");
+  const tier = mockTiers.find((t) => t.id === tierId && t.estateId === estateId);
+  if (!tier) throw new InventoryEditError("form", "RELATED_RECORD_NOT_FOUND", "This tier no longer exists on this estate.");
+
+  if (input.tierType !== undefined && input.tierType !== tier.tierType) {
+    throw new InventoryEditError("tierType", "TIER_TYPE_IMMUTABLE", TIER_TYPE_IMMUTABLE);
+  }
+  if (input.currency !== undefined && input.currency !== tier.currency) {
+    throw new InventoryEditError("currency", "TIER_CURRENCY_IMMUTABLE", TIER_CURRENCY_IMMUTABLE);
+  }
+  if (input.sizeSqm !== undefined && tier.tierType !== "land_size") {
+    throw new InventoryEditError("sizeSqm", "INVALID_REQUEST", "A UNIT_TYPE tier has no size of its own — its label carries the meaning.");
+  }
+
+  const previousSize = tier.sizeSqm;
+  const sizeChanged = input.sizeSqm !== undefined && input.sizeSqm !== previousSize;
+  if (sizeChanged && mockTiers.some((t) => t.estateId === estateId && t.id !== tierId && t.sizeSqm === input.sizeSqm)) {
+    throw new InventoryEditError("sizeSqm", "DUPLICATE_RECORD", duplicateTierMessage(input.sizeSqm!));
+  }
+
+  const onTier = mockPlots.filter((p) => p.priceTierId === tierId);
+
+  // A price change reaches every plot on the tier. A buyer who reserved is
+  // unaffected — their price was captured with the hold, which mock mode
+  // keeps apart from the plot row just as the backend does.
+  if (input.price !== undefined && input.price !== tier.price) {
+    tier.price = input.price;
+    for (const plot of onTier) {
+      plot.basePrice = input.price;
+      plot.price = plot.cornerPremiumPct ? Math.round(input.price * (1 + plot.cornerPremiumPct / 100)) : input.price;
+      plot.pricePerSqm = plot.nominalSizeSqm ? Math.round(plot.price / plot.nominalSizeSqm) : null;
+    }
+  }
+  if (input.label !== undefined) tier.label = input.label.trim() || undefined;
+
+  let sizeChange: PriceTierSizeChange | null = null;
+  if (sizeChanged) {
+    const newSize = input.sizeSqm!;
+    tier.sizeSqm = newSize;
+    // Available plots only: the size is what goes on a deed.
+    const updated = onTier.filter((p) => isAvailable(p.status));
+    for (const plot of updated) {
+      plot.nominalSizeSqm = newSize;
+      plot.pricePerSqm = Math.round(plot.price / newSize);
+    }
+    const kept = countByStatus(onTier.filter((p) => !isAvailable(p.status)));
+    sizeChange = {
+      previousSizeSqm: previousSize!,
+      newSizeSqm: newSize,
+      plotsUpdated: updated.length,
+      keptPreviousSize: kept,
+      note: kept.total === 0 ? SIZE_NOTE_ALL : SIZE_NOTE_KEPT,
+    };
+  }
+
+  tier.pricePerSqm = tier.sizeSqm ? Math.round(tier.price / tier.sizeSqm) : null;
+  for (const plot of onTier) plot.tierLabel = tierDisplayLabel(tier);
+
+  const dto: PriceTierDto = {
+    id: tier.id, estateId: tier.estateId, tierType: tier.tierType, sizeSqm: tier.sizeSqm,
+    price: tier.price, currency: tier.currency, label: tier.label ?? null,
+  };
+  return { tier: dto, sizeChange };
+}
+
+function duplicateTierMessage(sizeSqm: number): string {
+  return `Another tier on this estate is already ${sizeSqm} sqm. Each size can have only one tier.`;
+}
+
+function tierEditError(err: unknown, input: UpdatePriceTierInput): Error {
+  if (!(err instanceof ApiError)) return err instanceof Error ? err : new Error("Couldn't update the tier.");
+  const body = err.body;
+  if (body?.code === "TIER_TYPE_IMMUTABLE") return new InventoryEditError("tierType", body.code, body.message ?? TIER_TYPE_IMMUTABLE);
+  if (body?.code === "TIER_CURRENCY_IMMUTABLE") return new InventoryEditError("currency", body.code, body.message ?? TIER_CURRENCY_IMMUTABLE);
+  // Size is the only unique field on a tier (uq_price_tiers_estate_size).
+  if (err.status === 409) {
+    return new InventoryEditError("sizeSqm", "DUPLICATE_RECORD",
+      input.sizeSqm !== undefined ? duplicateTierMessage(input.sizeSqm) : "Another tier on this estate already has that size.");
+  }
+  if (err.status === 404) return new InventoryEditError("form", body?.code ?? "NOT_FOUND", "This tier no longer exists on this estate.");
+  const fieldError = firstFieldError(body?.fieldErrors);
+  if (fieldError) return new InventoryEditError(fieldError.field, "VALIDATION", fieldError.message);
+  return new InventoryEditError("form", body?.code ?? "UNKNOWN", body?.message ?? "Couldn't update the tier.");
 }
 
 // ─── Plots API ───────────────────────────────────────────────────────────────

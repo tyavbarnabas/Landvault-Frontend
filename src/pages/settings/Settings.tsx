@@ -100,14 +100,12 @@ export default function Settings() {
 
           {tab === "security" && (
             <div className="space-y-4">
-              {/* The three inputs that used to sit here were wired to
-                  nothing, and there is no session-authenticated
-                  change-password endpoint to wire them to (see
-                  ChangePassword.tsx). This routes to the flow that does work. */}
+              {/* Verified against the current password, not the mailbox —
+                  see ChangePassword.tsx. */}
               <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-6">
                 <h2 className="font-semibold mb-1">Password</h2>
                 <p className="text-sm text-[var(--muted-foreground)] mb-4">
-                  We'll email a code to confirm it's you, then you can set a new password.
+                  You'll need your current password. Forgotten it? <Link to="/forgot-password" className="text-[var(--accent)] hover:underline">Reset it by email</Link> instead.
                 </p>
                 <Link to="/change-password" className="inline-block px-5 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium hover:opacity-90 transition-opacity">
                   Change password
