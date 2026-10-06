@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import {
-  InventoryEditError, PLOT_BATCH_LIMIT, availableCount, countFor, createBlock, createPlotBatch, createPlotsInBatches,
+  BULK_STATUS_LIMIT, InventoryEditError, PLOT_BATCH_LIMIT, changePlotStatus, changePlotStatuses, fetchPlotImportTemplate,
+  importPlots, previewPlotImport, setTierRetired, correctPlotBoundary, movePlotToTier, tierMoveTargets, withdrawPlot, availableCount, countFor, createBlock, createPlotBatch, createPlotsInBatches,
   createPriceTier, fetchBlocks, fetchInventoryGeoJson, fetchPlotCounts, fetchPlots, fetchPriceTierImpact, fetchPriceTiers,
   planBatches, tierDisplayLabel, updateBlock, updatePriceTier, validatePriceTier,
   type BatchProgress, type CreatePlotInput, type PortalPriceTier,
@@ -431,5 +432,229 @@ describe("renaming a block", () => {
     const block = await createBlock(estateId, { name: "Rename D", label: "Old" }, SCOPE);
     await expect(updateBlock(estateId, block.id, { name: "  " }, SCOPE)).rejects.toMatchObject({ field: "name" });
     expect((await updateBlock(estateId, block.id, { label: "" }, SCOPE)).label).toBeUndefined();
+  });
+});
+
+// ─── Slice 3: withheld, bulk status, retired tiers (IE-5, IE-7, IE-8) ────────
+
+describe("withholding a plot", () => {
+  it("withholds an available plot, and 'available' returns it to the variant it had — never flattened", async () => {
+    const tier = await createPriceTier(estateId, { tierType: "land_size", sizeSqm: 610, price: 5_000_000, currency: "NGN" }, SCOPE);
+    const [inv] = await createPlotBatch(estateId, [{ plotNumber: "W1", priceTierId: tier.id, status: "available-inv" }], SCOPE);
+
+    const withheld = await changePlotStatus(estateId, inv.id, { status: "withheld" }, SCOPE);
+    expect(withheld.changed).toEqual([inv.id]);
+    expect((await fetchPlots(estateId, SCOPE, { priceTierId: tier.id })).items[0].status).toBe("withheld");
+
+    await changePlotStatus(estateId, inv.id, { status: "available" }, SCOPE);
+    expect((await fetchPlots(estateId, SCOPE, { priceTierId: tier.id })).items[0].status).toBe("available-inv");
+  });
+
+  it("returning to the market takes the tier's current size — a resize skipped it while withheld", async () => {
+    const tier = await createPriceTier(estateId, { tierType: "land_size", sizeSqm: 620, price: 5_000_000, currency: "NGN" }, SCOPE);
+    const [plot] = await createPlotBatch(estateId, [{ plotNumber: "W2", priceTierId: tier.id, status: "available-dev" }], SCOPE);
+    await changePlotStatus(estateId, plot.id, { status: "withheld" }, SCOPE);
+
+    const resize = await updatePriceTier(estateId, tier.id, { sizeSqm: 640 }, SCOPE);
+    // Withheld is not available, so the resize kept its old size…
+    expect(resize.sizeChange!.keptPreviousSize.byStatus).toEqual({ withheld: 1 });
+
+    await changePlotStatus(estateId, plot.id, { status: "available" }, SCOPE);
+    // …and returning picks up the tier's size.
+    expect((await fetchPlots(estateId, SCOPE, { priceTierId: tier.id })).items[0].nominalSizeSqm).toBe(640);
+  });
+
+  it("refuses a reserved or sold plot — only checkout moves those", async () => {
+    const tier = await createPriceTier(estateId, { tierType: "land_size", sizeSqm: 630, price: 5_000_000, currency: "NGN" }, SCOPE);
+    const [reserved] = await createPlotBatch(estateId, [{ plotNumber: "W3", priceTierId: tier.id, status: "reserved" }], SCOPE);
+
+    const err = await changePlotStatus(estateId, reserved.id, { status: "withheld" }, SCOPE).catch((e) => e);
+    expect(err).toMatchObject({ code: "PLOT_NOT_EDITABLE" });
+  });
+});
+
+describe("bulk status — skip and report, never all or nothing", () => {
+  it("changes what it can and reports every skip with a code; a dry run writes nothing", async () => {
+    const tier = await createPriceTier(estateId, { tierType: "land_size", sizeSqm: 650, price: 5_000_000, currency: "NGN" }, SCOPE);
+    const plots = await createPlotBatch(estateId, [
+      { plotNumber: "B1", priceTierId: tier.id, status: "available-dev" },
+      { plotNumber: "B2", priceTierId: tier.id, status: "available-dev" },
+      { plotNumber: "B3", priceTierId: tier.id, status: "reserved" },
+      { plotNumber: "B4", priceTierId: tier.id, status: "sold" },
+    ], SCOPE);
+    const ids = [...plots.map((p) => p.id), "no-such-plot"];
+
+    const preview = await changePlotStatuses(estateId, { plotIds: ids, status: "withheld", dryRun: true }, SCOPE);
+    expect(preview).toMatchObject({ dryRun: true, requested: 5 });
+    expect(preview.changed).toHaveLength(2);
+    expect(preview.skipped.map((s) => s.code).sort()).toEqual(["NOT_FOUND", "RESERVED", "SOLD"]);
+    expect((await fetchPlots(estateId, SCOPE, { priceTierId: tier.id, status: "withheld" })).items).toHaveLength(0);
+
+    const applied = await changePlotStatuses(estateId, { plotIds: ids, status: "withheld" }, SCOPE);
+    expect(applied.changed).toHaveLength(2);
+    expect((await fetchPlots(estateId, SCOPE, { priceTierId: tier.id, status: "withheld" })).items).toHaveLength(2);
+
+    // Again: the two are now ALREADY withheld — reported, not an error.
+    const again = await changePlotStatuses(estateId, { plotIds: ids.slice(0, 2), status: "withheld" }, SCOPE);
+    expect(again.skipped.map((s) => s.code)).toEqual(["ALREADY", "ALREADY"]);
+  });
+
+  it("refuses more than the endpoint's cap before sending anything", async () => {
+    const ids = Array.from({ length: BULK_STATUS_LIMIT + 1 }, (_, i) => `p${i}`);
+    await expect(changePlotStatuses(estateId, { plotIds: ids, status: "withheld" }, SCOPE)).rejects.toBeInstanceOf(InventoryEditError);
+  });
+});
+
+describe("retiring a tier", () => {
+  it("accepts no new plots, keeps its existing ones, and can be reinstated", async () => {
+    const tier = await createPriceTier(estateId, { tierType: "land_size", sizeSqm: 660, price: 5_000_000, currency: "NGN" }, SCOPE);
+    await createPlotBatch(estateId, [{ plotNumber: "R1", priceTierId: tier.id, status: "available-dev" }], SCOPE);
+
+    const retired = await setTierRetired(estateId, tier.id, true, SCOPE);
+    expect(retired.retiredAt).not.toBeNull();
+    await expect(createPlotBatch(estateId, [{ plotNumber: "R2", priceTierId: tier.id, status: "available-dev" }], SCOPE))
+      .rejects.toThrow(/retired/);
+    // Retirement is not deletion: the existing plot keeps its tier.
+    expect((await fetchPlots(estateId, SCOPE, { priceTierId: tier.id })).items).toHaveLength(1);
+
+    expect((await setTierRetired(estateId, tier.id, false, SCOPE)).retiredAt).toBeNull();
+    await expect(createPlotBatch(estateId, [{ plotNumber: "R2", priceTierId: tier.id, status: "available-dev" }], SCOPE)).resolves.toHaveLength(1);
+  });
+});
+
+// ─── Plot import (FU-1..FU-3) ────────────────────────────────────────────────
+
+describe("importing plots from a file", () => {
+  const square = (lng: number, lat: number) => ({
+    type: "Polygon", coordinates: [[[lng, lat], [lng + 0.0001, lat], [lng + 0.0001, lat + 0.0001], [lng, lat + 0.0001], [lng, lat]]],
+  });
+  const feature = (props: Record<string, unknown>, geometry: unknown = square(7.414, 9.107)) => ({ type: "Feature", properties: props, geometry });
+  const file = (body: unknown) => new File([JSON.stringify(body)], "plots.geojson", { type: "application/geo+json" });
+  const OPTIONS = { status: "available-dev" as const };
+
+  it("previews every problem at once and writes nothing", async () => {
+    const before = (await fetchPlots(estateId, SCOPE)).total;
+    const report = await previewPlotImport(estateId, file({ type: "FeatureCollection", features: [
+      feature({ plot_number: "I-1", block: "Imp", tier: "250" }),
+      feature({ plot_number: "I-1", block: "Imp", tier: "250" }),
+      feature({ block: "Imp", tier: "250" }),
+      feature({ plot_number: "I-4", tier: "no such tier" }),
+      feature({ plot_number: "I-5", tier: "250" }, square(330000, 1000000)),
+    ] }), OPTIONS, SCOPE);
+
+    expect(report.canImport).toBe(false);
+    expect(report.featureCount).toBe(5);
+    expect(report.errors.map((e) => e.code).sort()).toEqual(
+      ["DUPLICATE_PLOT_NUMBER", "MISSING_PLOT_NUMBER", "PROJECTED_COORDINATES", "UNKNOWN_TIER"]);
+    expect((await fetchPlots(estateId, SCOPE)).total).toBe(before);
+  });
+
+  it("is all or nothing: a file with any error creates nothing, not even its valid plots or blocks", async () => {
+    const before = (await fetchPlots(estateId, SCOPE)).total;
+    const report = await importPlots(estateId, file({ type: "FeatureCollection", features: [
+      feature({ plot_number: "AON-1", block: "Never", tier: "250" }),
+      feature({ plot_number: "AON-2", tier: "nope" }),
+    ] }), OPTIONS, SCOPE);
+
+    expect(report).toMatchObject({ imported: false, canImport: false });
+    expect((await fetchPlots(estateId, SCOPE)).total).toBe(before);
+    expect((await fetchBlocks(estateId, SCOPE)).some((b) => b.name === "Never")).toBe(false);
+  });
+
+  it("imports a clean file, creating missing blocks, matching tiers by label or size", async () => {
+    const report = await importPlots(estateId, file({ type: "FeatureCollection", features: [
+      feature({ plot_number: "OK-1", block: "Import Block", tier: "250" }),
+      feature({ plot_number: "OK-2", block: "import block", tier: "3-bed terrace", corner: true }),
+    ] }), { status: "available-inv" }, SCOPE);
+
+    expect(report).toMatchObject({ imported: true, createdCount: 2, blocksToCreate: ["Import Block"] });
+    const imported = (await fetchPlots(estateId, SCOPE, {}, { limit: 1000 })).items.filter((p) => p.plotNumber.startsWith("OK-"));
+    expect(imported.map((p) => p.status)).toEqual(["available-inv", "available-inv"]);
+    // "Import Block" and "import block" are one block.
+    expect((await fetchBlocks(estateId, SCOPE)).filter((b) => b.name.toLowerCase() === "import block")).toHaveLength(1);
+  });
+
+  it("refuses a retired tier in the file", async () => {
+    const tier = await createPriceTier(estateId, { tierType: "land_size", sizeSqm: 670, price: 5_000_000, currency: "NGN", label: "Old band" }, SCOPE);
+    await setTierRetired(estateId, tier.id, true, SCOPE);
+    const report = await previewPlotImport(estateId, file({ type: "FeatureCollection", features: [feature({ plot_number: "RT-1", tier: "Old band" })] }), OPTIONS, SCOPE);
+    expect(report.errors.map((e) => e.code)).toEqual(["TIER_RETIRED"]);
+  });
+
+  it("the downloaded template is a FeatureCollection naming the estate's open tiers", async () => {
+    const template = JSON.parse(await fetchPlotImportTemplate(estateId, SCOPE));
+    expect(template.type).toBe("FeatureCollection");
+    expect(template.features).toHaveLength(2);
+    expect(template.instructions.join(" ")).toContain("EPSG:4326");
+  });
+});
+
+// ─── IE-9, IE-10, IE-11 ──────────────────────────────────────────────────────
+
+describe("moving a plot to another tier", () => {
+  it("takes a land tier's size and price, corner premium included, and reports before and after", async () => {
+    const from = await createPriceTier(estateId, { tierType: "land_size", sizeSqm: 710, price: 7_000_000, currency: "NGN" }, SCOPE);
+    const to = await createPriceTier(estateId, { tierType: "land_size", sizeSqm: 720, price: 8_000_000, currency: "NGN" }, SCOPE);
+    const [plot] = await createPlotBatch(estateId, [{ plotNumber: "M1", priceTierId: from.id, status: "available-dev", isCorner: true }], SCOPE);
+
+    const change = await movePlotToTier(estateId, plot.id, { tierId: to.id }, SCOPE);
+
+    expect(change).toMatchObject({ previousTierId: from.id, tierId: to.id, previousNominalSizeSqm: 710, nominalSizeSqm: 720,
+      previousPrice: 7_700_000, price: 8_800_000, currency: "NGN" });
+  });
+
+  it("refuses a different currency, a different kind, a retired tier, and a size override on a land tier", async () => {
+    const from = await createPriceTier(estateId, { tierType: "land_size", sizeSqm: 730, price: 1, currency: "NGN" }, SCOPE);
+    const usd = await createPriceTier(estateId, { tierType: "land_size", sizeSqm: 740, price: 1, currency: "USD" }, SCOPE);
+    const retired = await createPriceTier(estateId, { tierType: "land_size", sizeSqm: 750, price: 1, currency: "NGN" }, SCOPE);
+    const land = await createPriceTier(estateId, { tierType: "land_size", sizeSqm: 760, price: 1, currency: "NGN" }, SCOPE);
+    await setTierRetired(estateId, retired.id, true, SCOPE);
+    const [plot] = await createPlotBatch(estateId, [{ plotNumber: "M2", priceTierId: from.id, status: "available-dev" }], SCOPE);
+
+    await expect(movePlotToTier(estateId, plot.id, { tierId: usd.id }, SCOPE)).rejects.toMatchObject({ code: "TIER_CURRENCY_MISMATCH", field: "tierId" });
+    await expect(movePlotToTier(estateId, plot.id, { tierId: unitTier.id }, SCOPE)).rejects.toMatchObject({ code: "PROPERTY_TYPE_MISMATCH" });
+    await expect(movePlotToTier(estateId, plot.id, { tierId: retired.id }, SCOPE)).rejects.toMatchObject({ code: "TIER_RETIRED" });
+    await expect(movePlotToTier(estateId, plot.id, { tierId: land.id, nominalSizeSqmOverride: 99 }, SCOPE))
+      .rejects.toMatchObject({ field: "nominalSizeSqmOverride" });
+  });
+
+  it("offers only open tiers of the same kind and currency", async () => {
+    const from = await createPriceTier(estateId, { tierType: "land_size", sizeSqm: 770, price: 1, currency: "NGN" }, SCOPE);
+    const [plot] = await createPlotBatch(estateId, [{ plotNumber: "M3", priceTierId: from.id, status: "available-dev" }], SCOPE);
+    const targets = tierMoveTargets(plot, await fetchPriceTiers(estateId, SCOPE));
+    expect(targets.every((t) => t.tierType === "land_size" && t.currency === "NGN" && t.retiredAt === null && t.id !== from.id)).toBe(true);
+    expect(targets.length).toBeGreaterThan(0);
+  });
+
+  it("refuses a reserved plot — its price and size are what a buyer agreed to", async () => {
+    const [reserved] = await createPlotBatch(estateId, [{ plotNumber: "M4", priceTierId: landTier.id, status: "reserved" }], SCOPE);
+    await expect(movePlotToTier(estateId, reserved.id, { tierId: landTier.id }, SCOPE)).rejects.toMatchObject({ code: "PLOT_NOT_EDITABLE" });
+  });
+});
+
+describe("correcting a plot's boundary", () => {
+  it("recomputes the surveyed area and reports overlapping pairs before and after", async () => {
+    const [plot] = await createPlotBatch(estateId, [{ plotNumber: "CB1", priceTierId: landTier.id, status: "available-dev" }], SCOPE);
+    expect(plot.actualAreaSqm).toBeNull();
+
+    const result = await correctPlotBoundary(estateId, plot.id, PLOT_FOOTPRINT, SCOPE);
+
+    expect(result.previousActualAreaSqm).toBeNull();
+    expect(result.actualAreaSqm).toBeGreaterThan(100);
+    expect(result.plotOverlapsInEstateAfter).toBeGreaterThanOrEqual(result.plotOverlapsInEstateBefore);
+  });
+});
+
+describe("withdrawing a plot", () => {
+  it("removes an untouched plot, and its number can be used again", async () => {
+    const [plot] = await createPlotBatch(estateId, [{ plotNumber: "WD1", priceTierId: landTier.id, status: "available-dev" }], SCOPE);
+    await withdrawPlot(estateId, plot.id, SCOPE);
+    expect((await fetchPlots(estateId, SCOPE, {}, { limit: 2000 })).items.some((p) => p.id === plot.id)).toBe(false);
+    await expect(createPlotBatch(estateId, [{ plotNumber: "WD1", priceTierId: landTier.id, status: "available-dev" }], SCOPE)).resolves.toHaveLength(1);
+  });
+
+  it("refuses a reserved plot, and one with history even once it's off sale", async () => {
+    const [reserved] = await createPlotBatch(estateId, [{ plotNumber: "WD2", priceTierId: landTier.id, status: "reserved" }], SCOPE);
+    await expect(withdrawPlot(estateId, reserved.id, SCOPE)).rejects.toMatchObject({ code: "PLOT_NOT_EDITABLE" });
   });
 });

@@ -24,8 +24,14 @@ import {
   countFor,
   type ListingIntent, type PlotCounts, type PlotIntent, type PlotOrientation, type PriceTierDto, type PriceTierImpact,
   type PriceTierSizeChange, type PriceTierUpdate, type PropertyType, type TierType, type UpdateBlockInput, type UpdatePriceTierInput,
+  type PlotImportIssue, type PlotImportReport, type PlotStatusChange, type PlotStatusSkipCode, type PlotStatusTarget,
+  PLOT_IMPORT_DEFAULTS, type PlotBoundaryCorrection, type PlotTierChange,
 } from "./portalInventoryService";
+import type { EstateStateOverride } from "./estateStateOverrideService";
+import { NIGERIAN_STATES, STATE_ISO_CODES } from "../data/nigerianStates";
+import type { EstateBoundaryResult, EstateIntent, UpdateEstateInput } from "./portalEstatesService";
 import type { Currency, PlotStatus, PaymentPlan } from "../data/mockData";
+import { BUYER_FACING_STATUSES, CREATABLE_STATUSES, STATUS_COLORS, STATUS_LABELS } from "../lib/plotStatus";
 import type { TitleType } from "./marketplaceService";
 import { AUTH_ERROR_CODES, type AuthUser, type ChangePasswordInput, type TwoFactorChallenge, type UserRole } from "./authService";
 import { DUE_TRIGGERS, FEE_CURRENCIES, FEE_TYPES, type RefundAppliesTo, type FeeSchedule } from "./estateDisclosureService";
@@ -38,12 +44,19 @@ function wireValues<T extends string>(values: readonly T[]): readonly T[] {
 }
 
 describe("inventory enums", () => {
-  it("PlotStatus — hyphenated, and BOTH availability variants", () => {
+  it("PlotStatus — hyphenated, BOTH availability variants, and withheld", () => {
     // Not redundant: an estate sells development and investment plots side by
     // side, and the backend's reservation sweeper restores whichever variant a
-    // plot had when a hold lapses.
-    expect(wireValues(["available-dev", "available-inv", "reserved", "sold"] satisfies readonly PlotStatus[]))
-      .toEqual(["available-dev", "available-inv", "reserved", "sold"]);
+    // plot had when a hold lapses. `withheld` (IE-7) is the developer's own
+    // switch off the market — portal-only; buyers see "unavailable".
+    expect(wireValues(["available-dev", "available-inv", "reserved", "sold", "withheld"] satisfies readonly PlotStatus[]))
+      .toEqual(["available-dev", "available-inv", "reserved", "sold", "withheld"]);
+    // Every status has a label and a colour, so none renders blank.
+    expect(Object.keys(STATUS_LABELS).sort()).toEqual(["available-dev", "available-inv", "reserved", "sold", "withheld"]);
+    expect(Object.keys(STATUS_COLORS).sort()).toEqual(Object.keys(STATUS_LABELS).sort());
+    // Never in a buyer-facing legend, and never a starting status.
+    expect(BUYER_FACING_STATUSES).not.toContain("withheld");
+    expect(CREATABLE_STATUSES).not.toContain("withheld");
   });
 
   it("TierType — lowercase with underscores, not the Java constant names", () => {
@@ -101,19 +114,24 @@ describe("portal disclosure and publication", () => {
     expect([...FEE_CURRENCIES].sort()).toEqual(["EUR", "GBP", "NGN", "USD"]);
   });
 
-  it("EstateEligibility has eight fields, including noBlockingConflict", () => {
+  it("EstateEligibility has ten fields, including hasBoundary, hasPlots and noBlockingConflict", () => {
     const eligibility: EstateEligibility = {
       published: true, tenantVerified: true, tenantEntitled: true, tenantActive: true,
-      feesDeclared: true, refundTermsDeclared: true, noBlockingConflict: true, eligible: true,
+      feesDeclared: true, refundTermsDeclared: true, hasBoundary: true, hasPlots: true, noBlockingConflict: true, eligible: true,
     };
-    expect(Object.keys(eligibility)).toHaveLength(8);
-    expect(ELIGIBILITY_CONDITIONS).toHaveLength(6);
+    expect(Object.keys(eligibility)).toHaveLength(10);
+    // In the backend's order — requirePublishable's, and so the refusal code's.
+    expect(ELIGIBILITY_CONDITIONS.map((c) => c.key)).toEqual([
+      "tenantVerified", "tenantEntitled", "tenantActive", "feesDeclared", "refundTermsDeclared",
+      "hasBoundary", "hasPlots", "noBlockingConflict",
+    ]);
   });
 
   it("PublicationRefused codes, exactly", () => {
     expect(Object.keys(PUBLICATION_REFUSAL_CONDITIONS).sort()).toEqual([
-      "PUBLICATION_CONFLICT_OUTSTANDING", "PUBLICATION_ENTITLEMENT_MISSING", "PUBLICATION_FEES_UNDECLARED",
-      "PUBLICATION_REFUND_TERMS_UNDECLARED", "PUBLICATION_TENANT_NOT_ACTIVE", "PUBLICATION_VERIFICATION_PENDING",
+      "PUBLICATION_BOUNDARY_MISSING", "PUBLICATION_CONFLICT_OUTSTANDING", "PUBLICATION_ENTITLEMENT_MISSING",
+      "PUBLICATION_FEES_UNDECLARED", "PUBLICATION_NO_PLOTS", "PUBLICATION_REFUND_TERMS_UNDECLARED",
+      "PUBLICATION_TENANT_NOT_ACTIVE", "PUBLICATION_VERIFICATION_PENDING",
     ]);
   });
 
@@ -263,16 +281,16 @@ describe("inventory editing and change-password shapes", () => {
     expect(Object.keys(body).sort()).toEqual(["label", "name"]);
   });
 
-  it("PriceTierDto — seven fields; no plot count and no per-sqm figure on the wire", () => {
-    const dto: PriceTierDto = { id: "t", estateId: "e", tierType: "land_size", sizeSqm: 450, price: 1, currency: "NGN", label: null };
-    expect(Object.keys(dto).sort()).toEqual(["currency", "estateId", "id", "label", "price", "sizeSqm", "tierType"]);
+  it("PriceTierDto — eight fields including retiredAt; no plot count and no per-sqm figure on the wire", () => {
+    const dto: PriceTierDto = { id: "t", estateId: "e", tierType: "land_size", sizeSqm: 450, price: 1, currency: "NGN", label: null, retiredAt: null };
+    expect(Object.keys(dto).sort()).toEqual(["currency", "estateId", "id", "label", "price", "retiredAt", "sizeSqm", "tierType"]);
   });
 
   it("PriceTierUpdate — tier plus sizeChange, and sizeChange's five fields", () => {
     const sizeChange: PriceTierSizeChange = {
       previousSizeSqm: 450, newSizeSqm: 500, plotsUpdated: 104, keptPreviousSize: { total: 16, byStatus: { reserved: 8, sold: 8 } }, note: "",
     };
-    const update: PriceTierUpdate = { tier: { id: "t", estateId: "e", tierType: "land_size", sizeSqm: 500, price: 1, currency: "NGN", label: null }, sizeChange };
+    const update: PriceTierUpdate = { tier: { id: "t", estateId: "e", tierType: "land_size", sizeSqm: 500, price: 1, currency: "NGN", label: null, retiredAt: null }, sizeChange };
     expect(Object.keys(update).sort()).toEqual(["sizeChange", "tier"]);
     expect(Object.keys(sizeChange).sort()).toEqual(["keptPreviousSize", "newSizeSqm", "note", "plotsUpdated", "previousSizeSqm"]);
   });
@@ -292,5 +310,83 @@ describe("inventory editing and change-password shapes", () => {
   it("AuthUserResponse carries tenantId and branchId; a null branchId means organisation-wide", () => {
     const director: Pick<AuthUser, "tenantId" | "branchId"> = { tenantId: "7c1e…", branchId: null };
     expect(director.branchId).toBeNull();
+  });
+});
+
+// Inventory slice 3, plot import and estate editing — transcribed from
+// ChangePlotStatusRequest, BulkPlotStatusRequest, PlotStatusChangeDto,
+// PlotImportReportDto, PlotImportIssueDto, PortalEstateController's
+// @RequestParam names, UpdateEstateRequest and EstateBoundaryDto.
+describe("plot status, import and estate editing shapes", () => {
+  it("the statuses a developer may set — never reserved or sold", () => {
+    expect(wireValues(["withheld", "available", "available-dev", "available-inv"] satisfies readonly PlotStatusTarget[]))
+      .toEqual(["withheld", "available", "available-dev", "available-inv"]);
+  });
+
+  it("bulk skip codes, exactly", () => {
+    expect(wireValues(["RESERVED", "SOLD", "NOT_FOUND", "ALREADY", "NO_RECORDED_AVAILABILITY"] satisfies readonly PlotStatusSkipCode[]))
+      .toEqual(["RESERVED", "SOLD", "NOT_FOUND", "ALREADY", "NO_RECORDED_AVAILABILITY"]);
+  });
+
+  it("PlotStatusChangeDto — five fields, and Skipped's five", () => {
+    const change: PlotStatusChange = { status: "withheld", requested: 1, changed: [], dryRun: false,
+      skipped: [{ plotId: "p", plotNumber: "1", currentStatus: "sold", code: "SOLD", reason: "" }] };
+    expect(Object.keys(change).sort()).toEqual(["changed", "dryRun", "requested", "skipped", "status"]);
+    expect(Object.keys(change.skipped[0]).sort()).toEqual(["code", "currentStatus", "plotId", "plotNumber", "reason"]);
+  });
+
+  it("PlotImportReportDto — eleven fields; PlotImportIssueDto four", () => {
+    const issue: PlotImportIssue = { feature: 1, plotNumber: "1", code: "UNKNOWN_TIER", message: "" };
+    const report: PlotImportReport = { featureCount: 1, importableCount: 0, canImport: false, imported: false, createdCount: 0,
+      blocksToCreate: [], plotsPerTier: {}, errors: [issue], warnings: [], plotOverlapsInEstate: null, note: null };
+    expect(Object.keys(report).sort()).toEqual(["blocksToCreate", "canImport", "createdCount", "errors", "featureCount",
+      "importableCount", "imported", "note", "plotOverlapsInEstate", "plotsPerTier", "warnings"]);
+    expect(Object.keys(issue).sort()).toEqual(["code", "feature", "message", "plotNumber"]);
+  });
+
+  it("the import's property-name parameters and their defaults match the controller's @RequestParam", () => {
+    expect(PLOT_IMPORT_DEFAULTS).toEqual({ plotNumberProperty: "plot_number", blockProperty: "block", tierProperty: "tier", cornerProperty: "corner" });
+  });
+
+  it("UpdateEstateRequest — nine editable fields, and never footprint, published or branchId", () => {
+    const body: Required<UpdateEstateInput> = { name: "", description: "", area: "", city: "", state: "Lagos", address: "",
+      cornerPremiumPct: 0, intent: "development", amenities: [] };
+    const keys = Object.keys(body).sort();
+    expect(keys).toEqual(["address", "amenities", "area", "city", "cornerPremiumPct", "description", "intent", "name", "state"]);
+    // The backend REFUSES these three rather than ignoring them; the type
+    // can't carry them, so no screen can send one by accident.
+    for (const refused of ["footprint", "published", "branchId"]) expect(keys).not.toContain(refused);
+    expect(wireValues(["development", "investment"] satisfies readonly EstateIntent[])).toEqual(["development", "investment"]);
+  });
+
+  it("EstateBoundaryDto — five fields, and no counterparty", () => {
+    const result: EstateBoundaryResult = { estateId: "e", footprintAreaSqm: 1, publicationBlocked: false, blockReason: null, warningConflictCount: 0 };
+    expect(Object.keys(result).sort()).toEqual(["blockReason", "estateId", "footprintAreaSqm", "publicationBlocked", "warningConflictCount"]);
+  });
+});
+
+// IE-9, IE-10 and SB-1 — transcribed from PlotBoundaryDto, PlotTierChangeDto,
+// MovePlotTierRequest, EstateStateOverrideDto and the nigerian_states dataset.
+describe("plot edit and state-override shapes", () => {
+  it("PlotBoundaryDto — five fields", () => {
+    const dto: PlotBoundaryCorrection = { plotId: "p", previousActualAreaSqm: null, actualAreaSqm: 1, plotOverlapsInEstateBefore: 0, plotOverlapsInEstateAfter: 0 };
+    expect(Object.keys(dto).sort()).toEqual(["actualAreaSqm", "plotId", "plotOverlapsInEstateAfter", "plotOverlapsInEstateBefore", "previousActualAreaSqm"]);
+  });
+
+  it("PlotTierChangeDto — eight fields", () => {
+    const dto: PlotTierChange = { plotId: "p", previousTierId: "a", tierId: "b", previousNominalSizeSqm: 1, nominalSizeSqm: 2, previousPrice: 1, price: 2, currency: "NGN" };
+    expect(Object.keys(dto).sort()).toEqual(["currency", "nominalSizeSqm", "plotId", "previousNominalSizeSqm", "previousPrice", "previousTierId", "price", "tierId"]);
+  });
+
+  it("EstateStateOverrideDto — six fields", () => {
+    const dto: EstateStateOverride = { estateId: "e", state: "Lagos", stateCode: "NG-LA", overriddenAt: null, overriddenBy: null, reason: null };
+    expect(Object.keys(dto).sort()).toEqual(["estateId", "overriddenAt", "overriddenBy", "reason", "state", "stateCode"]);
+  });
+
+  it("every state has the backend dataset's ISO 3166-2 code — 37, all distinct", () => {
+    expect(Object.keys(STATE_ISO_CODES).sort()).toEqual([...NIGERIAN_STATES].sort());
+    expect(new Set(Object.values(STATE_ISO_CODES)).size).toBe(37);
+    expect(STATE_ISO_CODES["Federal Capital Territory (Abuja)"]).toBe("NG-FC");
+    expect(Object.values(STATE_ISO_CODES).every((c) => /^NG-[A-Z]{2}$/.test(c))).toBe(true);
   });
 });

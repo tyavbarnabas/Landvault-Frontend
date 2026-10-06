@@ -20,7 +20,7 @@ import { useRef, useState } from "react";
 import { useApp } from "../contexts/AppContext";
 import ErrorBoundary from "./ErrorBoundary";
 import { formatAmount } from "../data/mockData";
-import { STATUS_COLORS, STATUS_LABELS } from "../lib/plotStatus";
+import { BUYER_FACING_STATUSES, STATUS_COLORS, STATUS_LABELS } from "../lib/plotStatus";
 import { CAPABILITIES } from "../lib/capabilities";
 import { AGIS_LAYER_LABELS, AGIS_LAYER_COLORS, isAffected, type AGISLayer } from "../services/agisService";
 import { plotLabel, type ListingPlot, type PlotStatus } from "../services/marketplacePlotsService";
@@ -200,7 +200,7 @@ function PlotCanvasInner({
       {/* Legend + AGIS toggle + zoom controls */}
       <div className="flex flex-wrap items-center gap-3 mb-3 justify-between">
         <div className="flex flex-wrap gap-3">
-          {(Object.keys(STATUS_LABELS) as PlotStatus[]).map((k) => (
+          {BUYER_FACING_STATUSES.map((k) => (
             <div key={k} className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
               <span className="w-3 h-3 rounded-sm inline-block" style={{ backgroundColor: STATUS_COLORS[k] }} aria-hidden="true" />
               {STATUS_LABELS[k]}

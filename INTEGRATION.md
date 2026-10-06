@@ -89,6 +89,16 @@ The tier table's "Per sqm" comparison column reads "—" against a real backend.
 
 `PortalEstateList` and `PortalEstateDetail` render `{estate.branchId} branch`. That read fine against mock slugs ("heritage branch"), but against the backend it prints a UUID. A branch name on the estate DTOs, or a branch lookup, would fix it.
 
+### E. Inventory slice 3, plot import, estate editing — wired 2026-10-04 (backend `924f973`)
+
+Wired: withhold/return and bulk status with dry-run preview (`PUT .../plots/{id}/status`, `POST .../plots/status`), retire/reinstate tiers, plot import (template, multipart preview, all-or-nothing import whose 422 body is read as the report), `PUT /api/portal/estates/{id}`, and `POST .../boundary`.
+
+**Fixed while wiring:** `createPortalEstate` sent the boundary as `boundary`; `CreateEstateRequest` calls it `footprint`, and Jackson dropped it silently. Every estate created through the portal against a real backend came out with no boundary, which after BG-1 means it could never be published.
+
+**Also wired since:** correcting a plot's boundary (IE-9), moving a plot between tiers (IE-10), withdrawing a plot (IE-11), and SB-1. SB-1 covers the state-check errors shown with the state they name, the GRID3 / geoBoundaries attribution wherever the check applies, and the Super Admin override at `/admin/estate-state-override`.
+
+**Gap for the backend:** there is no admin endpoint that lists or reads estates, and the override isn't on any read DTO. So the override screen starts from an estate id the developer quotes (the portal shows it when a boundary is refused), and it can't show whether an override already exists until one is set or removed. **Mock mode** doesn't run the state check at all: it has no state polygons, and says nothing rather than pretend.
+
 ### Also worth a look, lower priority
 
 - **`POST /api/auth/login`'s OpenAPI description says to "check for a `challengeId` field".** `TwoFactorChallengeResponse` has no such field — it is `challengeToken`. The frontend discriminates on `twoFactorRequired`, which is unambiguous, but the description is misleading and worth correcting.

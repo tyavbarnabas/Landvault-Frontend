@@ -6,7 +6,7 @@
 // without being unpublished, and come back on reinstatement with nobody
 // touching the flag. A HIGH conflict raised after publication does the same.
 //
-// Every row below is one of the eight booleans in `EstateEligibilityDto`,
+// Every row below is one of the ten booleans in `EstateEligibilityDto`,
 // rendered as the server reported it. None is inferred, and when the server
 // reported nothing each row reads "Unknown" — never met.
 
@@ -19,9 +19,12 @@ import {
 
 // Where a developer goes to fix each condition they can fix themselves. The
 // company-level ones are not fixable from an estate page and get no link.
-const FIX_LINKS: Partial<Record<EligibilityConditionKey, { label: string; tab: string }>> = {
-  feesDeclared: { label: "Declare fees", tab: "fees" },
-  refundTermsDeclared: { label: "Declare refund terms", tab: "refund" },
+// A missing boundary gets no link yet: adding one to an existing estate
+// (POST .../boundary) has no screen so far.
+const FIX_LINKS: Partial<Record<EligibilityConditionKey, { label: string; path: string }>> = {
+  feesDeclared: { label: "Declare fees", path: "disclosure?tab=fees" },
+  refundTermsDeclared: { label: "Declare refund terms", path: "disclosure?tab=refund" },
+  hasPlots: { label: "Add plots", path: "inventory?tab=plots" },
 };
 
 interface PublicationPanelProps {
@@ -74,7 +77,7 @@ export default function PublicationPanel({ estate, scope, canManage, onChanged }
               met={met}
               highlighted={refusal?.condition === condition.key}
               action={met === false && fix && canManage ? (
-                <Link to={`/portal/estates/${estate.id}/disclosure?tab=${fix.tab}`} className="text-xs font-semibold text-[var(--accent)] hover:underline">
+                <Link to={`/portal/estates/${estate.id}/${fix.path}`} className="text-xs font-semibold text-[var(--accent)] hover:underline">
                   {fix.label} →
                 </Link>
               ) : undefined}

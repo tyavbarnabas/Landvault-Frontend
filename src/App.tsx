@@ -50,6 +50,9 @@ const PortalEstateDetail = lazy(() => import("./pages/portal/estates/PortalEstat
 const PortalEstateInventory = lazy(() => import("./pages/portal/estates/PortalEstateInventory"));
 const CreatePortalPlots = lazy(() => import("./pages/portal/estates/CreatePortalPlots"));
 const PortalEstateDisclosure = lazy(() => import("./pages/portal/estates/PortalEstateDisclosure"));
+const EditPortalEstate = lazy(() => import("./pages/portal/estates/EditPortalEstate"));
+const StateOverride = lazy(() => import("./pages/admin/estates/StateOverride"));
+const ImportPortalPlots = lazy(() => import("./pages/portal/estates/ImportPortalPlots"));
 const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
 const TenantDirectory = lazy(() => import("./pages/admin/tenants/TenantDirectory"));
 const CreateTenant = lazy(() => import("./pages/admin/tenants/CreateTenant"));
@@ -228,12 +231,15 @@ function AppRoutes() {
       <Route path="/portal/estates/:estateId/inventory" element={<PortalPage><PortalEstateInventory /></PortalPage>} />
       <Route path="/portal/estates/:estateId/plots/new" element={<PortalPage><CreatePortalPlots /></PortalPage>} />
       <Route path="/portal/estates/:estateId/disclosure" element={<PortalPage><PortalEstateDisclosure /></PortalPage>} />
+      <Route path="/portal/estates/:estateId/edit" element={<PortalPage><EditPortalEstate /></PortalPage>} />
+      <Route path="/portal/estates/:estateId/plots/import" element={<PortalPage><ImportPortalPlots /></PortalPage>} />
 
       <Route path="/admin/dashboard" element={<AdminPage><AdminDashboard /></AdminPage>} />
       <Route path="/admin/tenants" element={<AdminPage><TenantDirectory /></AdminPage>} />
       <Route path="/admin/tenants/new" element={<AdminPage><CreateTenant /></AdminPage>} />
       <Route path="/admin/tenants/:id" element={<AdminPage><TenantDetail /></AdminPage>} />
       <Route path="/admin/listing-conflicts" element={<AdminPage><ListingConflicts /></AdminPage>} />
+      <Route path="/admin/estate-state-override" element={<AdminPage><StateOverride /></AdminPage>} />
 
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -3,7 +3,7 @@ import type { GeoPoint } from "../lib/geometry";
 
 export type { GeoPoint };
 
-export type PlotStatus = "available-dev" | "available-inv" | "reserved" | "sold";
+export type PlotStatus = "available-dev" | "available-inv" | "reserved" | "sold" | "withheld";
 export type PaymentPlan = "outright" | "milestone" | "installment";
 export type Currency = "NGN" | "USD" | "GBP" | "EUR";
 export type KYCStatus = "unsubmitted" | "submitted" | "under_review" | "approved" | "rejected";
@@ -108,6 +108,9 @@ export interface Estate {
   // stored geometry, exactly the differentiator the backlog calls for, not a
   // fabricated formula standing in for one.
   footprint: GeoPoint[];
+  // Street address, when the developer gave one. Optional: the seeded
+  // fixtures predate it.
+  address?: string;
 }
 
 export interface Payment {

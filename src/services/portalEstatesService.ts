@@ -18,7 +18,7 @@ import { polygonAreaSqm } from "../lib/geometry";
 import { apiClient, ApiError } from "../lib/apiClient";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import { fetchTenantByIdSync } from "./tenantsService";
-import { fetchConflicts } from "./listingConflictsService";
+import { detectMockConflictsForEstate, fetchConflicts } from "./listingConflictsService";
 import { fetchCostDisclosure, isGrandfathered } from "./costDisclosureService";
 import { mockHasDeclaredFees, mockHasDeclaredRefundTerms } from "./estateDisclosureService";
 import type { NigerianState } from "../data/nigerianStates";
@@ -202,7 +202,7 @@ function footprintToPolygon(footprint: GeoPoint[]): GeoJsonPolygon {
 
 // ─── Publication eligibility ────────────────────────────────────────────────
 
-// Mirrors the backend's `EstateEligibilityDto` field for field — EIGHT
+// Mirrors the backend's `EstateEligibilityDto` field for field — TEN
 // booleans, carried on `EstateDetailDto.eligibility`. Every one is a fact the
 // server computed; none is inferred here.
 //
@@ -220,6 +220,13 @@ export interface EstateEligibility {
   tenantActive: boolean;
   feesDeclared: boolean;
   refundTermsDeclared: boolean;
+  // BG-1: no boundary, no listing — and no grandfathering. Without one the
+  // estate can't be compared against neighbouring land, so "no conflict"
+  // would be an absence of evidence.
+  hasBoundary: boolean;
+  // Changeset 063: at least one live plot (ANY status, not an available one —
+  // a sold-out estate stays listed). All-withdrawn counts as none.
+  hasPlots: boolean;
   noBlockingConflict: boolean;
   // Current state: the conjunction of all of the above, and exactly what the
   // public feed filters on at read time.
@@ -243,6 +250,10 @@ export const ELIGIBILITY_CONDITIONS: { key: EligibilityConditionKey; label: stri
   { key: "tenantActive", label: "Company account active", reason: "Your company's account isn't active right now" },
   { key: "feesDeclared", label: "Fee schedule declared", reason: "The fee schedule hasn't been declared" },
   { key: "refundTermsDeclared", label: "Refund terms declared", reason: "Refund terms haven't been declared" },
+  // The backend's order: boundary, then plots, then the conflict check the
+  // boundary makes meaningful.
+  { key: "hasBoundary", label: "Estate boundary added", reason: "This estate has no boundary, so it can't be checked against neighbouring land" },
+  { key: "hasPlots", label: "At least one plot added", reason: "This estate has no plots for buyers to choose from" },
   // Never names the other party. Both sides of a boundary dispute believe
   // they are right, and the platform does not introduce them.
   { key: "noBlockingConflict", label: "No unresolved boundary conflict", reason: "This estate's boundary overlaps another registered boundary" },
@@ -251,7 +262,7 @@ export const ELIGIBILITY_CONDITIONS: { key: EligibilityConditionKey; label: stri
 // Conditions outside the company's immediate control.
 const HARD_BLOCKER_KEYS: EligibilityConditionKey[] = ["tenantVerified", "tenantEntitled", "tenantActive", "noBlockingConflict"];
 // Setup the company still has to finish itself.
-const OUTSTANDING_SETUP_KEYS: EligibilityConditionKey[] = ["feesDeclared", "refundTermsDeclared"];
+const OUTSTANDING_SETUP_KEYS: EligibilityConditionKey[] = ["feesDeclared", "refundTermsDeclared", "hasBoundary", "hasPlots"];
 
 export function conflictIsBlocking(eligibility: EstateEligibility): boolean {
   return !eligibility.noBlockingConflict;
@@ -268,6 +279,8 @@ export function statusFor(eligibility: EstateEligibility | null, hasBoundary: bo
   if (!eligibility) return "unknown";
   if (eligibility.published) return eligibility.eligible ? "published" : "published_not_live";
   if (HARD_BLOCKER_KEYS.some((k) => !eligibility[k])) return "blocked";
+  // `hasBoundary` is now a server-reported condition (in OUTSTANDING_SETUP_KEYS);
+  // the separate flag is kept as a second, equivalent source.
   if (!hasBoundary || OUTSTANDING_SETUP_KEYS.some((k) => !eligibility[k])) return "draft";
   return "ready_to_publish";
 }
@@ -282,6 +295,8 @@ export const PUBLICATION_REFUSAL_CONDITIONS: Record<string, EligibilityCondition
   PUBLICATION_TENANT_NOT_ACTIVE: "tenantActive",
   PUBLICATION_FEES_UNDECLARED: "feesDeclared",
   PUBLICATION_REFUND_TERMS_UNDECLARED: "refundTermsDeclared",
+  PUBLICATION_BOUNDARY_MISSING: "hasBoundary",
+  PUBLICATION_NO_PLOTS: "hasPlots",
   PUBLICATION_CONFLICT_OUTSTANDING: "noBlockingConflict",
 };
 
@@ -359,6 +374,9 @@ function ownedMockEstate(id: string, scope: PortalScope): Estate {
 
 // ─── The portal's estate row ─────────────────────────────────────────────────
 
+// What the estate is sold FOR — the backend's `intent` on EstateDto.
+export type EstateIntent = "development" | "investment";
+
 export interface PortalEstate {
   // A UUID from the backend. `slug` is a separate field — never the id, so
   // nothing may route on a name-derived string.
@@ -373,6 +391,9 @@ export interface PortalEstate {
   tenantId: string;
   cornerPremiumPct: number;
   amenities: string[];
+  // Both editable through PUT /api/portal/estates/{id}.
+  address: string;
+  intent: EstateIntent;
   titleType: Estate["titleType"];
   titleVerified: boolean;
   // Counts and prices arrive computed — the portal displays them, it never
@@ -451,6 +472,8 @@ function fromSummaryDto(dto: EstateSummaryDto, tenantId: string, eligibility: Es
     tenantId,
     cornerPremiumPct: 0,
     amenities: [],
+    address: "",
+    intent: dto.intent === "investment" ? "investment" : "development",
     titleType: "Gazette",
     titleVerified: false,
     totalPlots: dto.plotCounts?.total ?? 0,
@@ -480,6 +503,7 @@ function fromDetailDto(dto: EstateDetailDto): PortalEstate {
     description: dto.description ?? "",
     cornerPremiumPct: dto.cornerPremiumPct ?? 0,
     amenities: dto.amenities ?? [],
+    address: dto.address ?? "",
     titleType: dto.title?.titleType ?? "Gazette",
     // Title verification lives in verificationChecks, which this slice does
     // not interpret. Never shown as verified by default.
@@ -526,6 +550,8 @@ async function projectPortalEstate(estate: Estate): Promise<PortalEstate> {
     tenantActive: tenant?.status === "active",
     feesDeclared,
     refundTermsDeclared,
+    hasBoundary: estate.footprint.length >= 3,
+    hasPlots: estate.plots.length > 0 || mockPortalPlotCount(estate.id) > 0,
     noBlockingConflict: !blockingConflict,
   };
 
@@ -537,7 +563,7 @@ async function projectPortalEstate(estate: Estate): Promise<PortalEstate> {
     eligible: estate.published && Object.values(conditions).every(Boolean),
   };
 
-  const hasBoundary = estate.footprint.length >= 3;
+  const hasBoundary = conditions.hasBoundary;
   const plots = estate.plots;
 
   return {
@@ -552,6 +578,8 @@ async function projectPortalEstate(estate: Estate): Promise<PortalEstate> {
     tenantId: estate.tenantId,
     cornerPremiumPct: estate.cornerPremiumPct,
     amenities: estate.amenities,
+    address: estate.address ?? "",
+    intent: estate.intent === "investment" ? "investment" : "development",
     titleType: estate.titleType,
     titleVerified: estate.titleVerified,
     totalPlots: estate.totalPlots,
@@ -567,6 +595,14 @@ async function projectPortalEstate(estate: Estate): Promise<PortalEstate> {
     blockingReasons: blockingReasonsFor(eligibility),
     publishedDate: estate.published ? estate.publishedDate : undefined,
   };
+}
+
+// Mock mode only. Plots added on the inventory page live in
+// portalInventoryService, which imports this module — so it registers a
+// counter here rather than this module importing it back.
+let mockPortalPlotCount: (estateId: string) => number = () => 0;
+export function registerMockPortalPlotCounter(counter: (estateId: string) => number): void {
+  mockPortalPlotCount = counter;
 }
 
 export async function fetchPortalEstates(
@@ -646,8 +682,13 @@ export interface CreateEstateInput {
 // a later slice) — there is no create-and-publish shortcut on purpose.
 export async function createPortalEstate(input: CreateEstateInput, scope: PortalScope): Promise<PortalEstate> {
   if (!apiClient.isMockMode) {
+    // The backend's field is `footprint` (CreateEstateRequest). Sending
+    // `boundary` was silently dropped by Jackson — every estate came out
+    // boundary-less, and since BG-1 no such estate can be published.
+    const { boundary, ...rest } = input;
     // EstateDto: the summary's fields without plot counts — a new estate has none.
-    const dto = await apiClient.post<Omit<EstateSummaryDto, "plotCounts"> & { tenantId: string }>("/api/portal/estates", input);
+    const dto = await apiClient.post<Omit<EstateSummaryDto, "plotCounts"> & { tenantId: string }>(
+      "/api/portal/estates", { ...rest, ...(boundary ? { footprint: boundary } : {}) });
     return fromSummaryDto({ ...dto, plotCounts: null }, dto.tenantId, null);
   }
 
@@ -684,6 +725,7 @@ export async function createPortalEstate(input: CreateEstateInput, scope: Portal
     titleVerified: false,
     lastVerified: "",
     cornerPremiumPct: input.cornerPremiumPct,
+    address: input.address,
     plots: [],
     rows: 0,
     cols: 0,
@@ -699,11 +741,184 @@ export async function createPortalEstate(input: CreateEstateInput, scope: Portal
 }
 
 // Estates created during a session live alongside the seeded ones, same idiom
-// as tenantsService.ts's mock store. The only mutation of a seeded estate is
-// its `published` flag, via publish/unpublish — the backend has no other update
-// endpoint, so the portal offers no edit path. Flipping the canonical record
-// keeps the portal and the marketplace agreeing about what is listed.
+// as tenantsService.ts's mock store. Edits (PUT) and an added boundary mutate
+// the canonical record, so the portal and the marketplace keep agreeing.
 const mockCreated: Estate[] = [];
+
+// ─── Editing an estate's details: PUT /api/portal/estates/{id} ──────────────
+//
+// Every field optional — left out means unchanged. A blank text field clears
+// it, except `name` and `state`. `amenities` replaces the whole list.
+//
+// NOT here, on purpose (the backend refuses them rather than ignoring them):
+// the boundary (POST .../boundary, which runs the overlap check), publication
+// (publish/unpublish check every condition) and the branch (an estate can't
+// move across the branch wall). So this input type has none of the three.
+export interface UpdateEstateInput {
+  name?: string;
+  description?: string;
+  area?: string;
+  city?: string;
+  state?: NigerianState;
+  address?: string;
+  // Reprices EVERY corner plot at once, live on the marketplace — prices are
+  // computed on read. A buyer who already reserved keeps their price.
+  cornerPremiumPct?: number;
+  intent?: EstateIntent;
+  amenities?: string[];
+}
+
+// An edit the server refused, pinned to a field — the same idea as
+// portalInventoryService's InventoryEditError.
+export class EstateEditError extends Error {
+  field: string;
+  code: string;
+  constructor(field: string, code: string, message: string) {
+    super(message);
+    this.name = "EstateEditError";
+    this.field = field;
+    this.code = code;
+  }
+}
+
+function estateEditError(err: unknown): Error {
+  if (!(err instanceof ApiError)) return err instanceof Error ? err : new Error("Couldn't save the estate.");
+  const body = err.body;
+  // A rename regenerates the slug, unique per company.
+  if (err.status === 409) return new EstateEditError("name", "DUPLICATE_RECORD", "Another of your estates already has a matching name.");
+  if (body?.code === "UNKNOWN_STATE") return new EstateEditError("state", body.code, body.message ?? "That isn't a Nigerian state the platform recognises.");
+  if (body?.code === "BOUNDARY_OUTSIDE_STATE") return new EstateEditError("state", body.code, body.message ?? "The boundary isn't inside that state.");
+  if (body?.fieldErrors) {
+    const [field, message] = Object.entries(body.fieldErrors)[0] ?? [];
+    if (field) return new EstateEditError(field, "VALIDATION", message);
+  }
+  if (err.status === 404) return new EstateEditError("form", "ESTATE_NOT_FOUND", "This estate no longer exists, or isn't yours.");
+  return new EstateEditError("form", body?.code ?? "UNKNOWN", body?.message ?? "Couldn't save the estate.");
+}
+
+export async function updatePortalEstate(id: string, input: UpdateEstateInput, scope: PortalScope): Promise<PortalEstate> {
+  if (input.name !== undefined && !input.name.trim()) throw new EstateEditError("name", "VALIDATION", "An estate needs a name.");
+  if (input.cornerPremiumPct !== undefined && !(input.cornerPremiumPct >= 0)) {
+    throw new EstateEditError("cornerPremiumPct", "VALIDATION", "The corner premium can't be negative.");
+  }
+
+  if (!apiClient.isMockMode) {
+    try {
+      await apiClient.put(`/api/portal/estates/${id}`, input);
+    } catch (err) {
+      throw estateEditError(err);
+    }
+    // EstateDto has no eligibility or counts; the detail read has both.
+    const fresh = await fetchPortalEstateById(id, scope);
+    if (!fresh) throw new EstateEditError("form", "ESTATE_NOT_FOUND", "This estate no longer exists, or isn't yours.");
+    return fresh;
+  }
+
+  let estate: Estate;
+  try { estate = ownedMockEstate(id, scope); } catch { throw new EstateEditError("form", "ESTATE_NOT_FOUND", "This estate no longer exists, or isn't yours."); }
+  if (input.name !== undefined) {
+    const name = input.name.trim();
+    const slug = slugify(name);
+    if (mockStore().some((e) => e.id !== id && e.tenantId === estate.tenantId && (e.slug ?? e.id) === slug)) {
+      throw new EstateEditError("name", "DUPLICATE_RECORD", "Another of your estates already has a matching name.");
+    }
+    estate.name = name;
+    estate.slug = slug;
+  }
+  if (input.description !== undefined) estate.description = input.description.trim();
+  if (input.area !== undefined) estate.area = input.area.trim();
+  if (input.city !== undefined) estate.city = input.city.trim();
+  if (input.state !== undefined) estate.state = input.state;
+  if (input.address !== undefined) estate.address = input.address.trim();
+  if (input.intent !== undefined) estate.intent = input.intent;
+  if (input.amenities !== undefined) estate.amenities = input.amenities.map((a) => a.trim()).filter(Boolean);
+  if (input.cornerPremiumPct !== undefined && input.cornerPremiumPct !== estate.cornerPremiumPct) {
+    estate.cornerPremiumPct = input.cornerPremiumPct;
+    mockCornerPremiumChanged(id, input.cornerPremiumPct);
+  }
+  estate.location = `${estate.area}, ${estate.city}`;
+  return projectPortalEstate(estate);
+}
+
+// Mock mode only: plot rows in portalInventoryService carry a materialised
+// price, so a corner-premium change is pushed to them (the backend computes
+// prices on read and needs no such step).
+let mockCornerPremiumChanged: (estateId: string, pct: number) => void = () => {};
+export function registerMockCornerPremiumListener(listener: (estateId: string, pct: number) => void): void {
+  mockCornerPremiumChanged = listener;
+}
+
+// ─── Adding a boundary later: POST /api/portal/estates/{id}/boundary ───────
+//
+// For an estate created before its survey was ready — and since BG-1 the only
+// way such an estate can ever be published. Only when it has NO boundary yet:
+// changing one is not supported (BOUNDARY_ALREADY_SET). Every plot that
+// already has a shape must sit inside it, or nothing is saved. Checked for
+// overlaps at once; the result says whether that blocks publication, and
+// never names the other company.
+export interface EstateBoundaryResult {
+  estateId: string;
+  footprintAreaSqm: number | null;
+  publicationBlocked: boolean;
+  blockReason: string | null;
+  warningConflictCount: number;
+}
+
+export async function addEstateBoundary(id: string, boundary: GeoJsonPolygon, scope: PortalScope): Promise<EstateBoundaryResult> {
+  if (!apiClient.isMockMode) {
+    try {
+      return await apiClient.post<EstateBoundaryResult>(`/api/portal/estates/${id}/boundary`, { footprint: boundary });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const code = err.body?.code ?? "UNKNOWN";
+        const fallback: Record<string, string> = {
+          BOUNDARY_ALREADY_SET: "This estate already has a boundary. Changing a boundary isn't supported.",
+          PLOT_OUTSIDE_ESTATE: "Some of this estate's plots fall outside that boundary, so nothing was saved.",
+          INVALID_GEOMETRY: "That isn't a usable boundary polygon.",
+        };
+        throw new EstateEditError("boundary", code, err.body?.message ?? fallback[code] ?? "Couldn't add the boundary.");
+      }
+      throw err;
+    }
+  }
+
+  let estate: Estate;
+  try { estate = ownedMockEstate(id, scope); } catch { throw new EstateEditError("boundary", "ESTATE_NOT_FOUND", "Estate not found."); }
+  if (estate.footprint.length >= 3) {
+    throw new EstateEditError("boundary", "BOUNDARY_ALREADY_SET", "This estate already has a boundary. Changing a boundary isn't supported.");
+  }
+  const ring = boundary.coordinates[0].map(([lng, lat]) => ({ lat, lng }));
+  const outside = mockPlotsOutside(id, boundary);
+  if (outside.length > 0) {
+    throw new EstateEditError("boundary", "PLOT_OUTSIDE_ESTATE",
+      `These plots fall outside that boundary, so nothing was saved: ${outside.join(", ")}.`);
+  }
+  // Same shape createPortalEstate stores: the ring as given.
+  estate.footprint = ring;
+  const conflicts = detectMockConflictsForEstate(estate, mockStore());
+  const high = conflicts.filter((c) => c.severity === "high");
+  return {
+    estateId: id,
+    footprintAreaSqm: Math.round(boundaryAreaSqm(boundary) * 100) / 100,
+    publicationBlocked: high.length > 0,
+    // Never names the other party.
+    blockReason: high.length > 0 ? "This boundary overlaps land registered by another company. It's been flagged for review." : null,
+    warningConflictCount: conflicts.length - high.length,
+  };
+}
+
+// Mock mode only: which of the estate's plots (with shapes) fall outside a
+// proposed boundary. Registered by portalInventoryService, which holds them.
+let mockPlotsOutside: (estateId: string, boundary: GeoJsonPolygon) => string[] = () => [];
+export function registerMockPlotsOutsideCheck(check: (estateId: string, boundary: GeoJsonPolygon) => string[]): void {
+  mockPlotsOutside = check;
+}
+
+// Mock mode only, for the Super Admin's state override: platform staff look
+// an estate up by id across every company — no tenant scope applies.
+export function findMockEstateForAdmin(id: string): Estate | undefined {
+  return mockStore().find((e) => e.id === id);
+}
 
 function mockStore(): Estate[] {
   return [...ESTATES, ...mockCreated];

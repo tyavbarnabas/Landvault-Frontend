@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   BOUNDARY_TEMPLATE_JSON, ELIGIBILITY_CONDITIONS, PUBLICATION_REFUSAL_CONDITIONS, blockingReasonsFor, boundaryAreaSqm,
-  conflictIsBlocking, createPortalEstate, fetchEstateGeoJson, fetchPortalEstateById,
+  EstateEditError, addEstateBoundary, conflictIsBlocking, createPortalEstate, fetchEstateGeoJson, fetchPortalEstateById, updatePortalEstate,
   fetchPortalEstates, parseBoundary, publishEstate, refusalFromError, statusFor, unpublishEstate,
   type EstateEligibility, type PortalScope,
 } from "./portalEstatesService";
 import { declareFees, declareRefundTerms } from "./estateDisclosureService";
+import { createPlotBatch, createPriceTier, fetchPlots } from "./portalInventoryService";
 
 const DIRECTOR: PortalScope = { tenantId: "estintin-group", branchId: null };
 const HERITAGE_MANAGER: PortalScope = { tenantId: "estintin-group", branchId: "heritage" };
@@ -161,24 +162,35 @@ describe("parseBoundary", () => {
 });
 
 // "Cannot publish" without a reason sends the developer to support. The
-// backend returns EIGHT booleans for exactly this reason.
+// backend returns TEN booleans for exactly this reason.
 describe("publication eligibility", () => {
   const allMet: EstateEligibility = {
     published: true, tenantVerified: true, tenantEntitled: true, tenantActive: true,
-    feesDeclared: true, refundTermsDeclared: true, noBlockingConflict: true, eligible: true,
+    feesDeclared: true, refundTermsDeclared: true, hasBoundary: true, hasPlots: true, noBlockingConflict: true, eligible: true,
   };
 
   it("has a row for every condition the backend reports, and only those", () => {
-    // Eight fields: `published` is intent, `eligible` the fold, and the six
-    // between them are the conditions. If the DTO gains a ninth, this fails
-    // instead of the panel silently omitting it.
+    // Ten fields: `published` is intent, `eligible` the fold, and the eight
+    // between them are the conditions. If the DTO gains another, this fails
+    // instead of the panel silently omitting it — which is exactly what
+    // happened when hasBoundary and hasPlots arrived.
     const fields: (keyof EstateEligibility)[] = [
       "published", "tenantVerified", "tenantEntitled", "tenantActive",
-      "feesDeclared", "refundTermsDeclared", "noBlockingConflict", "eligible",
+      "feesDeclared", "refundTermsDeclared", "hasBoundary", "hasPlots", "noBlockingConflict", "eligible",
     ];
     expect(Object.keys(allMet).sort()).toEqual([...fields].sort());
     expect(ELIGIBILITY_CONDITIONS.map((c) => c.key).sort())
       .toEqual(fields.filter((f) => f !== "published" && f !== "eligible").sort());
+  });
+
+  it("an estate with no boundary or no plots says so — never every row met while eligible is false", () => {
+    for (const key of ["hasBoundary", "hasPlots"] as const) {
+      const eligibility = { ...allMet, published: false, [key]: false, eligible: false };
+      const reasons = blockingReasonsFor(eligibility);
+      expect(reasons).toEqual([ELIGIBILITY_CONDITIONS.find((c) => c.key === key)!.reason]);
+      // Something the developer finishes themselves: a draft, not "blocked".
+      expect(statusFor(eligibility, true)).toBe("draft");
+    }
   });
 
   it("names the specific failing condition rather than reporting a bare refusal", () => {
@@ -249,9 +261,11 @@ describe("publication eligibility", () => {
 
   it("covers every refusal code the backend can send, each pointing at a real condition", () => {
     expect(Object.keys(PUBLICATION_REFUSAL_CONDITIONS).sort()).toEqual([
+      "PUBLICATION_BOUNDARY_MISSING",
       "PUBLICATION_CONFLICT_OUTSTANDING",
       "PUBLICATION_ENTITLEMENT_MISSING",
       "PUBLICATION_FEES_UNDECLARED",
+      "PUBLICATION_NO_PLOTS",
       "PUBLICATION_REFUND_TERMS_UNDECLARED",
       "PUBLICATION_TENANT_NOT_ACTIVE",
       "PUBLICATION_VERIFICATION_PENDING",
@@ -281,8 +295,43 @@ describe("publish and unpublish", () => {
     expect((await fetchPortalEstateById(draft.id, DIRECTOR))?.eligibility?.published).toBe(false);
   });
 
-  it("publishes once fees (even none) and refund terms are declared, and unpublishes without touching anything else", async () => {
+  const withAPlot = async (estateId: string) => {
+    const tier = await createPriceTier(estateId, { tierType: "land_size", sizeSqm: 500, price: 20_000_000, currency: "NGN" }, DIRECTOR);
+    await createPlotBatch(estateId, [{ plotNumber: "1", priceTierId: tier.id, status: "available-dev" }], DIRECTOR);
+  };
+
+  it("refuses an estate with everything declared but no plots — buyers need something to choose from", async () => {
     const draft = await newDraft();
+    await declareFees(draft.id, { fees: [] });
+    await declareRefundTerms(draft.id, { deductionPct: 20, processingDays: 90, appliesTo: "total_price", nonRefundableFeeTypes: [], notes: null });
+
+    const before = await fetchPortalEstateById(draft.id, DIRECTOR);
+    expect(before?.eligibility?.hasPlots).toBe(false);
+    expect(before?.status).toBe("draft");
+
+    const refusal = refusalFromError(await publishEstate(draft.id, DIRECTOR).catch((e) => e));
+    expect(refusal).toMatchObject({ code: "PUBLICATION_NO_PLOTS", condition: "hasPlots" });
+
+    await withAPlot(draft.id);
+    expect((await fetchPortalEstateById(draft.id, DIRECTOR))?.eligibility?.hasPlots).toBe(true);
+  });
+
+  it("refuses an estate with no boundary, before the conflict check it makes meaningful", async () => {
+    const noBoundary = await createPortalEstate({
+      name: "No Boundary Estate", description: "", area: "Guzape", city: "Abuja",
+      state: "Federal Capital Territory (Abuja)", address: "", cornerPremiumPct: 0, amenities: [], branchId: "heritage",
+    }, DIRECTOR);
+    await declareFees(noBoundary.id, { fees: [] });
+    await declareRefundTerms(noBoundary.id, { deductionPct: 20, processingDays: 90, appliesTo: "total_price", nonRefundableFeeTypes: [], notes: null });
+    await withAPlot(noBoundary.id);
+
+    const refusal = refusalFromError(await publishEstate(noBoundary.id, DIRECTOR).catch((e) => e));
+    expect(refusal).toMatchObject({ code: "PUBLICATION_BOUNDARY_MISSING", condition: "hasBoundary" });
+  });
+
+  it("publishes once fees (even none), refund terms and a plot are in place, and unpublishes without touching anything else", async () => {
+    const draft = await newDraft();
+    await withAPlot(draft.id);
     await declareFees(draft.id, { fees: [] });
     await declareRefundTerms(draft.id, { deductionPct: 20, processingDays: 90, appliesTo: "total_price", nonRefundableFeeTypes: [], notes: null });
 
@@ -406,5 +455,111 @@ describe("the downloadable template", () => {
     // ~600m x ~500m: tens of hectares, not square degrees and not zero.
     expect(areaSqm).toBeGreaterThan(100_000);
     expect(areaSqm).toBeLessThan(1_000_000);
+  });
+});
+
+// ─── PUT /api/portal/estates/{id} ────────────────────────────────────────────
+
+describe("editing an estate's details", () => {
+  const draft = (name: string) => createPortalEstate({
+    name, description: "", area: "Guzape", city: "Abuja", state: "Federal Capital Territory (Abuja)",
+    address: "", cornerPremiumPct: 10, amenities: ["Borehole"], branchId: "heritage",
+  }, DIRECTOR);
+
+  it("changes only what is sent, and a rename regenerates the slug", async () => {
+    const estate = await draft("Edit Me Estate");
+    const updated = await updatePortalEstate(estate.id, { name: "Edited Estate", address: "1 Access Road", amenities: [] }, DIRECTOR);
+
+    expect(updated).toMatchObject({ name: "Edited Estate", slug: "edited-estate", address: "1 Access Road", amenities: [], area: "Guzape" });
+  });
+
+  it("refuses a name another of the company's estates already has, on the name field", async () => {
+    await draft("Taken Name Estate");
+    const other = await draft("Other Estate");
+    const err = await updatePortalEstate(other.id, { name: "Taken Name Estate" }, DIRECTOR).catch((e) => e);
+    expect(err).toBeInstanceOf(EstateEditError);
+    expect(err).toMatchObject({ field: "name", code: "DUPLICATE_RECORD" });
+  });
+
+  it("a corner-premium change reprices every corner plot at once", async () => {
+    const estate = await draft("Corner Estate");
+    const tier = await createPriceTier(estate.id, { tierType: "land_size", sizeSqm: 500, price: 10_000_000, currency: "NGN" }, DIRECTOR);
+    await createPlotBatch(estate.id, [
+      { plotNumber: "C1", priceTierId: tier.id, status: "available-dev", isCorner: true },
+      { plotNumber: "C2", priceTierId: tier.id, status: "available-dev" },
+    ], DIRECTOR);
+
+    await updatePortalEstate(estate.id, { cornerPremiumPct: 20 }, DIRECTOR);
+
+    const plots = (await fetchPlots(estate.id, DIRECTOR)).items;
+    expect(plots.find((p) => p.plotNumber === "C1")!.price).toBe(12_000_000);
+    expect(plots.find((p) => p.plotNumber === "C2")!.price).toBe(10_000_000);
+  });
+});
+
+// ─── POST /api/portal/estates/{id}/boundary ──────────────────────────────────
+
+describe("adding a boundary later", () => {
+  const boundaryless = () => createPortalEstate({
+    name: "Boundary Later Estate", description: "", area: "Guzape", city: "Abuja", state: "Federal Capital Territory (Abuja)",
+    address: "", cornerPremiumPct: 0, amenities: [], branchId: "heritage",
+  }, DIRECTOR);
+  const polygon = JSON.parse(ABUJA_BOUNDARY);
+
+  it("adds one to an estate with none, which is what makes it publishable", async () => {
+    const estate = await boundaryless();
+    expect((await fetchPortalEstateById(estate.id, DIRECTOR))?.eligibility?.hasBoundary).toBe(false);
+
+    const result = await addEstateBoundary(estate.id, polygon, DIRECTOR);
+
+    expect(result.estateId).toBe(estate.id);
+    expect(result.footprintAreaSqm).toBeGreaterThan(0);
+    expect((await fetchPortalEstateById(estate.id, DIRECTOR))?.eligibility?.hasBoundary).toBe(true);
+  });
+
+  it("refuses to change a boundary once one is set", async () => {
+    const estate = await boundaryless();
+    await addEstateBoundary(estate.id, polygon, DIRECTOR);
+    await expect(addEstateBoundary(estate.id, polygon, DIRECTOR)).rejects.toMatchObject({ code: "BOUNDARY_ALREADY_SET" });
+  });
+
+  it("refuses a boundary that leaves existing plots outside it, naming them, and saves nothing", async () => {
+    const estate = await boundaryless();
+    const tier = await createPriceTier(estate.id, { tierType: "land_size", sizeSqm: 500, price: 1, currency: "NGN" }, DIRECTOR);
+    // A plot shaped well away from the boundary about to be added.
+    await createPlotBatch(estate.id, [{
+      plotNumber: "9", priceTierId: tier.id, status: "available-dev",
+      footprint: { type: "Polygon", coordinates: [[[7.6, 9.2], [7.6001, 9.2], [7.6001, 9.2001], [7.6, 9.2001], [7.6, 9.2]]] },
+    }], DIRECTOR);
+
+    const err = await addEstateBoundary(estate.id, polygon, DIRECTOR).catch((e) => e);
+    expect(err).toMatchObject({ code: "PLOT_OUTSIDE_ESTATE" });
+    expect(err.message).toContain("Plot 9");
+    expect((await fetchPortalEstateById(estate.id, DIRECTOR))?.hasBoundary).toBe(false);
+  });
+});
+
+// ─── SB-1: the Super Admin's state override ──────────────────────────────────
+
+describe("state override", () => {
+  it("records a reason and the canonical state with its ISO code, and can be removed", async () => {
+    const { setStateOverride, clearStateOverride } = await import("./estateStateOverrideService");
+    const estate = await createPortalEstate({
+      name: "Disputed Border Estate", description: "", area: "Mararaba", city: "Abuja", state: "Nasarawa",
+      address: "", cornerPremiumPct: 0, amenities: [], branchId: "heritage",
+    }, DIRECTOR);
+
+    const set = await setStateOverride(estate.id, "Title registered with Nasarawa; GRID3 line runs through the site.");
+    expect(set).toMatchObject({ estateId: estate.id, state: "Nasarawa", stateCode: "NG-NA" });
+    expect(set.overriddenAt).not.toBeNull();
+
+    const cleared = await clearStateOverride(estate.id);
+    expect(cleared).toMatchObject({ overriddenAt: null, reason: null });
+  });
+
+  it("refuses without a reason, and names an unknown estate id plainly", async () => {
+    const { setStateOverride } = await import("./estateStateOverrideService");
+    await expect(setStateOverride("anything", "  ")).rejects.toMatchObject({ code: "VALIDATION" });
+    await expect(setStateOverride("no-such-estate", "reason")).rejects.toMatchObject({ code: "ESTATE_NOT_FOUND" });
   });
 });

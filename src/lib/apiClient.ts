@@ -280,7 +280,9 @@ async function request<T>(path: string, options: RequestOptions = {}, attempt = 
       ...init,
       signal: timeoutController.signal,
       headers: {
-        "Content-Type": "application/json",
+        // A FormData body (a file upload) must NOT carry a Content-Type: the
+        // browser sets multipart/form-data itself, with the boundary in it.
+        ...(init.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
         ...init.headers,
@@ -351,4 +353,6 @@ export const apiClient = {
   post: <T>(path: string, body?: unknown, options?: RequestOptions) => request<T>(path, { ...options, method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined }),
   put: <T>(path: string, body?: unknown, options?: RequestOptions) => request<T>(path, { ...options, method: "PUT", body: body !== undefined ? JSON.stringify(body) : undefined }),
   del: <T>(path: string, options?: RequestOptions) => request<T>(path, { ...options, method: "DELETE" }),
+  // multipart/form-data — a file upload. Sent as-is, never JSON-encoded.
+  postForm: <T>(path: string, form: FormData, options?: RequestOptions) => request<T>(path, { ...options, method: "POST", body: form }),
 };

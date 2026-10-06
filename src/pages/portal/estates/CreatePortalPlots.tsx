@@ -2,10 +2,10 @@ import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useFetch } from "../../../lib/useFetch";
 import {
-  PLOT_BATCH_LIMIT, createPlotsInBatches, fetchBlocks, fetchPriceTiers, planBatches, tierDisplayLabel,
+  PLOT_BATCH_LIMIT, createPlotsInBatches, fetchBlocks, fetchPriceTiers, planBatches, openTiers, tierDisplayLabel,
   type BatchProgress, type CreatePlotInput, type PlotOrientation, type PortalPlotStatus,
 } from "../../../services/portalInventoryService";
-import { STATUS_LABELS } from "../../../lib/plotStatus";
+import { CREATABLE_STATUSES, STATUS_LABELS } from "../../../lib/plotStatus";
 import { fetchPortalEstateById, parseBoundary } from "../../../services/portalEstatesService";
 import RepeatableFieldList from "../../../components/onboarding/RepeatableFieldList";
 import { usePortalScope } from "../usePortalScope";
@@ -58,7 +58,10 @@ export default function CreatePortalPlots() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const tiers = loaded.data?.tiers ?? [];
+  // Only open tiers: a retired one accepts no new plots (the backend refuses
+  // with TIER_RETIRED), so it is never offered here.
+  const allTiers = loaded.data?.tiers ?? [];
+  const tiers = openTiers(allTiers);
   const blocks = loaded.data?.blocks ?? [];
 
   const update = (index: number, patch: Partial<PlotRow>) =>
@@ -124,7 +127,9 @@ export default function CreatePortalPlots() {
         <Link to={`/portal/estates/${estateId}/inventory`} className="text-xs text-[var(--accent)] hover:underline">← Inventory</Link>
         <h1 className="font-display text-3xl text-[var(--foreground)] mt-2 mb-2">Add plots</h1>
         <p className="text-sm text-[var(--muted-foreground)]">
-          This estate has no price tiers yet, and every plot is priced by one. Add a tier first.
+          {allTiers.length === 0
+            ? "This estate has no price tiers yet, and every plot is priced by one. Add a tier first."
+            : "Every price tier on this estate is retired, and a retired tier accepts no new plots. Add a new tier, or reinstate a retired one."}
         </p>
       </div>
     );
@@ -137,8 +142,8 @@ export default function CreatePortalPlots() {
       <Link to={`/portal/estates/${estateId}/inventory`} className="text-xs text-[var(--accent)] hover:underline">← Inventory</Link>
       <h1 className="font-display text-3xl text-[var(--foreground)] mt-2 mb-1">Add plots</h1>
       <p className="text-sm text-[var(--muted-foreground)] mb-6">
-        Each plot takes its size and price from the tier you choose. Importing a surveyor's file for a whole estate comes in a later
-        release — this form is for creating plots by hand.
+        Each plot takes its size and price from the tier you choose. This form is for creating plots by hand — for a whole estate,{" "}
+        <Link to={`/portal/estates/${estateId}/plots/import`} className="text-[var(--accent)] hover:underline">import your surveyor's file</Link> instead.
       </p>
 
       <form onSubmit={submit} className="space-y-5">
@@ -176,7 +181,7 @@ export default function CreatePortalPlots() {
                       backend keeps them apart on purpose, and the reservation
                       sweeper restores whichever one a plot had. */}
                   <Select id={`status-${index}`} label="Status" value={row.status} onChange={(v) => update(index, { status: v as PortalPlotStatus })}
-                    options={(Object.keys(STATUS_LABELS) as PortalPlotStatus[]).map((s) => ({ value: s, label: STATUS_LABELS[s] }))} />
+                    options={CREATABLE_STATUSES.map((s) => ({ value: s, label: STATUS_LABELS[s] }))} />
                   <Select id={`intent-${index}`} label="Intent (optional)" value={row.intent} onChange={(v) => update(index, { intent: v as PlotRow["intent"] })}
                     options={[{ value: "", label: "Unspecified" }, { value: "development", label: "Development" }, { value: "investment", label: "Investment" }]} />
                   <Select id={`orientation-${index}`} label="Orientation (optional)" value={row.orientation}

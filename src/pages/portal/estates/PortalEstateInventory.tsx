@@ -7,8 +7,10 @@ import { useApp } from "../../../contexts/AppContext";
 import { canManageEstates } from "../../../services/authService";
 import { fetchEstateGeoJson, fetchPortalEstateById } from "../../../services/portalEstatesService";
 import {
-  InventoryEditError, availableCount, countFor, createBlock, createPriceTier, fetchBlocks, fetchInventoryGeoJson,
-  fetchPlots, fetchPriceTierImpact, fetchPriceTiers, tierDisplayLabel, updateBlock, updatePriceTier, validatePriceTier,
+  BULK_STATUS_LIMIT, InventoryEditError, availableCount, changePlotStatus, changePlotStatuses, countFor, createBlock,
+  correctPlotBoundary, createPriceTier, fetchBlocks, fetchInventoryGeoJson, fetchPlots, fetchPriceTierImpact, fetchPriceTiers,
+  isEditablePlot, movePlotToTier, setTierRetired, tierMoveTargets, withdrawPlot, type PlotBoundaryCorrection, type PlotTierChange,
+  tierDisplayLabel, updateBlock, updatePriceTier, validatePriceTier, type PlotStatusChange, type PlotStatusTarget,
   type CreatePriceTierInput, type PlotCounts, type PortalBlock, type PortalPlot, type PortalPriceTier,
   type PortalPlotStatus, type PriceTierUpdate, type TierType, type UpdatePriceTierInput,
 } from "../../../services/portalInventoryService";
@@ -17,6 +19,8 @@ import EmptyState from "../../../components/marketplace/EmptyState";
 import StatusBadge from "../../../components/StatusBadge";
 import TabBar from "../../../components/TabBar";
 import { Field } from "../../../components/portal/formParts";
+import BoundaryField from "../../../components/portal/BoundaryField";
+import type { GeoJsonPolygon } from "../../../services/portalEstatesService";
 import { usePortalScope } from "../usePortalScope";
 
 type Tab = "tiers" | "blocks" | "plots";
@@ -82,7 +86,7 @@ export default function PortalEstateInventory() {
       <div id={`panel-${tab}`} role="tabpanel">
         {tab === "tiers" && <TiersPanel estateId={estateId} tiers={tiers} canManage={canManage} onCreated={loaded.refetch} />}
         {tab === "blocks" && <BlocksPanel estateId={estateId} blocks={blocks} canManage={canManage} onCreated={loaded.refetch} />}
-        {tab === "plots" && <PlotsPanel estateId={estateId} plots={plots} blocks={blocks} tiers={tiers} mapData={mapData} />}
+        {tab === "plots" && <PlotsPanel estateId={estateId} plots={plots} blocks={blocks} tiers={tiers} mapData={mapData} canManage={canManage} onChanged={loaded.refetch} />}
       </div>
     </div>
   );
@@ -97,6 +101,27 @@ function TiersPanel({ estateId, tiers, canManage, onCreated }: {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [lastEdit, setLastEdit] = useState<{ tierName: string; update: PriceTierUpdate } | null>(null);
   const editing = tiers.find((t) => t.id === editingId) ?? null;
+  const [retiringId, setRetiringId] = useState<string | null>(null);
+  const retiring = tiers.find((t) => t.id === retiringId) ?? null;
+  const [retireError, setRetireError] = useState("");
+  const [retireBusy, setRetireBusy] = useState(false);
+
+  // Retire asks first (it changes what new plots may use); reinstating is
+  // harmless and immediate.
+  const setRetired = async (tier: PortalPriceTier, retired: boolean) => {
+    if (!scope) return;
+    setRetireBusy(true);
+    setRetireError("");
+    try {
+      await setTierRetired(estateId, tier.id, retired, scope);
+      setRetiringId(null);
+      onCreated();
+    } catch (err) {
+      setRetireError(err instanceof Error ? err.message : "Couldn't change the tier.");
+    } finally {
+      setRetireBusy(false);
+    }
+  };
   const [tierType, setTierType] = useState<TierType>("land_size");
   const [sizeSqm, setSizeSqm] = useState("");
   const [price, setPrice] = useState("");
@@ -156,6 +181,9 @@ function TiersPanel({ estateId, tiers, canManage, onCreated }: {
                     <td className="px-4 py-3">
                       <div className="font-medium text-[var(--foreground)]">{tierDisplayLabel(tier)}</div>
                       <div className="text-xs text-[var(--muted-foreground)]">{tier.tierType === "land_size" ? "Land size" : "Unit type"}</div>
+                      {/* Retired: no new plots, but its existing plots stay on
+                          sale at this price — withholding is how to take those off. */}
+                      {tier.retiredAt && <div className="mt-1"><StatusBadge label="Retired — no new plots" variant="neutral" /></div>}
                     </td>
                     <td className="px-4 py-3 font-mono-data text-[var(--foreground)]">{formatAmount(tier.price, tier.currency)}</td>
                     {/* Display-only comparison. A tier's price is the developer's
@@ -167,14 +195,27 @@ function TiersPanel({ estateId, tiers, canManage, onCreated }: {
                     <td className="px-4 py-3 font-mono-data text-[var(--foreground)]">{tier.plotCount}</td>
                     {canManage && (
                       <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => { setEditingId(tier.id); setLastEdit(null); }}
-                          disabled={editingId === tier.id}
-                          className="text-sm text-[var(--accent)] hover:underline disabled:opacity-50 disabled:no-underline"
-                        >
-                          Edit
-                        </button>
+                        <div className="flex justify-end gap-3">
+                          <button
+                            type="button"
+                            onClick={() => { setEditingId(tier.id); setLastEdit(null); }}
+                            disabled={editingId === tier.id}
+                            className="text-sm text-[var(--accent)] hover:underline disabled:opacity-50 disabled:no-underline"
+                          >
+                            Edit
+                          </button>
+                          {tier.retiredAt ? (
+                            <button type="button" onClick={() => setRetired(tier, false)} disabled={retireBusy}
+                              className="text-sm text-[var(--accent)] hover:underline disabled:opacity-50">
+                              Reinstate
+                            </button>
+                          ) : (
+                            <button type="button" onClick={() => { setRetiringId(tier.id); setRetireError(""); }} disabled={retiringId === tier.id}
+                              className="text-sm text-[var(--muted-foreground)] hover:underline disabled:opacity-50">
+                              Retire
+                            </button>
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -188,6 +229,29 @@ function TiersPanel({ estateId, tiers, canManage, onCreated }: {
           </p>
         </div>
       )}
+
+      {retiring && (
+        <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 space-y-3" role="dialog" aria-label={`Retire ${tierDisplayLabel(retiring)}`}>
+          <p className="text-sm font-semibold text-[var(--foreground)]">Retire {tierDisplayLabel(retiring)}?</p>
+          <p className="text-sm text-[var(--muted-foreground)]">
+            No new plots can be added to it, imported into it or moved to it. Its {retiring.plotCount} existing{" "}
+            {retiring.plotCount === 1 ? "plot keeps" : "plots keep"} it, and any that are available stay on sale at its price — to take
+            them off the market, withhold them on the Plots tab. You can reinstate it at any time.
+          </p>
+          {retireError && <p className="text-sm text-red-700" role="alert">{retireError}</p>}
+          <div className="flex gap-3">
+            <button type="button" onClick={() => setRetired(retiring, true)} disabled={retireBusy}
+              className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
+              {retireBusy ? "Retiring…" : "Retire tier"}
+            </button>
+            <button type="button" onClick={() => setRetiringId(null)}
+              className="px-4 py-2 border border-[var(--border)] rounded-md text-sm text-[var(--foreground)] hover:bg-[var(--muted)]">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {!retiring && retireError && <p className="text-sm text-red-700" role="alert">{retireError}</p>}
 
       {editing && scope && (
         <TierEditor
@@ -330,10 +394,21 @@ function BlocksPanel({ estateId, blocks, canManage, onCreated }: {
 
 // ─── Plots ───────────────────────────────────────────────────────────────────
 
-function PlotsPanel({ estateId, plots, blocks, tiers, mapData }: {
+function PlotsPanel({ estateId, plots, blocks, tiers, mapData, canManage, onChanged }: {
   estateId: string; plots: PortalPlot[]; blocks: PortalBlock[]; tiers: PortalPriceTier[];
   mapData: { type: "FeatureCollection"; features: unknown[] } | null;
+  canManage: boolean; onChanged: () => void;
 }) {
+  const scope = usePortalScope();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [rowError, setRowError] = useState("");
+  const [rowBusy, setRowBusy] = useState<string | null>(null);
+  // Kept here, not in the bar: applying clears the selection (unmounting the
+  // bar), and what was skipped — and why — must stay on screen.
+  const [lastBulk, setLastBulk] = useState<PlotStatusChange | null>(null);
+  const [editingPlotId, setEditingPlotId] = useState<string | null>(null);
+  const editingPlot = plots.find((p) => p.id === editingPlotId) ?? null;
+  const [withdrawn, setWithdrawn] = useState<string | null>(null);
   const [status, setStatus] = useState<PortalPlotStatus | "">("");
   const [blockId, setBlockId] = useState("");
   const [tierId, setTierId] = useState("");
@@ -348,15 +423,83 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData }: {
     (!cornerOnly || p.isCorner));
 
   const hasFootprints = plots.some((p) => p.hasFootprint);
+  const allVisibleSelected = visible.length > 0 && visible.every((p) => selected.has(p.id));
+  const toggle = (id: string) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const toggleAllVisible = () => setSelected((prev) => {
+    const next = new Set(prev);
+    for (const p of visible) { if (allVisibleSelected) next.delete(p.id); else next.add(p.id); }
+    return next;
+  });
+
+  // One plot: withhold an available plot, or return a withheld one to the
+  // variant it had. Reserved and sold offer nothing — only checkout moves them.
+  const quickChange = async (plot: PortalPlot, target: PlotStatusTarget) => {
+    if (!scope) return;
+    setRowBusy(plot.id);
+    setRowError("");
+    try {
+      await changePlotStatus(estateId, plot.id, { status: target }, scope);
+      onChanged();
+    } catch (err) {
+      setRowError(err instanceof Error ? err.message : "Couldn't change that plot.");
+    } finally {
+      setRowBusy(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <p className="text-sm text-[var(--muted-foreground)]">{plots.length} plot{plots.length === 1 ? "" : "s"} on this estate.</p>
-        <Link to={`/portal/estates/${estateId}/plots/new`} className="shrink-0 px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90">
-          Add plots
-        </Link>
+        <div className="flex items-center gap-3 shrink-0">
+          {canManage && (
+            <Link to={`/portal/estates/${estateId}/plots/import`} className="px-4 py-2 border border-[var(--border)] rounded-md text-sm text-[var(--foreground)] hover:bg-[var(--muted)]">
+              Import from file
+            </Link>
+          )}
+          <Link to={`/portal/estates/${estateId}/plots/new`} className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90">
+            Add plots
+          </Link>
+        </div>
       </div>
+
+      {canManage && selected.size > 0 && scope && (
+        <BulkStatusBar
+          estateId={estateId}
+          plotIds={[...selected]}
+          plots={plots}
+          onClear={() => setSelected(new Set())}
+          onApplied={(change) => { setLastBulk(change); setSelected(new Set()); onChanged(); }}
+        />
+      )}
+      {lastBulk && selected.size === 0 && (
+        <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 space-y-2">
+          <BulkResult result={lastBulk} plots={plots} />
+          <button type="button" onClick={() => setLastBulk(null)} className="text-xs text-[var(--muted-foreground)] hover:underline">Dismiss</button>
+        </div>
+      )}
+      {rowError && <p className="text-sm text-red-700" role="alert">{rowError}</p>}
+      {withdrawn && (
+        <p className="text-sm text-[var(--muted-foreground)]" role="status">
+          {withdrawn} was withdrawn. Its plot number can be used again.{" "}
+          <button type="button" onClick={() => setWithdrawn(null)} className="text-xs underline">Dismiss</button>
+        </p>
+      )}
+      {editingPlot && scope && (
+        <PlotEditor
+          key={editingPlot.id}
+          estateId={estateId}
+          plot={editingPlot}
+          tiers={tiers}
+          onClose={() => setEditingPlotId(null)}
+          onChanged={onChanged}
+          onWithdrawn={(label) => { setEditingPlotId(null); setWithdrawn(label); onChanged(); }}
+        />
+      )}
 
       {tiers.length === 0 && (
         <p className="text-sm text-amber-700">Add at least one price tier first — every plot is priced by one.</p>
@@ -410,6 +553,11 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData }: {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-[var(--muted)] text-left">
+                  {canManage && (
+                    <th scope="col" className="pl-4 py-2.5 w-8">
+                      <input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} aria-label="Select every plot shown" />
+                    </th>
+                  )}
                   <th scope="col" className="px-4 py-2.5 font-medium text-[var(--muted-foreground)]">Plot</th>
                   <th scope="col" className="px-4 py-2.5 font-medium text-[var(--muted-foreground)]">Tier</th>
                   {/* Two separate columns, deliberately: what was sold, and what
@@ -418,11 +566,18 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData }: {
                   <th scope="col" className="px-4 py-2.5 font-medium text-[var(--muted-foreground)]">Surveyed</th>
                   <th scope="col" className="px-4 py-2.5 font-medium text-[var(--muted-foreground)]">Price</th>
                   <th scope="col" className="px-4 py-2.5 font-medium text-[var(--muted-foreground)]">Status</th>
+                  {canManage && <th scope="col" className="px-4 py-2.5"><span className="sr-only">Actions</span></th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border)] bg-[var(--card)]">
                 {visible.map((plot) => (
                   <tr key={plot.id}>
+                    {canManage && (
+                      <td className="pl-4 py-3">
+                        <input type="checkbox" checked={selected.has(plot.id)} onChange={() => toggle(plot.id)}
+                          aria-label={`Select ${plot.blockName ? `${plot.blockName}, ` : ""}Plot ${plot.plotNumber}`} />
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       <div className="font-medium text-[var(--foreground)]">
                         {plot.blockName ? `${plot.blockName}, ` : ""}Plot {plot.plotNumber}{plot.isCorner ? " ★" : ""}
@@ -451,6 +606,29 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData }: {
                         {STATUS_LABELS[plot.status]}
                       </span>
                     </td>
+                    {canManage && (
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        {(plot.status === "available-dev" || plot.status === "available-inv") && (
+                          <button type="button" onClick={() => quickChange(plot, "withheld")} disabled={rowBusy === plot.id}
+                            className="text-xs text-[var(--accent)] hover:underline disabled:opacity-50">
+                            Withhold
+                          </button>
+                        )}
+                        {plot.status === "withheld" && (
+                          <button type="button" onClick={() => quickChange(plot, "available")} disabled={rowBusy === plot.id}
+                            className="text-xs text-[var(--accent)] hover:underline disabled:opacity-50">
+                            Return to market
+                          </button>
+                        )}
+                        {/* Reserved and sold: what a buyer agreed to — nothing to edit. */}
+                        {(isEditablePlot(plot) || plot.status === "withheld") && (
+                          <button type="button" onClick={() => setEditingPlotId(plot.id)} disabled={editingPlotId === plot.id}
+                            className="ml-3 text-xs text-[var(--accent)] hover:underline disabled:opacity-50">
+                            Edit
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -459,6 +637,316 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData }: {
           {visible.length === 0 && <p className="text-sm text-[var(--muted-foreground)]">No plots match those filters.</p>}
         </>
       )}
+    </div>
+  );
+}
+
+// ─── One plot: move tier, correct boundary, withdraw (IE-9..IE-11) ────────────
+
+function PlotEditor({ estateId, plot, tiers, onClose, onChanged, onWithdrawn }: {
+  estateId: string; plot: PortalPlot; tiers: PortalPriceTier[];
+  onClose: () => void; onChanged: () => void; onWithdrawn: (label: string) => void;
+}) {
+  const label = `${plot.blockName ? `${plot.blockName}, ` : ""}Plot ${plot.plotNumber}`;
+  const editable = isEditablePlot(plot);
+  return (
+    <div className="bg-[var(--card)] border border-[var(--accent)] rounded-xl p-5 space-y-6" aria-label={`Edit ${label}`}>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-[var(--foreground)]">{label} · {STATUS_LABELS[plot.status]}</p>
+        <button type="button" onClick={onClose} className="text-xs text-[var(--muted-foreground)] hover:underline">Close</button>
+      </div>
+      {editable ? (
+        <>
+          <MovePlotTier estateId={estateId} plot={plot} tiers={tiers} onChanged={onChanged} />
+          <CorrectPlotBoundary estateId={estateId} plot={plot} onChanged={onChanged} />
+        </>
+      ) : (
+        <p className="text-sm text-[var(--muted-foreground)]">
+          A withheld plot's tier and boundary can't be changed. Return it to the market first, then edit it.
+        </p>
+      )}
+      <WithdrawPlot estateId={estateId} plot={plot} label={label} onWithdrawn={onWithdrawn} />
+    </div>
+  );
+}
+
+function MovePlotTier({ estateId, plot, tiers, onChanged }: { estateId: string; plot: PortalPlot; tiers: PortalPriceTier[]; onChanged: () => void }) {
+  const scope = usePortalScope();
+  const targets = tierMoveTargets(plot, tiers);
+  const [chosenTierId, setTierId] = useState(targets[0]?.id ?? "");
+  const [override, setOverride] = useState("");
+  const [result, setResult] = useState<PlotTierChange | null>(null);
+  const [error, setError] = useState<{ field: string; message: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  // After a move the plot's own tier changes, so the targets do too. A choice
+  // that is no longer a target falls back to the first one that is — never a
+  // select showing one tier while the button acts on none.
+  const tierId = targets.some((t) => t.id === chosenTierId) ? chosenTierId : (targets[0]?.id ?? "");
+  const target = targets.find((t) => t.id === tierId);
+  const tierName = (id: string) => { const t = tiers.find((x) => x.id === id); return t ? tierDisplayLabel(t) : "another tier"; };
+
+  const move = async () => {
+    if (!scope || !target) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const change = await movePlotToTier(estateId, plot.id, {
+        tierId: target.id,
+        // Only for a unit-type tier; a land-size tier sets the size itself.
+        ...(target.tierType === "unit_type" && override ? { nominalSizeSqmOverride: Number(override) } : {}),
+      }, scope);
+      setResult(change);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof InventoryEditError ? { field: err.field, message: err.message } : { field: "form", message: "Couldn't move the plot." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="space-y-3">
+      <h3 className="text-sm font-semibold text-[var(--foreground)]">Move to another tier</h3>
+      {targets.length === 0 ? (
+        <p className="text-sm text-[var(--muted-foreground)]">
+          No tier to move it to. It can only move to an open tier of the same kind and currency.
+        </p>
+      ) : (
+        <>
+          <p className="text-xs text-[var(--muted-foreground)]">
+            For a plot put in the wrong tier. It changes the plot's price{target?.tierType === "land_size" ? " and its size — the size on the deed" : ""}.
+            Only open tiers of the same kind and currency are offered.
+          </p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field id="move-tier" label="New tier" error={error?.field === "tierId" ? error.message : undefined}>
+              <select id="move-tier" value={tierId} onChange={(e) => { setTierId(e.target.value); setResult(null); }} className={inputClass}>
+                {targets.map((t) => <option key={t.id} value={t.id}>{tierDisplayLabel(t)} — {formatAmount(t.price, t.currency)}</option>)}
+              </select>
+            </Field>
+            {target?.tierType === "unit_type" && (
+              <Field id="move-override" label="Land area (sqm, optional)" hint="Left blank, the plot keeps its current size."
+                error={error?.field === "nominalSizeSqmOverride" ? error.message : undefined}>
+                <input id="move-override" type="number" min={0} value={override} onChange={(e) => setOverride(e.target.value)} className={inputClass} />
+              </Field>
+            )}
+          </div>
+          {error?.field === "form" && <p className="text-sm text-red-700" role="alert">{error.message}</p>}
+          <button type="button" onClick={move} disabled={busy || !target}
+            className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
+            {busy ? "Moving…" : "Move plot"}
+          </button>
+          {result && (
+            <div className="rounded-lg bg-[var(--muted)] p-3 text-sm text-[var(--foreground)] space-y-1" role="status">
+              <p>Moved from {tierName(result.previousTierId)} to {tierName(result.tierId)}.</p>
+              <p className="font-mono-data text-xs">
+                Price {formatAmount(result.previousPrice, result.currency)} → {formatAmount(result.price, result.currency)}
+                {" · "}Size {result.previousNominalSizeSqm ?? "—"} → {result.nominalSizeSqm ?? "—"} sqm
+              </p>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function CorrectPlotBoundary({ estateId, plot, onChanged }: { estateId: string; plot: PortalPlot; onChanged: () => void }) {
+  const scope = usePortalScope();
+  const [polygon, setPolygon] = useState<GeoJsonPolygon | null>(null);
+  const [unresolved, setUnresolved] = useState(false);
+  const [result, setResult] = useState<PlotBoundaryCorrection | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    if (!scope || !polygon) return;
+    setBusy(true);
+    setError("");
+    try {
+      setResult(await correctPlotBoundary(estateId, plot.id, polygon, scope));
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't correct the boundary.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const overlapChange = result && result.plotOverlapsInEstateBefore !== result.plotOverlapsInEstateAfter;
+  return (
+    <section className="space-y-3">
+      <h3 className="text-sm font-semibold text-[var(--foreground)]">{plot.hasFootprint ? "Correct the boundary" : "Add a boundary"}</h3>
+      <BoundaryField
+        inputId={`plot-boundary-${plot.id}`}
+        label="Plot boundary"
+        intro="A GeoJSON Polygon in [longitude, latitude] order, inside the estate's boundary. A boundary can be replaced but not removed; the surveyed area is recalculated."
+        stateChecked={false}
+        onChange={(state) => { setPolygon(state.polygon); setUnresolved(state.hasUnresolvedInput); setError(""); setResult(null); }}
+      />
+      {error && <p className="text-sm text-red-700" role="alert">{error}</p>}
+      <button type="button" onClick={save} disabled={busy || !polygon || unresolved}
+        className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
+        {busy ? "Saving…" : "Save boundary"}
+      </button>
+      {result && (
+        <div className="rounded-lg bg-[var(--muted)] p-3 text-sm text-[var(--foreground)] space-y-1" role="status">
+          <p className="font-mono-data text-xs">
+            Surveyed area {result.previousActualAreaSqm === null ? "not surveyed" : `${result.previousActualAreaSqm} sqm`} → {result.actualAreaSqm} sqm
+          </p>
+          {/* Same-company plot overlaps warn; they never block publication. */}
+          <p className="text-xs text-[var(--muted-foreground)]">
+            Overlapping plot pairs on this estate: {result.plotOverlapsInEstateBefore} before, {result.plotOverlapsInEstateAfter} after
+            {overlapChange ? (result.plotOverlapsInEstateAfter < result.plotOverlapsInEstateBefore ? " — this correction cleared one." : " — this correction created one; it's recorded for review.") : "."}
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function WithdrawPlot({ estateId, plot, label, onWithdrawn }: { estateId: string; plot: PortalPlot; label: string; onWithdrawn: (label: string) => void }) {
+  const scope = usePortalScope();
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const withdraw = async () => {
+    if (!scope) return;
+    setBusy(true);
+    setError("");
+    try {
+      await withdrawPlot(estateId, plot.id, scope);
+      onWithdrawn(label);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't withdraw the plot.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="space-y-3 border-t border-[var(--border)] pt-5">
+      <h3 className="text-sm font-semibold text-[var(--foreground)]">Withdraw this plot</h3>
+      <p className="text-xs text-[var(--muted-foreground)]">
+        Removes a plot entered by mistake. Only possible if it has never been reserved or bought — even a lapsed hold counts — and has
+        never been in a boundary conflict. Otherwise, withhold it instead.
+      </p>
+      {error && <p className="text-sm text-red-700" role="alert">{error}</p>}
+      {confirming ? (
+        <div className="flex gap-3">
+          <button type="button" onClick={withdraw} disabled={busy}
+            className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
+            {busy ? "Withdrawing…" : `Withdraw ${label}`}
+          </button>
+          <button type="button" onClick={() => setConfirming(false)}
+            className="px-4 py-2 border border-[var(--border)] rounded-md text-sm text-[var(--foreground)] hover:bg-[var(--muted)]">
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setConfirming(true)}
+          className="px-4 py-2 border border-[var(--border)] rounded-md text-sm text-[var(--foreground)] hover:bg-[var(--muted)]">
+          Withdraw…
+        </button>
+      )}
+    </section>
+  );
+}
+
+// ─── Bulk status (IE-8) ──────────────────────────────────────────────────────
+
+const BULK_ACTIONS: { value: PlotStatusTarget; label: string }[] = [
+  { value: "withheld", label: "Withhold — take off the market" },
+  { value: "available", label: "Return to market (as before)" },
+  { value: "available-dev", label: "Make available — development" },
+  { value: "available-inv", label: "Make available — investment" },
+];
+
+// Skip and report, never all or nothing: one reserved plot must not block a
+// 200-plot launch. A preview (dryRun) reports without writing, and applying
+// re-checks every plot at the moment it changes — so a buyer reserving at
+// that instant keeps their hold, and the result may differ from the preview.
+function BulkStatusBar({ estateId, plotIds, plots, onClear, onApplied }: {
+  estateId: string; plotIds: string[]; plots: PortalPlot[]; onClear: () => void; onApplied: (change: PlotStatusChange) => void;
+}) {
+  const scope = usePortalScope();
+  const [target, setTarget] = useState<PlotStatusTarget>("withheld");
+  const [reason, setReason] = useState("");
+  const [result, setResult] = useState<PlotStatusChange | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const tooMany = plotIds.length > BULK_STATUS_LIMIT;
+
+  const run = async (dryRun: boolean) => {
+    if (!scope) return;
+    setBusy(true);
+    setError("");
+    try {
+      const change = await changePlotStatuses(estateId, { plotIds, status: target, reason: reason.trim() || undefined, dryRun }, scope);
+      if (dryRun) setResult(change);
+      else onApplied(change);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't change those plots.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="bg-[var(--card)] border border-[var(--accent)] rounded-xl p-5 space-y-4" aria-label="Change selected plots">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-[var(--foreground)]">{plotIds.length} {plotIds.length === 1 ? "plot" : "plots"} selected</p>
+        <button type="button" onClick={onClear} className="text-xs text-[var(--muted-foreground)] hover:underline">Clear selection</button>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-4">
+        <Field id="bulk-action" label="Change to">
+          <select id="bulk-action" value={target} onChange={(e) => { setTarget(e.target.value as PlotStatusTarget); setResult(null); }} className={inputClass}>
+            {BULK_ACTIONS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+          </select>
+        </Field>
+        <Field id="bulk-reason" label="Reason (optional)" hint="Kept in the audit log.">
+          <input id="bulk-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Survey dispute" className={inputClass} />
+        </Field>
+      </div>
+      <p className="text-xs text-[var(--muted-foreground)]">
+        Reserved and sold plots are never changed here — only checkout moves them — and are skipped with a reason. On the marketplace a
+        withheld plot simply shows as unavailable.
+      </p>
+      {tooMany && <p className="text-sm text-red-700">At most {BULK_STATUS_LIMIT} plots at once — narrow the selection.</p>}
+      {error && <p className="text-sm text-red-700" role="alert">{error}</p>}
+
+      {result && <div className="rounded-lg bg-[var(--muted)] p-4"><BulkResult result={result} plots={plots} /></div>}
+
+      <div className="flex gap-3">
+        <button type="button" onClick={() => run(true)} disabled={busy || tooMany}
+          className="px-4 py-2 border border-[var(--border)] rounded-md text-sm text-[var(--foreground)] hover:bg-[var(--muted)] disabled:opacity-60">
+          Preview
+        </button>
+        <button type="button" onClick={() => run(false)} disabled={busy || tooMany}
+          className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
+          {busy ? "Working…" : "Apply"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BulkResult({ result, plots }: { result: PlotStatusChange; plots: PortalPlot[] }) {
+  const nameOf = (plotId: string, fallback: string | null) => {
+    const plot = plots.find((p) => p.id === plotId);
+    return plot ? `${plot.blockName ? `${plot.blockName}, ` : ""}Plot ${plot.plotNumber}` : fallback ? `Plot ${fallback}` : "Unknown plot";
+  };
+  return (
+    <div className="space-y-2" role="status">
+      <p className="text-sm text-[var(--foreground)]">
+        {result.dryRun ? "Preview: " : ""}{result.changed.length} of {result.requested} {result.dryRun ? "would change" : "changed"}
+        {result.skipped.length > 0 ? `, ${result.skipped.length} skipped` : ""}.
+      </p>
+      {result.skipped.length > 0 && (
+        <ul className="text-xs text-[var(--muted-foreground)] space-y-0.5">
+          {result.skipped.map((s) => <li key={s.plotId}>{nameOf(s.plotId, s.plotNumber)} — {s.reason}</li>)}
+        </ul>
+      )}
+      {result.dryRun && <p className="text-xs text-[var(--muted-foreground)]">Applying checks every plot again at the moment it changes.</p>}
     </div>
   );
 }
@@ -478,6 +966,7 @@ function TierImpactPreview({ tier, plots }: { tier: PortalPriceTier; plots: Plot
   const available = availableCount(plots);
   const reserved = countFor(plots, "reserved");
   const sold = countFor(plots, "sold");
+  const withheld = countFor(plots, "withheld");
 
   if (plots.total === 0) {
     return (
@@ -497,6 +986,8 @@ function TierImpactPreview({ tier, plots }: { tier: PortalPriceTier; plots: Plot
         <StatusBadge label={`${available} available`} variant="success" />
         <StatusBadge label={`${reserved} reserved`} variant={reserved > 0 ? "warning" : "neutral"} />
         <StatusBadge label={`${sold} sold`} variant="neutral" />
+        {/* Only when present: most estates never withhold a plot. */}
+        {withheld > 0 && <StatusBadge label={`${withheld} withheld`} variant="neutral" />}
       </div>
       <ul className="text-xs text-[var(--muted-foreground)] space-y-1 list-disc pl-4">
         <li>
@@ -505,7 +996,8 @@ function TierImpactPreview({ tier, plots }: { tier: PortalPriceTier; plots: Plot
         </li>
         {tier.tierType === "land_size" && (
           <li>
-            A new size applies to available plots only ({available} now). Reserved and sold plots keep the size on their deed.
+            A new size applies to available plots only ({available} now). Reserved and sold plots keep the size on their deed
+            {withheld > 0 ? "; withheld plots take the tier's size when they return to the market" : ""}.
           </li>
         )}
       </ul>
@@ -626,6 +1118,7 @@ function TierEditResult({ tierName, update, onDismiss }: { tierName: string; upd
   const change = update.sizeChange;
   const keptReserved = change ? countFor(change.keptPreviousSize, "reserved") : 0;
   const keptSold = change ? countFor(change.keptPreviousSize, "sold") : 0;
+  const keptWithheld = change ? countFor(change.keptPreviousSize, "withheld") : 0;
 
   return (
     <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 space-y-3" role="status">
@@ -649,7 +1142,9 @@ function TierEditResult({ tierName, update, onDismiss }: { tierName: string; upd
             <div className="rounded-lg border border-[var(--border)] p-3">
               <div className="text-xs text-[var(--muted-foreground)]">Kept {change.previousSizeSqm} sqm</div>
               <div className="font-mono-data text-lg text-[var(--foreground)]">{change.keptPreviousSize.total}</div>
-              <div className="text-xs text-[var(--muted-foreground)]">{keptReserved} reserved · {keptSold} sold</div>
+              <div className="text-xs text-[var(--muted-foreground)]">
+                {keptReserved} reserved · {keptSold} sold{keptWithheld > 0 ? ` · ${keptWithheld} withheld` : ""}
+              </div>
             </div>
           </div>
           <p className="text-xs text-[var(--muted-foreground)]">{change.note}</p>

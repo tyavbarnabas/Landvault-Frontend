@@ -77,34 +77,53 @@ function detectConflicts(): ListingConflict[] {
       const overlap = polygonOverlap(a.footprint, b.footprint);
       if (!overlap) continue;
 
-      const tenantA = fetchTenantByIdSync(a.tenantId);
-      const tenantB = fetchTenantByIdSync(b.tenantId);
-      const crossTenant = a.tenantId !== b.tenantId;
-
-      found.push({
-        id: newId("conflict"),
-        estateAId: a.id,
-        estateAName: a.name,
-        estateAFootprint: a.footprint,
-        tenantAId: a.tenantId,
-        tenantAName: tenantA ? tenantDisplayName(tenantA) : a.tenantId,
-        estateBId: b.id,
-        estateBName: b.name,
-        estateBFootprint: b.footprint,
-        tenantBId: b.tenantId,
-        tenantBName: tenantB ? tenantDisplayName(tenantB) : b.tenantId,
-        crossTenant,
-        severity: crossTenant ? "high" : "medium",
-        overlapAreaSqm: overlap.areaSqm,
-        overlapPctOfA: overlap.pctOfA,
-        overlapPctOfB: overlap.pctOfB,
-        detectedAt,
-        status: "open",
-      });
+      found.push(conflictBetween(a, b, overlap, detectedAt));
     }
   }
   // Worst first: high severity, then largest overlap.
   return found.sort((x, y) => (x.severity === y.severity ? y.overlapPctOfB - x.overlapPctOfB : x.severity === "high" ? -1 : 1));
+}
+
+function conflictBetween(a: Estate, b: Estate, overlap: NonNullable<ReturnType<typeof polygonOverlap>>, detectedAt: string): ListingConflict {
+  const tenantA = fetchTenantByIdSync(a.tenantId);
+  const tenantB = fetchTenantByIdSync(b.tenantId);
+  const crossTenant = a.tenantId !== b.tenantId;
+  return {
+    id: newId("conflict"),
+    estateAId: a.id,
+    estateAName: a.name,
+    estateAFootprint: a.footprint,
+    tenantAId: a.tenantId,
+    tenantAName: tenantA ? tenantDisplayName(tenantA) : a.tenantId,
+    estateBId: b.id,
+    estateBName: b.name,
+    estateBFootprint: b.footprint,
+    tenantBId: b.tenantId,
+    tenantBName: tenantB ? tenantDisplayName(tenantB) : b.tenantId,
+    crossTenant,
+    severity: crossTenant ? "high" : "medium",
+    overlapAreaSqm: overlap.areaSqm,
+    overlapPctOfA: overlap.pctOfA,
+    overlapPctOfB: overlap.pctOfB,
+    detectedAt,
+    status: "open",
+  };
+}
+
+/** Mock mode: detection for ONE estate that just gained a boundary, against
+ * every other estate — the stand-in for the backend's detectForEstateBoundary
+ * running in the same transaction. New conflicts join the store, so the
+ * readiness read and the add-boundary result agree. */
+export function detectMockConflictsForEstate(estate: Estate, others: Estate[]): ListingConflict[] {
+  const detectedAt = new Date().toISOString();
+  const found = others
+    .filter((other) => other.id !== estate.id)
+    .flatMap((other) => {
+      const overlap = polygonOverlap(estate.footprint, other.footprint);
+      return overlap ? [conflictBetween(estate, other, overlap, detectedAt)] : [];
+    });
+  store().push(...found);
+  return found;
 }
 
 // Computed once per session and then mutated in place as reviews land —

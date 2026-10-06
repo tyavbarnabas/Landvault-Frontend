@@ -27,7 +27,28 @@ export interface BoundaryFieldState {
   hasUnresolvedInput: boolean;
 }
 
-export default function BoundaryField({ onChange }: { onChange: (state: BoundaryFieldState) => void }) {
+// Required wherever the UI relies on the backend's boundary-in-state check
+// (SB-1): the state polygons are GRID3's, via geoBoundaries, CC BY 4.0.
+export const STATE_BOUNDARY_ATTRIBUTION = "State boundaries: GRID3, via geoBoundaries (CC BY 4.0)";
+
+const ESTATE_INTRO = "A GeoJSON Polygon in [longitude, latitude] order, with the ring closed — the last coordinate repeats the first. You can add this later; an estate can stay a draft until it's surveyed.";
+
+export default function BoundaryField({
+  onChange,
+  inputId = "boundary",
+  label = "Boundary (optional)",
+  intro = ESTATE_INTRO,
+  stateChecked = true,
+}: {
+  onChange: (state: BoundaryFieldState) => void;
+  // Overridable so the same field serves a plot, and a page holding two.
+  inputId?: string;
+  label?: string;
+  intro?: string;
+  // An estate boundary is checked against its declared state (SB-1); a plot's
+  // only against its estate. Controls the state note and its attribution.
+  stateChecked?: boolean;
+}) {
   const [text, setText] = useState("");
   const [polygon, setPolygon] = useState<GeoJsonPolygon | null>(null);
   const [ambiguous, setAmbiguous] = useState(false);
@@ -82,13 +103,16 @@ export default function BoundaryField({ onChange }: { onChange: (state: Boundary
 
   return (
     <div className="border-t border-[var(--border)] pt-5">
-      <label htmlFor="boundary" className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
-        Boundary (optional)
+      <label htmlFor={inputId} className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
+        {label}
       </label>
-      <p className="text-xs text-[var(--muted-foreground)] mb-3">
-        A GeoJSON Polygon in <span className="font-mono-data">[longitude, latitude]</span> order, with the ring closed — the last
-        coordinate repeats the first. You can add this later; an estate can stay a draft until it's surveyed.
-      </p>
+      <p className="text-xs text-[var(--muted-foreground)] mb-3">{intro}</p>
+      {stateChecked && (
+        <p className="text-xs text-[var(--muted-foreground)] mb-3">
+          On saving it's checked against the estate's state, with a 1 km margin for border imprecision. These are reference boundaries
+          used to catch mistakes, not a ruling on disputed borders. <span className="italic">{STATE_BOUNDARY_ATTRIBUTION}.</span>
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-3 mb-3">
         <button
@@ -117,7 +141,7 @@ export default function BoundaryField({ onChange }: { onChange: (state: Boundary
       </div>
 
       <textarea
-        id="boundary"
+        id={inputId}
         rows={7}
         value={text}
         onChange={(e) => setText(e.target.value)}

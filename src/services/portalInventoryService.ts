@@ -27,8 +27,10 @@ import type { Currency, PlotStatus } from "../data/mockData";
 export type PlotOrientation = "N" | "S" | "E" | "W" | "NE" | "NW" | "SE" | "SW";
 import { ApiError, apiClient } from "../lib/apiClient";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
-import { polygonAreaSqm } from "../lib/geometry";
-import { fetchPortalEstateById, type GeoJsonFeature, type GeoJsonFeatureCollection, type GeoJsonPolygon, type PortalScope } from "./portalEstatesService";
+import { polygonAreaSqm, polygonOverlap } from "../lib/geometry";
+import {
+  fetchEstateGeoJson, fetchPortalEstateById, registerMockCornerPremiumListener, registerMockPlotsOutsideCheck,
+  registerMockPortalPlotCounter, type GeoJsonFeature, type GeoJsonFeatureCollection, type GeoJsonPolygon, type PortalScope } from "./portalEstatesService";
 
 
 // ─── Blocks ──────────────────────────────────────────────────────────────────
@@ -78,6 +80,10 @@ export interface PortalPriceTier {
   // Also null against a real backend: `PriceTierDto` carries no such figure,
   // and figures arrive computed — this module does not divide one out.
   pricePerSqm: number | null;
+  // IE-5. Retired tiers are never deleted: they accept NO NEW plots (refused
+  // at creation, import and tier moves with TIER_RETIRED), but the plots
+  // already on them keep the tier and stay sellable at its price. Null = open.
+  retiredAt: string | null;
 }
 
 export interface CreatePriceTierInput {
@@ -299,7 +305,31 @@ const mockPlots: PortalPlot[] = [];
 // Geometry lives apart from the plot row, exactly as the backend keeps it: the
 // row carries only `hasFootprint`, and shapes are served from /geojson.
 const mockFootprints = new Map<string, GeoJsonPolygon>();
+// plots.withheld_from_status: the available variant a withheld plot came
+// from, so "available" restores it rather than flattening dev into inv.
+const mockWithheldFrom = new Map<string, "available-dev" | "available-inv">();
+// Plots that have ever been reserved or sold. Such a plot can never be
+// withdrawn (PLOT_HAS_HISTORY): reservations and sales refer to it.
+const mockPlotHistory = new Set<string>();
 let sequence = 0;
+// Lets the mock eligibility projection see plots added here (hasPlots).
+registerMockPortalPlotCounter((estateId) => mockPlots.filter((p) => p.estateId === estateId).length);
+// A corner-premium change reprices every corner plot at once (the backend
+// computes prices on read; mock rows carry a materialised price).
+registerMockCornerPremiumListener((estateId, pct) => {
+  for (const plot of mockPlots) {
+    if (plot.estateId !== estateId || !plot.isCorner) continue;
+    plot.cornerPremiumPct = pct;
+    plot.price = Math.round(plot.basePrice * (1 + pct / 100));
+    plot.pricePerSqm = plot.nominalSizeSqm ? Math.round(plot.price / plot.nominalSizeSqm) : null;
+  }
+});
+// Adding a boundary later: every plot that already has a shape must sit
+// inside it ("Block A, Plot 7" for each that doesn't).
+registerMockPlotsOutsideCheck((estateId, boundary) => mockPlots
+  .filter((p) => p.estateId === estateId && mockFootprints.has(p.id))
+  .filter((p) => mockFootprints.get(p.id)!.coordinates[0].some((point) => !insideRing(point, boundary.coordinates[0])))
+  .map((p) => `${p.blockName ? `${p.blockName}, ` : ""}Plot ${p.plotNumber}`));
 const nextId = (prefix: string) => `${prefix}-${++sequence}`;
 
 async function assertInScope(estateId: string, scope: PortalScope): Promise<boolean> {
@@ -321,6 +351,7 @@ export interface PriceTierDto {
   price: number;
   currency: Currency;
   label: string | null;
+  retiredAt: string | null;
 }
 
 interface BlockDto {
@@ -355,6 +386,7 @@ function fromPriceTierDto(dto: PriceTierDto, plotCount: number): PortalPriceTier
     label: dto.label ?? undefined,
     plotCount,
     pricePerSqm: null,
+    retiredAt: dto.retiredAt ?? null,
   };
 }
 
@@ -482,6 +514,7 @@ export async function createPriceTier(estateId: string, input: CreatePriceTierIn
     plotCount: 0,
     // Computed once, server-side, purely for comparison on screen.
     pricePerSqm: sizeSqm ? Math.round(input.price / sizeSqm) : null,
+    retiredAt: null,
   };
   mockTiers.push(tier);
   return tier;
@@ -588,7 +621,7 @@ export async function updatePriceTier(
 
   const dto: PriceTierDto = {
     id: tier.id, estateId: tier.estateId, tierType: tier.tierType, sizeSqm: tier.sizeSqm,
-    price: tier.price, currency: tier.currency, label: tier.label ?? null,
+    price: tier.price, currency: tier.currency, label: tier.label ?? null, retiredAt: tier.retiredAt,
   };
   return { tier: dto, sizeChange };
 }
@@ -649,6 +682,7 @@ export async function createPlotBatch(estateId: string, plots: CreatePlotInput[]
   // from a static fixture list (which would miss anything created at runtime).
   const estate = await fetchPortalEstateById(estateId, scope);
   const created = plots.map((input) => materialisePlot(estateId, input, estate?.cornerPremiumPct ?? 0));
+  for (const plot of created) if (plot.status === "reserved" || plot.status === "sold") mockPlotHistory.add(plot.id);
   mockPlots.push(...created);
   return created;
 }
@@ -686,6 +720,7 @@ export function planBatches(plotCount: number): number {
 function materialisePlot(estateId: string, input: CreatePlotInput, estateCornerPremiumPct: number): PortalPlot {
   const tier = mockTiers.find((t) => t.id === input.priceTierId);
   if (!tier) throw new Error("That price tier doesn't exist on this estate.");
+  if (tier.retiredAt) throw new Error(`'${tierDisplayLabel(tier)}' is a retired tier and accepts no new plots.`);
 
   // The nominal size comes FROM THE TIER — never from the caller. The override
   // is honoured only where the tier has no size of its own.
@@ -732,6 +767,11 @@ function materialisePlot(estateId: string, input: CreatePlotInput, estateCornerP
   };
 }
 
+// The tiers a NEW plot may join. Retired tiers keep their existing plots.
+export function openTiers(tiers: PortalPriceTier[]): PortalPriceTier[] {
+  return tiers.filter((t) => t.retiredAt === null);
+}
+
 export function tierDisplayLabel(tier: PortalPriceTier): string {
   if (tier.tierType === "unit_type") return tier.label ?? "Unit";
   return tier.label ? `${tier.label} (${tier.sizeSqm} sqm)` : `${tier.sizeSqm} sqm`;
@@ -739,6 +779,592 @@ export function tierDisplayLabel(tier: PortalPriceTier): string {
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+// ─── Plot status: withhold, return, bulk (IE-7, IE-8) ────────────────────────
+//
+// A developer's own switch off the market. NEVER reserved or sold — only
+// checkout reaches those (a hand-set reservation is a hold nothing releases;
+// a hand-set sale is a sale with no payment), so they are not offered.
+//   withheld       — from available-dev or available-inv
+//   available      — back to the variant the plot had before it was withheld
+//   available-dev / available-inv — set the variant explicitly
+// Buyers never see "withheld": the marketplace shows such a plot as unavailable.
+export type PlotStatusTarget = "withheld" | "available" | "available-dev" | "available-inv";
+
+// PlotStatusChangeDto.Skipped codes, transcribed from the backend.
+export type PlotStatusSkipCode = "RESERVED" | "SOLD" | "NOT_FOUND" | "ALREADY" | "NO_RECORDED_AVAILABILITY";
+
+export interface PlotStatusSkipped {
+  plotId: string;
+  plotNumber: string | null;
+  currentStatus: string | null;
+  code: PlotStatusSkipCode;
+  reason: string;
+}
+
+// PlotStatusChangeDto — the same shape for one plot or 500.
+export interface PlotStatusChange {
+  status: string;
+  requested: number;
+  changed: string[];
+  skipped: PlotStatusSkipped[];
+  dryRun: boolean;
+}
+
+// The endpoint's own cap, the same as plot creation's.
+export const BULK_STATUS_LIMIT = 500;
+
+export async function changePlotStatus(
+  estateId: string, plotId: string, input: { status: PlotStatusTarget; reason?: string }, scope: PortalScope,
+): Promise<PlotStatusChange> {
+  if (!apiClient.isMockMode) {
+    try {
+      return await apiClient.put<PlotStatusChange>(`/api/portal/estates/${estateId}/plots/${plotId}/status`, input);
+    } catch (err) {
+      throw statusChangeError(err);
+    }
+  }
+  if (!(await assertInScope(estateId, scope))) throw new InventoryEditError("form", "ESTATE_NOT_FOUND", "Estate not found.");
+  const plot = mockPlots.find((p) => p.id === plotId && p.estateId === estateId);
+  if (!plot) throw new InventoryEditError("form", "RELATED_RECORD_NOT_FOUND", "This plot no longer exists on this estate.");
+  if (plot.status === "reserved" || plot.status === "sold") {
+    throw new InventoryEditError("form", "PLOT_NOT_EDITABLE", notEditableMessage(plot.status));
+  }
+  return applyMockStatus(estateId, [plotId], input.status, false);
+}
+
+export async function changePlotStatuses(
+  estateId: string,
+  input: { plotIds: string[]; status: PlotStatusTarget; reason?: string; dryRun?: boolean },
+  scope: PortalScope,
+): Promise<PlotStatusChange> {
+  if (input.plotIds.length === 0) throw new InventoryEditError("form", "VALIDATION", "Select at least one plot.");
+  if (input.plotIds.length > BULK_STATUS_LIMIT) {
+    throw new InventoryEditError("form", "VALIDATION", `At most ${BULK_STATUS_LIMIT} plots can be changed at once.`);
+  }
+  if (!apiClient.isMockMode) {
+    try {
+      return await apiClient.post<PlotStatusChange>(`/api/portal/estates/${estateId}/plots/status`, input);
+    } catch (err) {
+      throw statusChangeError(err);
+    }
+  }
+  if (!(await assertInScope(estateId, scope))) throw new InventoryEditError("form", "ESTATE_NOT_FOUND", "Estate not found.");
+  return applyMockStatus(estateId, input.plotIds, input.status, input.dryRun ?? false);
+}
+
+function notEditableMessage(status: PlotStatus): string {
+  return status === "sold"
+    ? "This plot is sold. Only checkout changes a sold plot."
+    : "This plot is reserved by a buyer. Only checkout changes a reserved plot — it returns to the market by itself if the hold lapses.";
+}
+
+function statusChangeError(err: unknown): Error {
+  if (!(err instanceof ApiError)) return err instanceof Error ? err : new Error("Couldn't change the plot's status.");
+  const body = err.body;
+  if (err.status === 409 && body?.code === "PLOT_NOT_EDITABLE") {
+    return new InventoryEditError("form", "PLOT_NOT_EDITABLE", body.message ?? "A reserved or sold plot can't be changed here.");
+  }
+  if (err.status === 404) return new InventoryEditError("form", body?.code ?? "NOT_FOUND", "That plot no longer exists on this estate.");
+  return new InventoryEditError("form", body?.code ?? "UNKNOWN", body?.message ?? "Couldn't change the plot's status.");
+}
+
+// Mirrors PlotStatusWriter: each plot checked at the moment it changes; skip
+// and report, never all or nothing.
+function applyMockStatus(estateId: string, plotIds: string[], target: PlotStatusTarget, dryRun: boolean): PlotStatusChange {
+  const changed: string[] = [];
+  const skipped: PlotStatusSkipped[] = [];
+  for (const plotId of plotIds) {
+    const plot = mockPlots.find((p) => p.id === plotId && p.estateId === estateId);
+    if (!plot) {
+      skipped.push({ plotId, plotNumber: null, currentStatus: null, code: "NOT_FOUND", reason: "No such plot on this estate." });
+      continue;
+    }
+    const skip = (code: PlotStatusSkipCode, reason: string) =>
+      skipped.push({ plotId, plotNumber: plot.plotNumber, currentStatus: plot.status, code, reason });
+    if (plot.status === "reserved") { skip("RESERVED", "Reserved by a buyer — only checkout changes it."); continue; }
+    if (plot.status === "sold") { skip("SOLD", "Sold — only checkout changes it."); continue; }
+
+    let next: PlotStatus;
+    if (target === "withheld") {
+      if (plot.status === "withheld") { skip("ALREADY", "Already withheld."); continue; }
+      next = "withheld";
+    } else if (target === "available") {
+      if (plot.status !== "withheld") { skip("ALREADY", "Already on the market."); continue; }
+      const previous = mockWithheldFrom.get(plot.id);
+      if (!previous) { skip("NO_RECORDED_AVAILABILITY", "No record of whether this was a development or investment plot — choose one."); continue; }
+      next = previous;
+    } else {
+      if (plot.status === target) { skip("ALREADY", "Already in that status."); continue; }
+      next = target;
+    }
+
+    changed.push(plot.id);
+    if (dryRun) continue;
+    if (next === "withheld") mockWithheldFrom.set(plot.id, plot.status as "available-dev" | "available-inv");
+    else mockWithheldFrom.delete(plot.id);
+    // Returning to the market resyncs a land plot's size from its tier: a
+    // tier resize reaches available plots only, so a withheld one may lag.
+    if (plot.status === "withheld" && next !== "withheld") {
+      const tier = mockTiers.find((t) => t.id === plot.priceTierId);
+      if (tier?.tierType === "land_size" && tier.sizeSqm !== null) {
+        plot.nominalSizeSqm = tier.sizeSqm;
+        plot.pricePerSqm = Math.round(plot.price / tier.sizeSqm);
+      }
+    }
+    plot.status = next;
+  }
+  return { status: target, requested: plotIds.length, changed, skipped, dryRun };
+}
+
+// ─── Correcting a plot, moving it, withdrawing it (IE-9, IE-10, IE-11) ───────
+//
+// AVAILABLE plots only for a boundary correction or a tier move: a reserved
+// or sold plot's boundary, price and size are what a buyer agreed to
+// (PLOT_NOT_EDITABLE). Correcting a sold plot's survey is a matter for a
+// person and a legal process — a stated gap, not an oversight. Withdrawal
+// also accepts a withheld plot, but only one with no history at all.
+
+// PlotBoundaryDto. The surveyed area is recomputed — a stale one looks
+// authoritative — and plot-overlap detection re-runs, so the count of
+// overlapping plot pairs is reported before and after. Same-company overlaps
+// warn; they never block publication.
+export interface PlotBoundaryCorrection {
+  plotId: string;
+  previousActualAreaSqm: number | null;
+  actualAreaSqm: number;
+  plotOverlapsInEstateBefore: number;
+  plotOverlapsInEstateAfter: number;
+}
+
+// PlotTierChangeDto — price and size before and after.
+export interface PlotTierChange {
+  plotId: string;
+  previousTierId: string;
+  tierId: string;
+  previousNominalSizeSqm: number | null;
+  nominalSizeSqm: number | null;
+  previousPrice: number;
+  price: number;
+  currency: Currency;
+}
+
+export function isEditablePlot(plot: PortalPlot): boolean {
+  return plot.status === "available-dev" || plot.status === "available-inv";
+}
+
+// Where a plot may move: the same estate, an OPEN tier, the same currency (or
+// a naira plot silently becomes a dollar plot), and the same KIND — land to
+// land, unit to unit. Turning bare land into a built unit is a change to what
+// the plot physically is, and has no route.
+export function tierMoveTargets(plot: PortalPlot, tiers: PortalPriceTier[]): PortalPriceTier[] {
+  const current = tiers.find((t) => t.id === plot.priceTierId);
+  if (!current) return [];
+  return openTiers(tiers).filter((t) => t.id !== current.id && t.currency === current.currency && t.tierType === current.tierType);
+}
+
+const PLOT_EDIT_FIELDS: Record<string, string> = {
+  TIER_CURRENCY_MISMATCH: "tierId", TIER_RETIRED: "tierId", PROPERTY_TYPE_MISMATCH: "tierId",
+  PLOT_OUTSIDE_ESTATE: "footprint", INVALID_GEOMETRY: "footprint",
+};
+
+function plotEditError(err: unknown, fallback: string): Error {
+  if (!(err instanceof ApiError)) return err instanceof Error ? err : new Error(fallback);
+  const body = err.body;
+  const code = body?.code ?? (err.status === 404 ? "NOT_FOUND" : "UNKNOWN");
+  if (err.status === 404) return new InventoryEditError("form", code, "That plot or tier no longer exists on this estate.");
+  const fieldError = firstFieldError(body?.fieldErrors);
+  if (fieldError) return new InventoryEditError(fieldError.field, "VALIDATION", fieldError.message);
+  return new InventoryEditError(PLOT_EDIT_FIELDS[code] ?? "form", code, body?.message ?? fallback);
+}
+
+function mockEditablePlot(estateId: string, plotId: string): PortalPlot {
+  const plot = mockPlots.find((p) => p.id === plotId && p.estateId === estateId);
+  if (!plot) throw new InventoryEditError("form", "RELATED_RECORD_NOT_FOUND", "That plot no longer exists on this estate.");
+  if (!isEditablePlot(plot)) {
+    throw new InventoryEditError("form", "PLOT_NOT_EDITABLE", `${plotLabel(plot)} is ${plot.status} and can't be edited — only available plots can.`);
+  }
+  return plot;
+}
+
+function plotLabel(plot: PortalPlot): string {
+  return `${plot.blockName ? `${plot.blockName}, ` : ""}Plot ${plot.plotNumber}`;
+}
+
+function countPlotOverlaps(estateId: string): number {
+  const shapes = mockPlots
+    .filter((p) => p.estateId === estateId && mockFootprints.has(p.id))
+    .map((p) => mockFootprints.get(p.id)!.coordinates[0].map(([lng, lat]) => ({ lat, lng })));
+  let pairs = 0;
+  for (let i = 0; i < shapes.length; i++) for (let j = i + 1; j < shapes.length; j++) if (polygonOverlap(shapes[i], shapes[j])) pairs++;
+  return pairs;
+}
+
+export async function correctPlotBoundary(estateId: string, plotId: string, footprint: GeoJsonPolygon, scope: PortalScope): Promise<PlotBoundaryCorrection> {
+  if (!apiClient.isMockMode) {
+    try {
+      return await apiClient.put<PlotBoundaryCorrection>(`/api/portal/estates/${estateId}/plots/${plotId}/boundary`, { footprint });
+    } catch (err) {
+      throw plotEditError(err, "Couldn't correct the boundary.");
+    }
+  }
+  if (!(await assertInScope(estateId, scope))) throw new InventoryEditError("form", "ESTATE_NOT_FOUND", "Estate not found.");
+  const plot = mockEditablePlot(estateId, plotId);
+  const estateBoundary = (await fetchEstateGeoJson(estateId, scope))?.features.find((f) => f.geometry?.type === "Polygon")?.geometry as GeoJsonPolygon | undefined;
+  if (estateBoundary && footprint.coordinates[0].some((point) => !insideRing(point, estateBoundary.coordinates[0]))) {
+    throw new InventoryEditError("footprint", "PLOT_OUTSIDE_ESTATE", `The corrected boundary for ${plotLabel(plot)} falls outside the estate's boundary.`);
+  }
+  const before = countPlotOverlaps(estateId);
+  const previousActualAreaSqm = plot.actualAreaSqm;
+  mockFootprints.set(plot.id, footprint);
+  plot.hasFootprint = true;
+  plot.actualAreaSqm = round2(polygonAreaSqm(footprint.coordinates[0].map(([lng, lat]) => ({ lat, lng }))));
+  return {
+    plotId, previousActualAreaSqm, actualAreaSqm: plot.actualAreaSqm,
+    plotOverlapsInEstateBefore: before, plotOverlapsInEstateAfter: countPlotOverlaps(estateId),
+  };
+}
+
+export async function movePlotToTier(
+  estateId: string, plotId: string, input: { tierId: string; nominalSizeSqmOverride?: number }, scope: PortalScope,
+): Promise<PlotTierChange> {
+  if (!apiClient.isMockMode) {
+    try {
+      return await apiClient.put<PlotTierChange>(`/api/portal/estates/${estateId}/plots/${plotId}/tier`, input);
+    } catch (err) {
+      throw plotEditError(err, "Couldn't move the plot.");
+    }
+  }
+  if (!(await assertInScope(estateId, scope))) throw new InventoryEditError("form", "ESTATE_NOT_FOUND", "Estate not found.");
+  const plot = mockEditablePlot(estateId, plotId);
+  const current = mockTiers.find((t) => t.id === plot.priceTierId)!;
+  const target = mockTiers.find((t) => t.id === input.tierId && t.estateId === estateId);
+  if (!target) throw new InventoryEditError("form", "RELATED_RECORD_NOT_FOUND", "That tier no longer exists on this estate.");
+  if (target.retiredAt && target.id !== current.id) throw new InventoryEditError("tierId", "TIER_RETIRED", `'${tierDisplayLabel(target)}' is retired and accepts no new plots.`);
+  if (target.currency !== current.currency) {
+    throw new InventoryEditError("tierId", "TIER_CURRENCY_MISMATCH", `That tier is priced in ${target.currency}; this plot is in ${current.currency}.`);
+  }
+  if (target.tierType !== current.tierType) {
+    throw new InventoryEditError("tierId", "PROPERTY_TYPE_MISMATCH", "A land plot can only move to a land-size tier, and a built unit to a unit-type tier.");
+  }
+  if (target.tierType === "land_size" && input.nominalSizeSqmOverride !== undefined) {
+    throw new InventoryEditError("nominalSizeSqmOverride", "INVALID_REQUEST", "A land-size tier sets the plot's size itself — there's no size to enter.");
+  }
+
+  const previous = { tierId: plot.priceTierId, size: plot.nominalSizeSqm, price: plot.price };
+  plot.priceTierId = target.id;
+  plot.tierLabel = tierDisplayLabel(target);
+  // Land: the tier's size. Unit: keep the size unless an override is given —
+  // a move never silently clears a size.
+  plot.nominalSizeSqm = target.tierType === "land_size" ? target.sizeSqm : (input.nominalSizeSqmOverride ?? plot.nominalSizeSqm);
+  plot.basePrice = target.price;
+  plot.price = plot.cornerPremiumPct ? Math.round(target.price * (1 + plot.cornerPremiumPct / 100)) : target.price;
+  plot.pricePerSqm = plot.nominalSizeSqm ? Math.round(plot.price / plot.nominalSizeSqm) : null;
+  return {
+    plotId, previousTierId: previous.tierId, tierId: target.id,
+    previousNominalSizeSqm: previous.size, nominalSizeSqm: plot.nominalSizeSqm,
+    previousPrice: previous.price, price: plot.price, currency: plot.currency,
+  };
+}
+
+// For a plot entered by mistake. Only one with NO history: never reserved or
+// bought (an expired hold counts) and never in a conflict record — anything
+// else is PLOT_HAS_HISTORY, and withholding is the way to take it off sale.
+// The plot number can then be reused.
+export async function withdrawPlot(estateId: string, plotId: string, scope: PortalScope): Promise<void> {
+  if (!apiClient.isMockMode) {
+    try {
+      await apiClient.del(`/api/portal/estates/${estateId}/plots/${plotId}`);
+      return;
+    } catch (err) {
+      throw plotEditError(err, "Couldn't withdraw the plot.");
+    }
+  }
+  if (!(await assertInScope(estateId, scope))) throw new InventoryEditError("form", "ESTATE_NOT_FOUND", "Estate not found.");
+  const index = mockPlots.findIndex((p) => p.id === plotId && p.estateId === estateId);
+  if (index < 0) throw new InventoryEditError("form", "RELATED_RECORD_NOT_FOUND", "That plot no longer exists on this estate.");
+  const plot = mockPlots[index];
+  if (plot.status === "reserved" || plot.status === "sold") {
+    throw new InventoryEditError("form", "PLOT_NOT_EDITABLE", `${plotLabel(plot)} is ${plot.status} and can't be withdrawn.`);
+  }
+  if (mockPlotHistory.has(plot.id)) {
+    throw new InventoryEditError("form", "PLOT_HAS_HISTORY", `${plotLabel(plot)} has been reserved or bought before, so its records refer to it. Withhold it instead.`);
+  }
+  mockPlots.splice(index, 1);
+  mockFootprints.delete(plot.id);
+  mockWithheldFrom.delete(plot.id);
+}
+
+// ─── Retiring a tier (IE-5) ──────────────────────────────────────────────────
+//
+// Never a delete. A retired tier accepts no new plots, but the plots already
+// on it keep it and stay on sale at its price — withholding is how to take
+// those off the market. Reinstating undoes it.
+export async function setTierRetired(estateId: string, tierId: string, retired: boolean, scope: PortalScope): Promise<PriceTierDto> {
+  if (!apiClient.isMockMode) {
+    return apiClient.post<PriceTierDto>(`/api/portal/estates/${estateId}/price-tiers/${tierId}/${retired ? "retire" : "reinstate"}`);
+  }
+  if (!(await assertInScope(estateId, scope))) throw new Error("Estate not found.");
+  const tier = mockTiers.find((t) => t.id === tierId && t.estateId === estateId);
+  if (!tier) throw new Error("This tier no longer exists on this estate.");
+  // Already in that state is a no-op, as on the backend.
+  if (retired !== (tier.retiredAt !== null)) tier.retiredAt = retired ? new Date().toISOString() : null;
+  return {
+    id: tier.id, estateId: tier.estateId, tierType: tier.tierType, sizeSqm: tier.sizeSqm,
+    price: tier.price, currency: tier.currency, label: tier.label ?? null, retiredAt: tier.retiredAt,
+  };
+}
+
+// ─── Plot import from a surveyor's file (FU-1..FU-3) ─────────────────────────
+//
+// GeoJSON only: one Feature per plot, at most 500, [longitude, latitude] in
+// WGS 84. NOT UTM metres on the Minna datum, which is what Nigerian survey
+// software produces by default — the backend names that mistake
+// (PROJECTED_COORDINATES) rather than calling it "outside Nigeria".
+//
+// Preview reports every problem at once and writes nothing; it is not a
+// promise. Import checks everything again and is ALL OR NOTHING: any error
+// creates nothing (HTTP 422, with the report as the body).
+
+export interface PlotImportIssue {
+  // 1-based position of the feature in the file; null for a file-level issue.
+  feature: number | null;
+  plotNumber: string | null;
+  code: string;
+  message: string;
+}
+
+// PlotImportReportDto.
+export interface PlotImportReport {
+  featureCount: number;
+  importableCount: number;
+  canImport: boolean;
+  imported: boolean;
+  createdCount: number;
+  blocksToCreate: string[];
+  plotsPerTier: Record<string, number>;
+  errors: PlotImportIssue[];
+  warnings: PlotImportIssue[];
+  plotOverlapsInEstate: number | null;
+  note: string | null;
+}
+
+// Which property carries what. The defaults match the downloaded template.
+export interface PlotImportOptions {
+  status: "available-dev" | "available-inv";
+  plotNumberProperty?: string;
+  blockProperty?: string;
+  tierProperty?: string;
+  cornerProperty?: string;
+}
+
+export const PLOT_IMPORT_DEFAULTS = { plotNumberProperty: "plot_number", blockProperty: "block", tierProperty: "tier", cornerProperty: "corner" } as const;
+export const PLOT_IMPORT_LIMIT = 500;
+
+// The options travel as form fields beside the file. Spring binds multipart
+// fields as @RequestParam, so they must NOT also go in the query string — a
+// parameter sent twice arrives joined with a comma ("plot_number,plot_number").
+function importForm(file: File, options: PlotImportOptions): FormData {
+  const form = new FormData();
+  form.append("file", file);
+  const merged = { ...PLOT_IMPORT_DEFAULTS, ...options };
+  for (const [key, value] of Object.entries(merged)) if (value) form.append(key, value);
+  return form;
+}
+
+// The per-estate template: its real tier labels, two example plots inside its
+// real boundary, and the property names the import reads. A string, ready to
+// save as a .geojson file.
+export async function fetchPlotImportTemplate(estateId: string, scope: PortalScope): Promise<string> {
+  if (!apiClient.isMockMode) {
+    return JSON.stringify(await apiClient.get<unknown>(`/api/portal/estates/${estateId}/plots/import/template`), null, 2);
+  }
+  const estate = await fetchPortalEstateById(estateId, scope);
+  if (!estate) throw new Error("Estate not found.");
+  const open = openTiers(mockTiers.filter((t) => t.estateId === estateId));
+  const tierName = (t: PortalPriceTier) => t.label ?? (t.sizeSqm !== null ? String(t.sizeSqm) : "Unit");
+  const square = (lng: number, lat: number) => ({
+    type: "Polygon", coordinates: [[[lng, lat], [lng + 0.00014, lat], [lng + 0.00014, lat + 0.00014], [lng, lat + 0.00014], [lng, lat]]],
+  });
+  return JSON.stringify({
+    type: "FeatureCollection",
+    instructions: [
+      "Coordinates are [longitude, latitude] in WGS 84 (EPSG:4326) — not UTM metres.",
+      "One Feature per plot. Properties: plot_number (required), block, tier (a tier's label, or a land tier's size in sqm), corner (true/false).",
+      `Tiers on this estate: ${open.map(tierName).join(", ") || "none yet — add a tier first"}.`,
+      "The example coordinates are placeholders. Replace them with your surveyed shapes.",
+    ],
+    features: [1, 2].map((n) => ({
+      type: "Feature",
+      properties: { plot_number: String(n), block: "A", tier: open[0] ? tierName(open[0]) : "", corner: false },
+      geometry: square(7.414 + n * 0.0002, 9.107),
+    })),
+  }, null, 2);
+}
+
+export async function previewPlotImport(estateId: string, file: File, options: PlotImportOptions, scope: PortalScope): Promise<PlotImportReport> {
+  if (!apiClient.isMockMode) {
+    return apiClient.postForm<PlotImportReport>(`/api/portal/estates/${estateId}/plots/import/preview`, importForm(file, options));
+  }
+  return mockAnalyseImport(estateId, await file.text(), options, scope);
+}
+
+// All or nothing. A file with errors is NOT thrown as a failure: the 422's
+// body is the full report, which is exactly what the screen needs to show.
+export async function importPlots(estateId: string, file: File, options: PlotImportOptions, scope: PortalScope): Promise<PlotImportReport> {
+  if (!apiClient.isMockMode) {
+    try {
+      return await apiClient.postForm<PlotImportReport>(`/api/portal/estates/${estateId}/plots/import`, importForm(file, options));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 422 && err.body) return err.body as unknown as PlotImportReport;
+      throw err;
+    }
+  }
+  const report = await mockAnalyseImport(estateId, await file.text(), options, scope);
+  if (!report.canImport) return report;
+
+  // Missing blocks first, matched case-insensitively ("a" and "A" are one).
+  for (const name of report.blocksToCreate) await createBlock(estateId, { name }, scope);
+  const blocks = mockBlocks.filter((b) => b.estateId === estateId);
+  const parsed = JSON.parse(await file.text()) as { features: ImportFeature[] };
+  const keys = { ...PLOT_IMPORT_DEFAULTS, ...options };
+  const inputs: CreatePlotInput[] = parsed.features.map((f) => {
+    const props = f.properties ?? {};
+    const blockName = String(props[keys.blockProperty] ?? "").trim();
+    return {
+      plotNumber: String(props[keys.plotNumberProperty]).trim(),
+      blockId: blockName ? blocks.find((b) => b.name.toLowerCase() === blockName.toLowerCase())?.id : undefined,
+      priceTierId: matchTier(estateId, props[keys.tierProperty]).tier!.id,
+      isCorner: props[keys.cornerProperty] === true || String(props[keys.cornerProperty]).toLowerCase() === "true",
+      status: options.status,
+      footprint: polygonOf(f.geometry)!,
+    };
+  });
+  const created = await createPlotBatch(estateId, inputs, scope);
+  return { ...report, imported: true, createdCount: created.length };
+}
+
+interface ImportFeature {
+  type?: string;
+  properties?: Record<string, unknown> | null;
+  geometry?: { type?: string; coordinates?: unknown } | null;
+}
+
+// A Polygon, or a single-part MultiPolygon (how QGIS exports single shapes).
+function polygonOf(geometry: ImportFeature["geometry"]): GeoJsonPolygon | null {
+  if (geometry?.type === "Polygon") return geometry as GeoJsonPolygon;
+  if (geometry?.type === "MultiPolygon" && Array.isArray(geometry.coordinates) && geometry.coordinates.length === 1) {
+    return { type: "Polygon", coordinates: geometry.coordinates[0] as [number, number][][] };
+  }
+  return null;
+}
+
+// A tier's label (case-insensitive) or, failing that, a land tier's size.
+function matchTier(estateId: string, value: unknown): { tier?: PortalPriceTier; code?: string; message?: string } {
+  const raw = String(value ?? "").trim();
+  if (!raw) return { code: "UNKNOWN_TIER", message: "No tier given." };
+  const tiers = mockTiers.filter((t) => t.estateId === estateId);
+  let matches = tiers.filter((t) => t.label?.toLowerCase() === raw.toLowerCase());
+  if (matches.length === 0 && !Number.isNaN(Number(raw))) matches = tiers.filter((t) => t.tierType === "land_size" && t.sizeSqm === Number(raw));
+  if (matches.length === 0) return { code: "UNKNOWN_TIER", message: `'${raw}' doesn't match any tier's label or size on this estate.` };
+  if (matches.length > 1) return { code: "AMBIGUOUS_TIER", message: `'${raw}' matches more than one tier.` };
+  if (matches[0].retiredAt) return { code: "TIER_RETIRED", message: `'${raw}' is a retired tier and accepts no new plots.` };
+  return { tier: matches[0] };
+}
+
+function insideRing(point: [number, number], ring: [number, number][]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if ((yi > point[1]) !== (yj > point[1]) && point[0] < ((xj - xi) * (point[1] - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+// Stands in for PlotImportService's analysis. Overlap warnings are NOT
+// simulated here (the backend measures them in the database); mock mode says
+// so in `note` rather than reporting a clean zero it never checked.
+async function mockAnalyseImport(estateId: string, text: string, options: PlotImportOptions, scope: PortalScope): Promise<PlotImportReport> {
+  const empty: PlotImportReport = {
+    featureCount: 0, importableCount: 0, canImport: false, imported: false, createdCount: 0,
+    blocksToCreate: [], plotsPerTier: {}, errors: [], warnings: [], plotOverlapsInEstate: null,
+    note: "Demo mode: overlaps between plots aren't checked here. The real import measures them.",
+  };
+  const fileError = (code: string, message: string): PlotImportReport => ({ ...empty, errors: [{ feature: null, plotNumber: null, code, message }] });
+
+  if (!(await assertInScope(estateId, scope))) throw new Error("Estate not found.");
+  let parsed: { type?: string; features?: ImportFeature[]; crs?: { properties?: { name?: string } } };
+  try { parsed = JSON.parse(text); } catch { return fileError("INVALID_FILE", "This isn't valid JSON. Export the plots from QGIS as GeoJSON."); }
+  if (parsed?.type !== "FeatureCollection" || !Array.isArray(parsed.features)) {
+    return fileError("INVALID_FILE", "Expected a GeoJSON FeatureCollection with one Feature per plot.");
+  }
+  const crs = parsed.crs?.properties?.name;
+  if (crs && !/4326|CRS84/i.test(crs)) {
+    return fileError("PROJECTED_COORDINATES", `This file uses ${crs}. Re-export it in WGS 84 (EPSG:4326), longitude then latitude.`);
+  }
+  if (parsed.features.length > PLOT_IMPORT_LIMIT) {
+    return fileError("TOO_MANY_FEATURES", `At most ${PLOT_IMPORT_LIMIT} plots per file; this one has ${parsed.features.length}.`);
+  }
+
+  const keys = { ...PLOT_IMPORT_DEFAULTS, ...options };
+  const boundary = (await fetchEstateGeoJson(estateId, scope))?.features.find((f) => f.geometry?.type === "Polygon")?.geometry as GeoJsonPolygon | undefined;
+  const existingBlocks = mockBlocks.filter((b) => b.estateId === estateId).map((b) => b.name.toLowerCase());
+  const existingNumbers = new Set(mockPlots.filter((p) => p.estateId === estateId).map((p) => `${(p.blockName ?? "").toLowerCase()}|${p.plotNumber.toLowerCase()}`));
+  const seen = new Set<string>();
+  const errors: PlotImportIssue[] = [];
+  const blocksToCreate = new Map<string, string>();
+  const plotsPerTier: Record<string, number> = {};
+  let importable = 0;
+
+  parsed.features.forEach((feature, index) => {
+    const position = index + 1;
+    const props = feature.properties ?? {};
+    const plotNumber = String(props[keys.plotNumberProperty] ?? "").trim() || null;
+    const blockName = String(props[keys.blockProperty] ?? "").trim();
+    const issue = (code: string, message: string) => errors.push({ feature: position, plotNumber, code, message });
+    const before = errors.length;
+
+    if (!plotNumber) issue("MISSING_PLOT_NUMBER", `No '${keys.plotNumberProperty}' property.`);
+    const key = `${blockName.toLowerCase()}|${(plotNumber ?? "").toLowerCase()}`;
+    if (plotNumber && seen.has(key)) issue("DUPLICATE_PLOT_NUMBER", "This plot number appears more than once in the file for the same block.");
+    if (plotNumber && existingNumbers.has(key)) issue("PLOT_NUMBER_EXISTS", "This plot number already exists on the estate in that block.");
+    seen.add(key);
+
+    const tier = matchTier(estateId, props[keys.tierProperty]);
+    if (!tier.tier) issue(tier.code!, tier.message!);
+
+    const polygon = polygonOf(feature.geometry);
+    const ring = polygon?.coordinates?.[0];
+    if (!polygon || !Array.isArray(ring) || ring.length < 4) {
+      issue("INVALID_GEOMETRY", "Each plot needs one closed Polygon (a multi-part shape isn't one plot).");
+    } else if (ring.some(([lng, lat]) => Math.abs(lng) > 180 || Math.abs(lat) > 90)) {
+      issue("PROJECTED_COORDINATES", "These look like UTM metres, not longitude/latitude. Re-export in WGS 84 (EPSG:4326).");
+    } else if (boundary && ring.some((point) => !insideRing(point, boundary.coordinates[0]))) {
+      issue("OUTSIDE_ESTATE", "This plot isn't inside the estate's boundary — check for swapped longitude and latitude.");
+    }
+
+    if (errors.length === before) {
+      importable++;
+      // First spelling in the file wins; "a" and "A" are one block.
+      if (blockName && !existingBlocks.includes(blockName.toLowerCase()) && !blocksToCreate.has(blockName.toLowerCase())) {
+        blocksToCreate.set(blockName.toLowerCase(), blockName);
+      }
+      const label = tierDisplayLabel(tier.tier!);
+      plotsPerTier[label] = (plotsPerTier[label] ?? 0) + 1;
+    }
+  });
+
+  return {
+    ...empty,
+    featureCount: parsed.features.length,
+    importableCount: importable,
+    canImport: parsed.features.length > 0 && errors.length === 0,
+    blocksToCreate: [...blocksToCreate.values()],
+    plotsPerTier,
+    errors,
+  };
 }
 
 // ─── Map data ────────────────────────────────────────────────────────────────

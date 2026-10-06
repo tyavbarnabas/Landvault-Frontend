@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { NIGERIAN_STATES, type NigerianState } from "../../../data/nigerianStates";
 import { createPortalEstate, type GeoJsonPolygon } from "../../../services/portalEstatesService";
 import BoundaryField, { type BoundaryFieldState } from "../../../components/portal/BoundaryField";
+import { serverMessage } from "../../../components/portal/formParts";
 import { usePortalScope } from "../usePortalScope";
 import { useApp } from "../../../contexts/AppContext";
 
@@ -68,8 +69,17 @@ export default function CreatePortalEstate() {
         branchId: branchId.trim(),
       }, scope);
       navigate(`/portal/estates/${created.id}`);
-    } catch {
-      setFormError("Couldn't create the estate. Please try again.");
+    } catch (err) {
+      // The state check (SB-1) names the state the boundary actually falls
+      // in — exactly what a developer needs, so it's shown, not swallowed.
+      const code = (err as { body?: { code?: string } }).body?.code;
+      if (code === "BOUNDARY_OUTSIDE_STATE") {
+        setFormError(`${serverMessage(err, "")} If the land genuinely sits on a disputed border, create the estate without a boundary and contact support — they can verify the state by hand.`);
+      } else if (code === "UNKNOWN_STATE" || code === "INVALID_GEOMETRY" || code === "DUPLICATE_RECORD") {
+        setFormError(serverMessage(err, "Couldn't create the estate."));
+      } else {
+        setFormError("Couldn't create the estate. Please try again.");
+      }
       setSubmitting(false);
     }
   };
