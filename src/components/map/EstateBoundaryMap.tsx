@@ -58,7 +58,11 @@ export default function EstateBoundaryMap({ boundary, heightClass = "h-80", labe
   if (!bounds.isValid()) return null;
 
   return (
-    <div className={`${heightClass} rounded-xl overflow-hidden border border-[var(--border)]`}>
+    // The height belongs to the map alone. Inside one fixed-height,
+    // overflow-hidden box the legend was pushed past the bottom edge and
+    // clipped — every legend this component was ever given went unseen.
+    <div className="rounded-xl overflow-hidden border border-[var(--border)]">
+      <div className={heightClass}>
       <MapContainer bounds={bounds} scrollWheelZoom={false} className="w-full h-full" aria-label={label ?? "Estate boundary on satellite imagery"}>
         <TileLayer url={ESRI_IMAGERY_URL} attribution={ESRI_ATTRIBUTION} maxZoom={19} />
         {/* Leaflet's GeoJSON component, never a hand-built Polygon. */}
@@ -73,6 +77,7 @@ export default function EstateBoundaryMap({ boundary, heightClass = "h-80", labe
         />
         <FitToBoundary bounds={bounds} />
       </MapContainer>
+      </div>
       {legend && legend.length > 0 && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 px-3 py-2 bg-[var(--card)] border-t border-[var(--border)]">
           {legend.map((entry) => (

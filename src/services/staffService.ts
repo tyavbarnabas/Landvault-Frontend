@@ -23,46 +23,73 @@ import { mockBranchNameFor } from "./branchesService";
 
 // ─── Roles ───────────────────────────────────────────────────────────────────
 //
-// There is NO endpoint that lists roles, so this is transcribed from the
-// backend: names from changeset 015, scopes from changeset 067's roles.scope.
-//   COMPANY — organisation-wide only; a branch is REFUSED
-//   BRANCH  — must name a branch
-//   EITHER  — a branch is optional
-// Roles with no scope (buyer, platform roles) aren't assignable by a tenant.
-export type RoleScope = "COMPANY" | "BRANCH" | "EITHER";
+// GET /api/portal/roles lists every role a tenant may assign, so the portal
+// never hard-codes them — companies may make their own one day (`custom`).
+// `scope` decides the branch:
+//   company — organisation-wide only; a branch is REFUSED
+//   branch  — must name a branch
+//   either  — a branch is optional
+// `canGrant` is whether THIS caller holds every permission the role carries
+// (SI-4, computed by the same backend rule that enforces it). A branch
+// manager may still REQUEST a role they can't grant: the approver is checked.
+export type RoleScope = "company" | "branch" | "either";
 
-export interface TenantRole {
+// AssignableRoleDto.
+export interface AssignableRole {
   code: string;
   name: string;
+  description: string | null;
   scope: RoleScope;
+  permissions: string[];
+  canGrant: boolean;
+  custom: boolean;
 }
 
-export const TENANT_ROLES: TenantRole[] = [
-  { code: "executive_director", name: "Executive Director", scope: "COMPANY" },
-  { code: "branch_manager", name: "Branch Manager", scope: "BRANCH" },
-  { code: "sales_manager", name: "Sales Manager", scope: "EITHER" },
-  { code: "surveyor_project_manager", name: "Surveyor / Project Manager", scope: "EITHER" },
-  { code: "finance_officer", name: "Finance Officer", scope: "EITHER" },
-  { code: "legal_officer", name: "Legal Officer", scope: "EITHER" },
+// MOCK MODE ONLY — standing in for GET /api/portal/roles. Names from
+// changeset 015, scopes from 067, permissions from 041/045/065/067/068.
+export const MOCK_ROLES: Omit<AssignableRole, "canGrant">[] = [
+  { code: "executive_director", name: "Executive Director", description: "Runs the company across every branch.", scope: "company", permissions: mockPermissionsForRole("executive_director"), custom: false },
+  { code: "branch_manager", name: "Branch Manager", description: "Runs one branch, and asks head office for staff.", scope: "branch", permissions: mockPermissionsForRole("branch_manager"), custom: false },
+  { code: "sales_manager", name: "Sales Manager", description: null, scope: "either", permissions: mockPermissionsForRole("sales_manager"), custom: false },
+  { code: "surveyor_project_manager", name: "Surveyor / Project Manager", description: "Builds and maintains estate inventory.", scope: "either", permissions: mockPermissionsForRole("surveyor_project_manager"), custom: false },
+  { code: "finance_officer", name: "Finance Officer", description: null, scope: "either", permissions: mockPermissionsForRole("finance_officer"), custom: false },
+  { code: "legal_officer", name: "Legal Officer", description: null, scope: "either", permissions: mockPermissionsForRole("legal_officer"), custom: false },
 ];
 
 export type BranchRule = "required" | "forbidden" | "optional";
 
 // Drives the form: the branch picker is required, hidden or optional
-// according to the role chosen, so an invalid pair is never submitted.
-export function branchRuleFor(roleCode: string): BranchRule {
-  const scope = TENANT_ROLES.find((r) => r.code === roleCode)?.scope;
-  return scope === "COMPANY" ? "forbidden" : scope === "BRANCH" ? "required" : "optional";
+// according to the role's scope, so an invalid pair is never submitted.
+export function branchRuleForScope(scope: RoleScope): BranchRule {
+  return scope === "company" ? "forbidden" : scope === "branch" ? "required" : "optional";
 }
 
-export function roleName(roleCode: string): string {
-  return TENANT_ROLES.find((r) => r.code === roleCode)?.name ?? roleCode;
+// By code, against a role list (the fetched one, or the mock catalogue). A
+// role the list doesn't know is left to the backend to judge.
+export function branchRuleFor(roleCode: string, roles: Pick<AssignableRole, "code" | "scope">[] = MOCK_ROLES): BranchRule {
+  const role = roles.find((r) => r.code === roleCode);
+  return role ? branchRuleForScope(role.scope) : "optional";
 }
 
-// What a branch manager may ask for: anything branch-level — surveyor
-// included, even though they don't hold its permissions themselves. The grant
-// (and the "never grant what you don't hold" check) happens at approval.
-export const REQUESTABLE_ROLES = TENANT_ROLES.filter((r) => r.scope !== "COMPANY");
+export function roleName(roleCode: string, roles: Pick<AssignableRole, "code" | "name">[] = MOCK_ROLES): string {
+  return roles.find((r) => r.code === roleCode)?.name ?? roleCode;
+}
+
+// What a branch manager may ask for: anything branch-level.
+export function requestableRoles<T extends Pick<AssignableRole, "scope">>(roles: T[]): T[] {
+  return roles.filter((r) => r.scope !== "company");
+}
+
+function holdsAll(held: string[] | undefined, needed: string[]): boolean {
+  // Without the caller's permissions in hand (a caller built without them),
+  // the mock can't judge — the real backend always can.
+  return !held || needed.every((p) => held.includes(p));
+}
+
+export async function fetchAssignableRoles(caller: StaffCaller): Promise<AssignableRole[]> {
+  if (!apiClient.isMockMode) return apiClient.get<AssignableRole[]>("/api/portal/roles");
+  return MOCK_ROLES.map((r) => ({ ...r, permissions: [...r.permissions], canGrant: holdsAll(caller.permissions, r.permissions) }));
+}
 
 // ─── Types (DTOs) ────────────────────────────────────────────────────────────
 
@@ -129,6 +156,9 @@ export interface InviteInput {
   lastName: string;
   roleCode: string;
   branchId?: string;
+  // The chosen role's scope, from the fetched role list, so the branch rule
+  // is checked against what the backend said — never a guess. Not sent.
+  scope?: RoleScope;
 }
 
 // Who is acting — for the mock to stand in for TenantContext and the token's
@@ -138,6 +168,8 @@ export interface StaffCaller {
   branchId: string | null;
   email: string;
   userId?: string;
+  // Mock mode uses these for SI-4 ("never grant what you don't hold").
+  permissions?: string[];
 }
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
@@ -203,8 +235,8 @@ function validateInvite(input: InviteInput): void {
   if (!input.firstName.trim()) throw new StaffError("firstName", "VALIDATION", "Enter their first name.");
   if (!input.lastName.trim()) throw new StaffError("lastName", "VALIDATION", "Enter their last name.");
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input.email.trim())) throw new StaffError("email", "VALIDATION", "Enter a valid email address.");
-  if (!TENANT_ROLES.some((r) => r.code === input.roleCode)) throw new StaffError("roleCode", "VALIDATION", "Choose a role.");
-  const rule = branchRuleFor(input.roleCode);
+  if (!input.roleCode) throw new StaffError("roleCode", "VALIDATION", "Choose a role.");
+  const rule = input.scope ? branchRuleForScope(input.scope) : branchRuleFor(input.roleCode);
   if (rule === "required" && !input.branchId) throw new StaffError("branchId", "VALIDATION", `A ${roleName(input.roleCode)} runs a branch — choose which one.`);
   if (rule === "forbidden" && input.branchId) throw new StaffError("branchId", "VALIDATION", `A ${roleName(input.roleCode)} is company-wide and can't be limited to a branch.`);
 }
@@ -213,7 +245,7 @@ function inviteBody(input: InviteInput): Record<string, string> {
   return {
     email: input.email.trim(), firstName: input.firstName.trim(), lastName: input.lastName.trim(), roleCode: input.roleCode,
     // Left out entirely for a company-wide role — the backend refuses one.
-    ...(input.branchId && branchRuleFor(input.roleCode) !== "forbidden" ? { branchId: input.branchId } : {}),
+    ...(input.branchId && (input.scope ? branchRuleForScope(input.scope) : branchRuleFor(input.roleCode)) !== "forbidden" ? { branchId: input.branchId } : {}),
   };
 }
 
@@ -311,7 +343,9 @@ export async function inviteStaff(input: InviteInput, caller: StaffCaller): Prom
 // picker, and any other branch is refused.
 export async function requestStaff(input: Omit<InviteInput, "branchId">, caller: StaffCaller): Promise<StaffInvitation> {
   const full: InviteInput = { ...input, branchId: caller.branchId ?? undefined };
-  if (branchRuleFor(input.roleCode) === "forbidden") throw new StaffError("roleCode", "ROLE_SCOPE_MISMATCH", "A company-wide role can't be requested for a branch.");
+  if ((input.scope ? branchRuleForScope(input.scope) : branchRuleFor(input.roleCode)) === "forbidden") {
+    throw new StaffError("roleCode", "ROLE_SCOPE_MISMATCH", "A company-wide role can't be requested for a branch.");
+  }
   validateInvite(full);
   if (!apiClient.isMockMode) {
     try {
@@ -327,7 +361,15 @@ export async function requestStaff(input: Omit<InviteInput, "branchId">, caller:
   return mockCreate(full, caller, true);
 }
 
+function mockRole(roleCode: string) {
+  const role = MOCK_ROLES.find((r) => r.code === roleCode);
+  if (!role) throw fail("ROLE_NOT_INVITABLE");
+  return role;
+}
+
 function mockCreate(input: InviteInput, caller: StaffCaller, request: boolean): StaffInvitation {
+  // SI-4 applies to whoever GRANTS: the inviter here, the approver for a request.
+  if (!request && !holdsAll(caller.permissions, mockRole(input.roleCode).permissions)) throw fail("CANNOT_GRANT_ROLE");
   if (mockEmailTaken(caller.tenantId, input.email)) throw fail("EMAIL_HAS_ACCOUNT");
   const open = mockInvitations.some((i) => i.tenantId === caller.tenantId && i.email.toLowerCase() === input.email.trim().toLowerCase()
     && (i.status === "pending" || i.status === "awaiting_approval"));
@@ -373,6 +415,7 @@ export async function actOnInvitation(id: string, action: InvitationAction, call
       if (caller.branchId) throw fail("INVITATIONS_REQUIRE_COMPANY_WIDE_SCOPE");
       if (inv.status !== "awaiting_approval") throw fail("INVITATION_NOT_AWAITING_APPROVAL");
       if (Date.parse(inv.expiresAt) < Date.now()) throw fail("INVITATION_REQUEST_EXPIRED");
+      if (!holdsAll(caller.permissions, mockRole(inv.roleCode).permissions)) throw fail("CANNOT_GRANT_ROLE");
       // Re-checked: an account may have appeared while the request waited.
       if (mockEmailTaken(caller.tenantId, inv.email)) throw fail("EMAIL_HAS_ACCOUNT");
       inv.approvedAt = new Date().toISOString();
@@ -544,8 +587,8 @@ function mockRequireAnotherDirector(member: StaffMember, tenantId: string): void
 // Replaces EVERY role the person holds with this one, under the same rules as
 // an invitation. Their sessions end — but an access token already issued
 // rides out its remaining 15 minutes. Not instant.
-export async function changeStaffRole(userId: string, input: { roleCode: string; branchId?: string }, caller: StaffCaller): Promise<StaffMember> {
-  const rule = branchRuleFor(input.roleCode);
+export async function changeStaffRole(userId: string, input: { roleCode: string; branchId?: string; scope?: RoleScope }, caller: StaffCaller): Promise<StaffMember> {
+  const rule = input.scope ? branchRuleForScope(input.scope) : branchRuleFor(input.roleCode);
   if (rule === "required" && !input.branchId) throw new StaffError("branchId", "VALIDATION", `A ${roleName(input.roleCode)} runs a branch — choose which one.`);
   const body = { roleCode: input.roleCode, ...(input.branchId && rule !== "forbidden" ? { branchId: input.branchId } : {}) };
   if (!apiClient.isMockMode) {
@@ -556,6 +599,7 @@ export async function changeStaffRole(userId: string, input: { roleCode: string;
     }
   }
   const member = mockManageable(userId, caller);
+  if (!holdsAll(caller.permissions, mockRole(input.roleCode).permissions)) throw fail("CANNOT_GRANT_ROLE");
   if (input.roleCode !== "executive_director") mockRequireAnotherDirector(member, caller.tenantId);
   const branchId = rule === "forbidden" ? null : (input.branchId ?? null);
   member.roles = [{ roleCode: input.roleCode, roleName: roleName(input.roleCode), branchId, branchName: mockBranchName(caller.tenantId, branchId) }];

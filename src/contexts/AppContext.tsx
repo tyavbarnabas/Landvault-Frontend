@@ -63,10 +63,45 @@ interface AppContextValue {
 // restored from the refresh cookie on load, or there isn't one.
 const DEFAULT_USER: User = MOCK_CLIENT_USER;
 
+// Mock mode only. With no backend there's no refresh cookie to restore a
+// session from, so the signed-in user lived only in memory — and ANY reload
+// (Chrome's Memory Saver waking a slept tab, a dev-server full reload, F5)
+// silently replaced a director with the demo buyer. The session is kept in
+// this tab's sessionStorage instead: a reload keeps whoever signed in, and a
+// sign-out is remembered as a sign-out. Real mode never uses this — it
+// restores from the HttpOnly refresh cookie.
+const MOCK_SESSION_KEY = "lv_mock_session";
+
+// undefined = nothing stored (first visit: the demo buyer); null = signed out.
+function readMockSession(): User | null | undefined {
+  try {
+    const raw = sessionStorage.getItem(MOCK_SESSION_KEY);
+    return raw === null ? undefined : (JSON.parse(raw) as User | null);
+  } catch {
+    return undefined;
+  }
+}
+
+function writeMockSession(user: User | null): void {
+  try { sessionStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(user)); } catch { /* storage unavailable: memory only */ }
+}
+
+function initialUser(): User | null {
+  if (!IS_MOCK_MODE) return null;
+  const stored = readMockSession();
+  return stored === undefined ? DEFAULT_USER : stored;
+}
+
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(IS_MOCK_MODE ? DEFAULT_USER : null);
+  const [user, setUser] = useState<User | null>(initialUser);
+
+  // Mock mode: every change to the user — sign-in, sign-out, a changed
+  // password or currency — is what a reload comes back to.
+  useEffect(() => {
+    if (IS_MOCK_MODE) writeMockSession(user);
+  }, [user]);
   const [restoringSession, setRestoringSession] = useState(!IS_MOCK_MODE);
   const [signOutNotice, setSignOutNotice] = useState<string | null>(null);
   const [sessionProblem, setSessionProblem] = useState<"origin_not_allowed" | "unreachable" | null>(null);
@@ -100,7 +135,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }), []);
   const [savedPlots, setSavedPlots] = useState<string[]>(["peaceland:2-7", "sunrise-gardens:5-3"]);
   const [wishlist, setWishlist] = useState<WishlistItem[]>([]);
-  const [currency, setCurrencyState] = useState<Currency>(DEFAULT_USER.currency);
+  const [currency, setCurrencyState] = useState<Currency>(() => user?.currency ?? DEFAULT_USER.currency);
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   useEffect(() => {

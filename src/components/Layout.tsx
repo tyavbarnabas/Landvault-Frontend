@@ -58,6 +58,7 @@ const NAV_SECTIONS = [
       { path: "/admin/dashboard", label: "Dashboard", icon: GridIcon, permission: "admin.dashboard.view" },
       { path: "/admin/tenants", label: "Tenants", icon: BriefcaseIcon, permission: "admin.tenants.view" },
       { path: "/admin/listing-conflicts", label: "Listing conflicts", icon: AlertTriangleIcon, permission: "admin.marketplace.conflicts" },
+      { path: "/admin/boundary-changes", label: "Boundary changes", icon: MapIcon, permission: "admin.marketplace.conflicts" },
       { path: "/admin/estate-state-override", label: "State overrides", icon: MapIcon, permission: "admin.marketplace.conflicts" },
     ],
   },

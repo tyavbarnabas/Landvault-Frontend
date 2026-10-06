@@ -56,6 +56,7 @@ const STEPS = [Step1CompanyIdentity, Step2PrimaryContact, Step3ContactPresence, 
 
 export default function OnboardingWizard() {
   const navigate = useNavigate();
+  const [submitError, setSubmitError] = useState("");
   const form = useForm<TenantOnboardingValues>({
     resolver: zodResolver(tenantOnboardingSchema),
     defaultValues: getOnboardingDefaultValues(),
@@ -104,7 +105,31 @@ export default function OnboardingWizard() {
     await handleSubmitForVerification();
   };
 
+  // A refusal must never leave the button stuck on "Submitting". The two the
+  // backend names go back to the field they're about; anything else is said
+  // plainly at the top.
   const handleSubmitForVerification = async () => {
+    setSubmitError("");
+    try {
+      await submitForVerificationUnsafe();
+    } catch (err) {
+      setSubmitting(false);
+      const code = (err as { body?: { code?: string } }).body?.code;
+      if (code === "EMAIL_ALREADY_REGISTERED") {
+        // The primary contact becomes the first Executive Director by
+        // invitation — which needs an email with no LandVault account yet.
+        goToStep(1);
+        form.setError("workEmail", { message: "This email already has a LandVault account. Use the contact's work email — the first Executive Director is invited, and needs an address with no account yet." });
+      } else if (code === "RC_NUMBER_ALREADY_REGISTERED") {
+        goToStep(0);
+        form.setError("rcNumber", { message: "A company with this RC number is already registered on LandVault." });
+      } else {
+        setSubmitError("Couldn't create the tenant. Nothing was submitted — please try again.");
+      }
+    }
+  };
+
+  const submitForVerificationUnsafe = async () => {
     setSubmitting(true);
     const v = getValues();
 
@@ -195,6 +220,9 @@ export default function OnboardingWizard() {
           <span>Resumed from a saved draft. Files aren't stored in drafts — please re-attach any documents you'd uploaded before.</span>
           <button type="button" onClick={() => setDraftNotice(false)} className="text-blue-800 font-medium ml-3 shrink-0">Dismiss</button>
         </div>
+      )}
+      {submitError && (
+        <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-800" role="alert">{submitError}</div>
       )}
       {savedNotice && (
         <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-xs text-emerald-800">Draft saved — you can come back and continue later.</div>

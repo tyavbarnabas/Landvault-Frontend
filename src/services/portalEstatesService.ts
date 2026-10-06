@@ -14,11 +14,12 @@
 // scope — a caller that passes a branch gets that branch.
 
 import { ESTATES, type Estate, type GeoPoint } from "../data/mockData";
-import { polygonAreaSqm } from "../lib/geometry";
+import { polygonAreaSqm, polygonOverlap } from "../lib/geometry";
 import { apiClient, ApiError } from "../lib/apiClient";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import { fetchTenantByIdSync } from "./tenantsService";
-import { detectMockConflictsForEstate, fetchConflicts } from "./listingConflictsService";
+import { fetchConflicts, redetectMockConflictsForEstate } from "./listingConflictsService";
+import type { ConflictChanges } from "./conflictChanges";
 import { fetchCostDisclosure, isGrandfathered } from "./costDisclosureService";
 import { mockHasDeclaredFees, mockHasDeclaredRefundTerms } from "./estateDisclosureService";
 import type { NigerianState } from "../data/nigerianStates";
@@ -872,6 +873,9 @@ export interface EstateBoundaryResult {
   publicationBlocked: boolean;
   blockReason: string | null;
   warningConflictCount: number;
+  // Which conflicts this raised, resolved, left awaiting review or left open —
+  // the caller's side only. The counts above remain for compatibility.
+  conflictChanges: ConflictChanges | null;
 }
 
 export async function addEstateBoundary(id: string, boundary: GeoJsonPolygon, scope: PortalScope): Promise<EstateBoundaryResult> {
@@ -905,16 +909,213 @@ export async function addEstateBoundary(id: string, boundary: GeoJsonPolygon, sc
   }
   // Same shape createPortalEstate stores: the ring as given.
   estate.footprint = ring;
-  const conflicts = detectMockConflictsForEstate(estate, mockStore());
-  const high = conflicts.filter((c) => c.severity === "high");
+  return { estateId: id, footprintAreaSqm: Math.round(boundaryAreaSqm(boundary) * 100) / 100, ...mockDetectionOutcome(estate) };
+}
+
+// After an estate's boundary is set or changed: re-run detection and report
+// it the way the backend does — blocked or not, the reason, the warning
+// count, and the itemised changes. Never names the other party.
+function mockDetectionOutcome(estate: Estate): Pick<EstateBoundaryResult, "publicationBlocked" | "blockReason" | "warningConflictCount" | "conflictChanges"> {
+  const changes = redetectMockConflictsForEstate(estate, mockStore());
+  const live = [...changes.raised, ...changes.awaitingReview, ...changes.stillOpen];
+  const blocking = live.filter((c) => c.blocksPublication);
   return {
-    estateId: id,
-    footprintAreaSqm: Math.round(boundaryAreaSqm(boundary) * 100) / 100,
-    publicationBlocked: high.length > 0,
-    // Never names the other party.
-    blockReason: high.length > 0 ? "This boundary overlaps land registered by another company. It's been flagged for review." : null,
-    warningConflictCount: conflicts.length - high.length,
+    publicationBlocked: blocking.length > 0,
+    blockReason: blocking.length > 0 ? "This boundary overlaps land registered by another company, so the estate is off the marketplace until that's resolved." : null,
+    warningConflictCount: live.filter((c) => !c.blocksPublication).length,
+    conflictChanges: changes,
   };
+}
+
+// ─── Correcting a boundary: PUT /api/portal/estates/{id}/boundary ───────────
+//
+// Applied at once (200, "applied") unless the estate is PUBLISHED and more
+// than 5% of its land changes — land added plus land removed, so a boundary
+// that slides sideways counts even if its area doesn't. Then it waits for a
+// Super Admin (202, "pending") and the current boundary stays live. Real
+// survey corrections are small; a big change to a live listing is what a
+// person should see before buyers do, and the one case overlap detection
+// can't police (a boundary moved onto land no other company has listed).
+// Same checks as adding one: inside the state, every mapped plot still inside.
+// One pending correction per estate; a history is kept, never overwritten.
+
+export type BoundaryChangeStatus = "applied" | "pending" | "approved" | "rejected" | "withdrawn";
+
+// BoundaryChangeDto.
+export interface BoundaryChange {
+  id: string;
+  estateId: string;
+  estateName: string;
+  // Reviewer views only: the developer's company.
+  companyName: string | null;
+  status: BoundaryChangeStatus;
+  previousAreaSqm: number | null;
+  proposedAreaSqm: number | null;
+  // Land added plus land removed.
+  changedAreaSqm: number | null;
+  changedPct: number | null;
+  reason: string;
+  requestedBy: string | null;
+  createdAt: string;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  previousFootprint: GeoJsonPolygon | null;
+  proposedFootprint: GeoJsonPolygon | null;
+  // Set when this response APPLIED the boundary.
+  publicationBlocked: boolean | null;
+  blockReason: string | null;
+  warningConflictCount: number | null;
+  conflictChanges: ConflictChanges | null;
+}
+
+export const BOUNDARY_REVIEW_THRESHOLD_PCT = 5;
+
+const BOUNDARY_MESSAGES: Record<string, string> = {
+  BOUNDARY_NOT_SET: "This estate has no boundary to correct yet — add one instead.",
+  BOUNDARY_CHANGE_PENDING: "A correction for this estate is already waiting for review. Withdraw it first to send a different one.",
+  BOUNDARY_UNCHANGED: "That's the same shape as the current boundary.",
+  BOUNDARY_CHANGE_NOT_PENDING: "That correction has already been decided or withdrawn.",
+  PLOT_OUTSIDE_ESTATE: "Some of this estate's plots would fall outside that boundary, so nothing was changed.",
+  INVALID_GEOMETRY: "That isn't a usable boundary polygon.",
+};
+
+function boundaryChangeError(err: unknown, field = "boundary"): Error {
+  if (!(err instanceof ApiError)) return err instanceof Error ? err : new Error("Couldn't change the boundary.");
+  const code = err.body?.code ?? "UNKNOWN";
+  const fieldErrors = err.body?.fieldErrors;
+  if (fieldErrors?.reason) return new EstateEditError("reason", "VALIDATION", fieldErrors.reason);
+  if (fieldErrors?.note) return new EstateEditError("note", "VALIDATION", fieldErrors.note);
+  // The server's message is preferred — it names the plots, or the state the
+  // land is actually in.
+  return new EstateEditError(field, code, err.body?.message ?? BOUNDARY_MESSAGES[code] ?? "Couldn't change the boundary.");
+}
+
+// ─── Mock store ──────────────────────────────────────────────────────────────
+
+const mockBoundaryChanges: BoundaryChange[] = [];
+
+function footprintToGeo(points: GeoPoint[]): GeoJsonPolygon {
+  return { type: "Polygon", coordinates: [points.map((p) => [p.lng, p.lat] as [number, number])] };
+}
+
+// Land added plus land removed — the symmetric difference.
+function mockChangedArea(previous: GeoPoint[], proposed: GeoPoint[]): { previousArea: number; proposedArea: number; changed: number } {
+  const previousArea = polygonAreaSqm(previous);
+  const proposedArea = polygonAreaSqm(proposed);
+  const shared = polygonOverlap(previous, proposed)?.areaSqm ?? 0;
+  return { previousArea, proposedArea, changed: Math.max(0, previousArea + proposedArea - 2 * shared) };
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+function mockApply(estate: Estate, change: BoundaryChange, proposed: GeoPoint[]): BoundaryChange {
+  estate.footprint = proposed;
+  return { ...change, ...mockDetectionOutcome(estate) };
+}
+
+// ─── API ─────────────────────────────────────────────────────────────────────
+
+export async function correctEstateBoundary(id: string, boundary: GeoJsonPolygon, reason: string, scope: PortalScope): Promise<BoundaryChange> {
+  if (!reason.trim()) throw new EstateEditError("reason", "VALIDATION", "Say why it changed — it's kept in the history and shown to a reviewer.");
+  if (!apiClient.isMockMode) {
+    try {
+      // 200 applied, or 202 pending — both carry the change.
+      return await apiClient.put<BoundaryChange>(`/api/portal/estates/${id}/boundary`, { footprint: boundary, reason: reason.trim() });
+    } catch (err) {
+      throw boundaryChangeError(err);
+    }
+  }
+
+  let estate: Estate;
+  try { estate = ownedMockEstate(id, scope); } catch { throw new EstateEditError("boundary", "ESTATE_NOT_FOUND", "Estate not found."); }
+  if (estate.footprint.length < 3) throw new EstateEditError("boundary", "BOUNDARY_NOT_SET", BOUNDARY_MESSAGES.BOUNDARY_NOT_SET);
+  if (mockBoundaryChanges.some((c) => c.estateId === id && c.status === "pending")) {
+    throw new EstateEditError("boundary", "BOUNDARY_CHANGE_PENDING", BOUNDARY_MESSAGES.BOUNDARY_CHANGE_PENDING);
+  }
+  const proposed = boundary.coordinates[0].map(([lng, lat]) => ({ lat, lng }));
+  const { previousArea, proposedArea, changed } = mockChangedArea(estate.footprint, proposed);
+  if (changed < 1) throw new EstateEditError("boundary", "BOUNDARY_UNCHANGED", BOUNDARY_MESSAGES.BOUNDARY_UNCHANGED);
+  const outside = mockPlotsOutside(id, boundary);
+  if (outside.length > 0) {
+    throw new EstateEditError("boundary", "PLOT_OUTSIDE_ESTATE", `These plots would fall outside that boundary, so nothing was changed: ${outside.join(", ")}.`);
+  }
+
+  const changedPct = previousArea > 0 ? (changed / previousArea) * 100 : 100;
+  const needsReview = estate.published && changedPct > BOUNDARY_REVIEW_THRESHOLD_PCT;
+  const change: BoundaryChange = {
+    id: generateId(), estateId: id, estateName: estate.name, companyName: fetchTenantByIdSync(estate.tenantId)?.identity?.tradingName ?? null,
+    status: needsReview ? "pending" : "applied",
+    previousAreaSqm: round2(previousArea), proposedAreaSqm: round2(proposedArea), changedAreaSqm: round2(changed), changedPct: round2(changedPct),
+    reason: reason.trim(), requestedBy: null, createdAt: new Date().toISOString(), decidedBy: null, decidedAt: null, decisionNote: null,
+    previousFootprint: footprintToGeo(estate.footprint), proposedFootprint: boundary,
+    publicationBlocked: null, blockReason: null, warningConflictCount: null, conflictChanges: null,
+  };
+  const result = needsReview ? change : mockApply(estate, change, proposed);
+  mockBoundaryChanges.unshift(result);
+  return result;
+}
+
+// Every correction, newest first, with both shapes.
+export async function fetchBoundaryChanges(id: string, scope: PortalScope): Promise<BoundaryChange[]> {
+  if (!apiClient.isMockMode) return apiClient.get<BoundaryChange[]>(`/api/portal/estates/${id}/boundary-changes`);
+  try { ownedMockEstate(id, scope); } catch { return []; }
+  return mockBoundaryChanges.filter((c) => c.estateId === id).map((c) => ({ ...c }));
+}
+
+export async function withdrawBoundaryChange(id: string, changeId: string, scope: PortalScope): Promise<BoundaryChange> {
+  if (!apiClient.isMockMode) {
+    try {
+      return await apiClient.post<BoundaryChange>(`/api/portal/estates/${id}/boundary-changes/${changeId}/withdraw`);
+    } catch (err) {
+      throw boundaryChangeError(err, "form");
+    }
+  }
+  ownedMockEstate(id, scope);
+  const change = mockBoundaryChanges.find((c) => c.id === changeId && c.estateId === id);
+  if (!change || change.status !== "pending") throw new EstateEditError("form", "BOUNDARY_CHANGE_NOT_PENDING", BOUNDARY_MESSAGES.BOUNDARY_CHANGE_NOT_PENDING);
+  change.status = "withdrawn";
+  change.decidedAt = new Date().toISOString();
+  return { ...change };
+}
+
+// ─── Super Admin review ──────────────────────────────────────────────────────
+
+// Oldest first, with both shapes, the share of land changed, the reason and
+// the company. Gated on admin.marketplace.conflicts.
+export async function fetchBoundaryChangesForReview(status: BoundaryChangeStatus = "pending"): Promise<BoundaryChange[]> {
+  if (!apiClient.isMockMode) return apiClient.get<BoundaryChange[]>(`/api/admin/boundary-changes?status=${status}`);
+  return mockBoundaryChanges.filter((c) => c.status === status).map((c) => ({ ...c })).reverse();
+}
+
+// Approval RE-CHECKS that every plot still fits (plots may have been mapped
+// while it waited), then applies and re-runs detection.
+export async function decideBoundaryChange(changeId: string, decision: "approve" | "reject", note: string): Promise<BoundaryChange> {
+  if (decision === "reject" && !note.trim()) throw new EstateEditError("note", "VALIDATION", "Give a reason — the developer sees it.");
+  if (!apiClient.isMockMode) {
+    try {
+      const body = note.trim() ? { note: note.trim() } : {};
+      return await apiClient.post<BoundaryChange>(`/api/admin/boundary-changes/${changeId}/${decision}`, body);
+    } catch (err) {
+      throw boundaryChangeError(err, "form");
+    }
+  }
+  const index = mockBoundaryChanges.findIndex((c) => c.id === changeId);
+  const change = mockBoundaryChanges[index];
+  if (!change || change.status !== "pending") throw new EstateEditError("form", "BOUNDARY_CHANGE_NOT_PENDING", BOUNDARY_MESSAGES.BOUNDARY_CHANGE_NOT_PENDING);
+  const decided = { ...change, decidedAt: new Date().toISOString(), decidedBy: "mock-super-admin", decisionNote: note.trim() || null };
+  if (decision === "reject") {
+    mockBoundaryChanges[index] = { ...decided, status: "rejected" };
+    return { ...mockBoundaryChanges[index] };
+  }
+  const estate = findMockEstateForAdmin(change.estateId)!;
+  const outside = mockPlotsOutside(change.estateId, change.proposedFootprint!);
+  if (outside.length > 0) {
+    throw new EstateEditError("form", "PLOT_OUTSIDE_ESTATE", `Plots mapped since the request now fall outside it: ${outside.join(", ")}. Reject it, or ask the developer to resubmit.`);
+  }
+  const applied = mockApply(estate, { ...decided, status: "approved" }, change.proposedFootprint!.coordinates[0].map(([lng, lat]) => ({ lat, lng })));
+  mockBoundaryChanges[index] = applied;
+  return { ...applied };
 }
 
 // Mock mode only: which of the estate's plots (with shapes) fall outside a

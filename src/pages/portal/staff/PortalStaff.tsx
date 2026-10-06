@@ -19,8 +19,8 @@ import { apiClient } from "../../../lib/apiClient";
 import { canInviteStaff, canRequestStaff } from "../../../services/authService";
 import { fetchBranches, type PortalBranch } from "../../../services/branchesService";
 import {
-  REQUESTABLE_ROLES, StaffError, TENANT_ROLES, actOnInvitation, branchRuleFor, changeStaffRole, fetchInvitations, fetchStaff,
-  inviteStaff, mockInvitationLink, rejectInvitation, requestStaff, roleName, setStaffActive,
+  StaffError, actOnInvitation, branchRuleForScope, fetchAssignableRoles, requestableRoles, type AssignableRole, changeStaffRole, fetchInvitations, fetchStaff,
+  inviteStaff, mockInvitationLink, rejectInvitation, requestStaff, setStaffActive,
   type StaffCaller, type StaffInvitation, type StaffMember,
 } from "../../../services/staffService";
 import StatusBadge, { invitationStatusBadge, staffStatusBadge } from "../../../components/StatusBadge";
@@ -42,11 +42,11 @@ export default function PortalStaff() {
   const [tab, setTab] = useState<Tab>(sent || !canInvite ? "invitations" : "team");
   const [query, setQuery] = useState("");
 
-  const caller: StaffCaller | null = scope && user ? { tenantId: scope.tenantId, branchId: scope.branchId ?? null, email: user.email } : null;
+  const caller: StaffCaller | null = scope && user ? { tenantId: scope.tenantId, branchId: scope.branchId ?? null, email: user.email, permissions: user.permissions } : null;
   const data = useFetch(async () => {
     if (!caller) return null;
-    const [staff, invitations, branches] = await Promise.all([fetchStaff(caller), fetchInvitations(caller), fetchBranches(scope!)]);
-    return { staff, invitations, branches };
+    const [staff, invitations, branches, roles] = await Promise.all([fetchStaff(caller), fetchInvitations(caller), fetchBranches(scope!), fetchAssignableRoles(caller)]);
+    return { staff, invitations, branches, roles };
   }, [scope?.tenantId, scope?.branchId, user?.email]);
 
   if (!caller) return <div className="p-8 text-sm text-[var(--muted-foreground)]">This account isn't linked to a company.</div>;
@@ -60,7 +60,7 @@ export default function PortalStaff() {
     );
   }
 
-  const { staff, invitations, branches } = data.data;
+  const { staff, invitations, branches, roles } = data.data;
   const awaiting = invitations.filter((i) => i.status === "awaiting_approval").length;
   // Search only once the open list is long enough to need it.
   const q = query.trim().toLowerCase();
@@ -114,7 +114,7 @@ export default function PortalStaff() {
         {q && (tab === "team" ? shownStaff : shownInvitations).length === 0 ? (
           <p className="text-sm text-[var(--muted-foreground)]">No one matches "{query}".</p>
         ) : tab === "team"
-          ? <TeamList staff={shownStaff} caller={caller} canManage={canInvite} branches={branches} onChanged={data.refetch} />
+          ? <TeamList staff={shownStaff} caller={caller} canManage={canInvite} branches={branches} roles={roles} onChanged={data.refetch} />
           : <InvitationList invitations={shownInvitations} caller={caller} canApprove={canInvite} canCancel={canRequest} onChanged={data.refetch} />}
       </div>
     </div>
@@ -151,11 +151,24 @@ export function NewStaffInvitation() {
   const scope = usePortalScope();
   const navigate = useNavigate();
   const canInvite = canInviteStaff(user);
-  const caller: StaffCaller | null = scope && user ? { tenantId: scope.tenantId, branchId: scope.branchId ?? null, email: user.email } : null;
-  const branches = useFetch(async () => (scope ? fetchBranches(scope) : []), [scope?.tenantId, scope?.branchId]);
+  const caller: StaffCaller | null = scope && user ? { tenantId: scope.tenantId, branchId: scope.branchId ?? null, email: user.email, permissions: user.permissions } : null;
+  const loaded = useFetch(async () => {
+    if (!scope || !caller) return null;
+    const [branches, roles] = await Promise.all([fetchBranches(scope), fetchAssignableRoles(caller)]);
+    return { branches, roles };
+  }, [scope?.tenantId, scope?.branchId, user?.email]);
+  const branches = { data: loaded.data?.branches ?? null };
 
   if (!caller) return <div className="p-8 text-sm text-[var(--muted-foreground)]">This account isn't linked to a company.</div>;
-  if (branches.loading && !branches.data) return <div className="p-8 text-sm text-[var(--muted-foreground)]">Loading…</div>;
+  if (loaded.loading && !loaded.data) return <div className="p-8 text-sm text-[var(--muted-foreground)]">Loading…</div>;
+  if (!loaded.data) {
+    return (
+      <div className="p-8">
+        <p className="text-sm text-[var(--foreground)] mb-2">Couldn't load the roles you can give.</p>
+        <button onClick={loaded.refetch} className="text-sm text-[var(--accent)] hover:underline">Try again</button>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-2xl mx-auto">
@@ -169,7 +182,8 @@ export function NewStaffInvitation() {
       <InviteSection
         mode={canInvite ? "invite" : "request"}
         caller={caller}
-        branches={branches.data ?? []}
+        branches={loaded.data.branches}
+        roles={loaded.data.roles}
         onDone={(sent) => navigate("/portal/staff", { state: { sent } })}
         onCancel={() => navigate("/portal/staff")}
       />
@@ -179,11 +193,13 @@ export function NewStaffInvitation() {
 
 // ─── Invite / request ────────────────────────────────────────────────────────
 
-function InviteSection({ mode, caller, branches, onDone, onCancel }: {
-  mode: "invite" | "request"; caller: StaffCaller; branches: PortalBranch[];
+function InviteSection({ mode, caller, branches, roles: allRoles, onDone, onCancel }: {
+  mode: "invite" | "request"; caller: StaffCaller; branches: PortalBranch[]; roles: AssignableRole[];
   onDone: (sent: StaffInvitation) => void; onCancel: () => void;
 }) {
-  const roles = mode === "request" ? REQUESTABLE_ROLES : TENANT_ROLES;
+  // From GET /api/portal/roles. A request may name any branch-level role —
+  // the approver is the one checked — so canGrant only gates direct invites.
+  const roles = mode === "request" ? requestableRoles(allRoles) : allRoles;
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -194,7 +210,8 @@ function InviteSection({ mode, caller, branches, onDone, onCancel }: {
 
   // The branch picker follows the role: required, hidden or optional — so an
   // invalid role/branch pair can't be submitted.
-  const rule = roleCode ? branchRuleFor(roleCode) : null;
+  const chosen = roles.find((r) => r.code === roleCode);
+  const rule = chosen ? branchRuleForScope(chosen.scope) : null;
   const errorFor = (field: string) => (error?.field === field ? error.message : undefined);
 
   const submit = async (e: React.FormEvent) => {
@@ -202,7 +219,7 @@ function InviteSection({ mode, caller, branches, onDone, onCancel }: {
     setSaving(true);
     setError(null);
     try {
-      const input = { firstName, lastName, email, roleCode };
+      const input = { firstName, lastName, email, roleCode, scope: chosen?.scope };
       const result = mode === "invite"
         ? await inviteStaff({ ...input, branchId: rule === "forbidden" ? undefined : branchId || undefined }, caller)
         : await requestStaff(input, caller);
@@ -234,18 +251,25 @@ function InviteSection({ mode, caller, branches, onDone, onCancel }: {
           <Field id="inv-role" label="Role" error={errorFor("roleCode")}>
             <select id="inv-role" value={roleCode} onChange={(e) => { setRoleCode(e.target.value); setBranchId(""); setError(null); }} className={inputClass}>
               <option value="">Choose a role</option>
-              {roles.map((r) => <option key={r.code} value={r.code}>{r.name}</option>)}
+              {roles.map((r) => (
+                // SI-4: a role carrying permissions you don't hold can't be
+                // given — shown, but not selectable, with the reason.
+                <option key={r.code} value={r.code} disabled={mode === "invite" && !r.canGrant}>
+                  {r.name}{mode === "invite" && !r.canGrant ? " — you can't grant this" : ""}
+                </option>
+              ))}
             </select>
           </Field>
           {mode === "invite" && rule && rule !== "forbidden" && (
             <Field id="inv-branch" label={rule === "required" ? "Branch" : "Branch (optional)"} error={errorFor("branchId")}
-              hint={rule === "required" ? `A ${roleName(roleCode)} runs one branch.` : "Leave empty for company-wide access."}>
+              hint={rule === "required" ? `A ${chosen?.name ?? "role like this"} runs one branch.` : "Leave empty for company-wide access."}>
               <select id="inv-branch" value={branchId} onChange={(e) => setBranchId(e.target.value)} className={inputClass}>
                 <option value="">{rule === "required" ? "Choose a branch" : "Company-wide — no branch"}</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </Field>
           )}
+          {chosen?.description && <p className="text-xs text-[var(--muted-foreground)] sm:col-span-2 -mt-2">{chosen.description}</p>}
           {mode === "invite" && rule === "forbidden" && (
             <p className="text-xs text-[var(--muted-foreground)] self-end pb-2">An Executive Director is company-wide — no branch.</p>
           )}
@@ -386,8 +410,8 @@ function InvitationDetail({ inv }: { inv: StaffInvitation }) {
 
 // ─── Team ────────────────────────────────────────────────────────────────────
 
-function TeamList({ staff, caller, canManage, branches, onChanged }: {
-  staff: StaffMember[]; caller: StaffCaller; canManage: boolean; branches: PortalBranch[]; onChanged: () => void;
+function TeamList({ staff, caller, canManage, branches, roles, onChanged }: {
+  staff: StaffMember[]; caller: StaffCaller; canManage: boolean; branches: PortalBranch[]; roles: AssignableRole[]; onChanged: () => void;
 }) {
   const [editing, setEditing] = useState<{ id: string; kind: "role" | "deactivate" } | null>(null);
   const [message, setMessage] = useState<{ id: string; text: string; tone: "error" | "ok" } | null>(null);
@@ -427,7 +451,7 @@ function TeamList({ staff, caller, canManage, branches, onChanged }: {
             )}
 
             {editing?.id === member.userId && editing.kind === "role" && (
-              <RoleChange member={member} caller={caller} branches={branches} onCancel={() => setEditing(null)}
+              <RoleChange member={member} caller={caller} branches={branches} roles={roles} onCancel={() => setEditing(null)}
                 onDone={(text) => { setEditing(null); setMessage({ id: member.userId, text, tone: "ok" }); onChanged(); }} />
             )}
             {editing?.id === member.userId && editing.kind === "deactivate" && (
@@ -449,22 +473,23 @@ function TeamList({ staff, caller, canManage, branches, onChanged }: {
 
 // Same rules as an invitation, decided by the backend's one StaffRoleRules —
 // this form only shapes the branch picker to the role.
-function RoleChange({ member, caller, branches, onCancel, onDone }: {
-  member: StaffMember; caller: StaffCaller; branches: PortalBranch[]; onCancel: () => void; onDone: (text: string) => void;
+function RoleChange({ member, caller, branches, roles, onCancel, onDone }: {
+  member: StaffMember; caller: StaffCaller; branches: PortalBranch[]; roles: AssignableRole[]; onCancel: () => void; onDone: (text: string) => void;
 }) {
   const current = member.roles[0];
   const [roleCode, setRoleCode] = useState(current?.roleCode ?? "");
   const [branchId, setBranchId] = useState(current?.branchId ?? "");
   const [error, setError] = useState<{ field: string; message: string } | null>(null);
   const [saving, setSaving] = useState(false);
-  const rule = roleCode ? branchRuleFor(roleCode) : null;
+  const chosen = roles.find((r) => r.code === roleCode);
+  const rule = chosen ? branchRuleForScope(chosen.scope) : null;
 
   const save = async () => {
     setSaving(true);
     setError(null);
     try {
-      await changeStaffRole(member.userId, { roleCode, branchId: rule === "forbidden" ? undefined : branchId || undefined }, caller);
-      onDone(`Now ${roleName(roleCode)}. Their sessions have been told to stop renewing — one already open can keep its old access for up to 15 minutes.`);
+      await changeStaffRole(member.userId, { roleCode, scope: chosen?.scope, branchId: rule === "forbidden" ? undefined : branchId || undefined }, caller);
+      onDone(`Now ${chosen?.name ?? roleCode}. Their sessions have been told to stop renewing — one already open can keep its old access for up to 15 minutes.`);
     } catch (err) {
       setError(err instanceof StaffError ? { field: err.field, message: err.message } : { field: "form", message: "That didn't go through." });
       setSaving(false);
@@ -477,7 +502,11 @@ function RoleChange({ member, caller, branches, onCancel, onDone }: {
       <div className="grid sm:grid-cols-2 gap-3">
         <Field id={`role-${member.userId}`} label="Role" error={error?.field === "roleCode" ? error.message : undefined}>
           <select id={`role-${member.userId}`} value={roleCode} onChange={(e) => { setRoleCode(e.target.value); setBranchId(""); }} className={inputClass}>
-            {TENANT_ROLES.map((r) => <option key={r.code} value={r.code}>{r.name}</option>)}
+            {roles.map((r) => (
+              <option key={r.code} value={r.code} disabled={!r.canGrant && r.code !== current?.roleCode}>
+                {r.name}{!r.canGrant ? " — you can't grant this" : ""}
+              </option>
+            ))}
           </select>
         </Field>
         {rule && rule !== "forbidden" && (

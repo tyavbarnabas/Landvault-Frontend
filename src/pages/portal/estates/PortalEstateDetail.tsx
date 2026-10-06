@@ -3,14 +3,17 @@ import { useParams, Link } from "react-router-dom";
 import { useFetch } from "../../../lib/useFetch";
 import { formatAmount } from "../../../data/mockData";
 import {
-  EstateEditError, addEstateBoundary, fetchEstateGeoJson, fetchPortalEstateById, isReadOnlyForScope,
+  BOUNDARY_REVIEW_THRESHOLD_PCT, EstateEditError, addEstateBoundary, correctEstateBoundary, fetchBoundaryChanges,
+  fetchEstateGeoJson, fetchPortalEstateById, isReadOnlyForScope, withdrawBoundaryChange, type BoundaryChange,
   type EstateBoundaryResult, type GeoJsonPolygon, type PortalScope,
 } from "../../../services/portalEstatesService";
 import BoundaryField from "../../../components/portal/BoundaryField";
+import ConflictChangesView from "../../../components/portal/ConflictChangesView";
+import { Field, inputClass } from "../../../components/portal/formParts";
 import { canManageEstates } from "../../../services/authService";
 import { useApp } from "../../../contexts/AppContext";
 import PublicationPanel from "../../../components/portal/PublicationPanel";
-import StatusBadge, { portalEstateStatusBadge } from "../../../components/StatusBadge";
+import StatusBadge, { boundaryChangeBadge, portalEstateStatusBadge } from "../../../components/StatusBadge";
 import EstateBoundaryMap from "../../../components/map/EstateBoundaryMap";
 import { usePortalScope } from "../usePortalScope";
 import { ownershipLabel, useBranchNames } from "../useBranchNames";
@@ -119,8 +122,15 @@ export default function PortalEstateDetail() {
           </>
         )}
         {boundaryResult && <BoundaryAddedResult result={boundaryResult} />}
-        {boundary && canManage && !boundaryResult && (
-          <p className="text-xs text-[var(--muted-foreground)] mt-2">Changing a boundary once it's set isn't supported.</p>
+        {/* FP-2: correcting a boundary that's already set, and its history. */}
+        {boundary && scope && (
+          <BoundaryCorrection
+            estateId={estate.id}
+            published={!!estate.eligibility?.published}
+            canManage={canManage}
+            scope={scope}
+            onApplied={loaded.refetch}
+          />
         )}
       </section>
 
@@ -246,6 +256,147 @@ function BoundaryAddedResult({ result }: { result: EstateBoundaryResult }) {
           publication, but it's worth checking.
         </p>
       )}
+      <ConflictChangesView changes={result.conflictChanges} />
+    </div>
+  );
+}
+
+// ─── Correcting a boundary (FP-2) ────────────────────────────────────────────
+
+function BoundaryCorrection({ estateId, published, canManage, scope, onApplied }: {
+  estateId: string; published: boolean; canManage: boolean; scope: PortalScope; onApplied: () => void;
+}) {
+  const history = useFetch(() => fetchBoundaryChanges(estateId, scope), [estateId]);
+  const [open, setOpen] = useState(false);
+  const [polygon, setPolygon] = useState<GeoJsonPolygon | null>(null);
+  const [unresolved, setUnresolved] = useState(false);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<{ field: string; message: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<BoundaryChange | null>(null);
+  const changes = history.data ?? [];
+  const pending = changes.find((c) => c.status === "pending");
+
+  const submit = async () => {
+    if (!polygon) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const change = await correctEstateBoundary(estateId, polygon, reason, scope);
+      setResult(change);
+      setOpen(false);
+      setReason("");
+      history.refetch();
+      if (change.status === "applied") onApplied();
+    } catch (err) {
+      setError(err instanceof EstateEditError ? { field: err.field, message: err.message } : { field: "boundary", message: "Couldn't change the boundary." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const withdraw = async (changeId: string) => {
+    setError(null);
+    try {
+      await withdrawBoundaryChange(estateId, changeId, scope);
+      setResult(null);
+      history.refetch();
+    } catch (err) {
+      setError({ field: "history", message: err instanceof Error ? err.message : "Couldn't withdraw it." });
+    }
+  };
+
+  return (
+    <div className="mt-4 space-y-4">
+      {canManage && !open && !pending && (
+        <button type="button" onClick={() => { setOpen(true); setResult(null); }}
+          className="px-4 py-2 border border-[var(--border)] rounded-md text-sm text-[var(--foreground)] hover:bg-[var(--muted)]">
+          Correct the boundary
+        </button>
+      )}
+
+      {canManage && open && (
+        <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 space-y-4">
+          <h3 className="text-sm font-semibold text-[var(--foreground)]">Correct the boundary</h3>
+          {/* Said before submitting: which corrections wait for a person. */}
+          <p className="text-xs text-[var(--muted-foreground)]">
+            {published
+              ? `This estate is published. A small correction applies at once; if more than ${BOUNDARY_REVIEW_THRESHOLD_PCT}% of its land changes (land added plus land removed), our team reviews it first and the current boundary stays live until then.`
+              : "This estate isn't published, so the correction applies at once."}{" "}
+            Every plot that already has a shape must still sit inside it.
+          </p>
+          <BoundaryField
+            inputId="correct-boundary"
+            label="Corrected boundary"
+            intro="A GeoJSON Polygon in [longitude, latitude] order, with the ring closed."
+            onChange={(state) => { setPolygon(state.polygon); setUnresolved(state.hasUnresolvedInput); setError(null); }}
+          />
+          <Field id="correct-reason" label="Why did it change?" hint="Kept in the boundary history and shown to a reviewer."
+            error={error?.field === "reason" ? error.message : undefined}>
+            <input id="correct-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Re-survey corrected the north-east pillar" className={inputClass} />
+          </Field>
+          {error && error.field !== "reason" && error.field !== "history" && <p className="text-sm text-red-700" role="alert">{error.message}</p>}
+          <div className="flex gap-3">
+            <button type="button" onClick={submit} disabled={!polygon || unresolved || saving}
+              className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
+              {saving ? "Checking…" : "Submit correction"}
+            </button>
+            <button type="button" onClick={() => { setOpen(false); setError(null); }}
+              className="px-4 py-2 border border-[var(--border)] rounded-md text-sm text-[var(--foreground)] hover:bg-[var(--muted)]">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {result && <CorrectionResult change={result} />}
+
+      {changes.length > 0 && (
+        <div>
+          <h3 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-2">Boundary history</h3>
+          {error?.field === "history" && <p className="text-sm text-red-700 mb-2" role="alert">{error.message}</p>}
+          <ul className="space-y-2">
+            {changes.map((c) => {
+              const badge = boundaryChangeBadge(c.status);
+              return (
+                <li key={c.id} className="bg-[var(--card)] border border-[var(--border)] rounded-lg px-4 py-3 text-sm space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge label={badge.label} variant={badge.variant} />
+                    <span className="text-xs text-[var(--muted-foreground)]">{new Date(c.createdAt).toLocaleDateString()}</span>
+                    {c.changedPct !== null && <span className="text-xs text-[var(--muted-foreground)] font-mono-data">{c.changedPct}% of the land changed</span>}
+                    {canManage && c.status === "pending" && (
+                      <button type="button" onClick={() => withdraw(c.id)} className="ml-auto text-xs text-[var(--accent)] hover:underline">Withdraw</button>
+                    )}
+                  </div>
+                  <p className="text-[var(--foreground)]">{c.reason}</p>
+                  {c.decisionNote && <p className="text-xs text-[var(--muted-foreground)]">Reviewer: {c.decisionNote}</p>}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CorrectionResult({ change }: { change: BoundaryChange }) {
+  if (change.status === "pending") {
+    return (
+      <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900" role="status">
+        Sent for review — {change.changedPct}% of the land changes, over the {BOUNDARY_REVIEW_THRESHOLD_PCT}% that a published estate can change
+        without a check. The current boundary stays live until our team decides. You can withdraw it from the history below.
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-lg bg-[var(--muted)] p-3 space-y-2" role="status">
+      <p className="text-sm text-[var(--foreground)]">
+        Boundary corrected: {change.previousAreaSqm?.toLocaleString()} → {change.proposedAreaSqm?.toLocaleString()} sqm
+        {change.changedPct !== null ? ` (${change.changedPct}% of the land changed)` : ""}.
+      </p>
+      {change.publicationBlocked && (
+        <p className="text-sm text-amber-800">{change.blockReason ?? "It now overlaps another company's land, so the estate is off the marketplace."}</p>
+      )}
+      <ConflictChangesView changes={change.conflictChanges} />
     </div>
   );
 }

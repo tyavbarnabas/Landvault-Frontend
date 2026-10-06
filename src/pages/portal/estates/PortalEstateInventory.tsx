@@ -20,6 +20,7 @@ import StatusBadge from "../../../components/StatusBadge";
 import TabBar from "../../../components/TabBar";
 import { Field } from "../../../components/portal/formParts";
 import BoundaryField from "../../../components/portal/BoundaryField";
+import ConflictChangesView from "../../../components/portal/ConflictChangesView";
 import type { GeoJsonPolygon } from "../../../services/portalEstatesService";
 import { usePortalScope } from "../usePortalScope";
 
@@ -805,6 +806,9 @@ function CorrectPlotBoundary({ estateId, plot, onChanged }: { estateId: string; 
             Overlapping plot pairs on this estate: {result.plotOverlapsInEstateBefore} before, {result.plotOverlapsInEstateAfter} after
             {overlapChange ? (result.plotOverlapsInEstateAfter < result.plotOverlapsInEstateBefore ? " — this correction cleared one." : " — this correction created one; it's recorded for review.") : "."}
           </p>
+          {/* Which ones — a correction that silently created a conflict would
+              otherwise only surface at publication. */}
+          <ConflictChangesView changes={result.conflictChanges} />
         </div>
       )}
     </section>

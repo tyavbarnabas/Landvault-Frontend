@@ -52,6 +52,7 @@ const CreatePortalPlots = lazy(() => import("./pages/portal/estates/CreatePortal
 const PortalEstateDisclosure = lazy(() => import("./pages/portal/estates/PortalEstateDisclosure"));
 const EditPortalEstate = lazy(() => import("./pages/portal/estates/EditPortalEstate"));
 const StateOverride = lazy(() => import("./pages/admin/estates/StateOverride"));
+const BoundaryChanges = lazy(() => import("./pages/admin/estates/BoundaryChanges"));
 const PortalBranches = lazy(() => import("./pages/portal/branches/PortalBranches"));
 const NewPortalBranch = lazy(() => import("./pages/portal/branches/PortalBranches").then((m) => ({ default: m.NewPortalBranch })));
 const PortalStaff = lazy(() => import("./pages/portal/staff/PortalStaff"));
@@ -262,6 +263,7 @@ function AppRoutes() {
       <Route path="/admin/tenants/:id" element={<AdminPage><TenantDetail /></AdminPage>} />
       <Route path="/admin/listing-conflicts" element={<AdminPage><ListingConflicts /></AdminPage>} />
       <Route path="/admin/estate-state-override" element={<AdminPage><StateOverride /></AdminPage>} />
+      <Route path="/admin/boundary-changes" element={<AdminPage><BoundaryChanges /></AdminPage>} />
 
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -10,7 +10,8 @@ import { Link, useParams } from "react-router-dom";
 import { useFetch } from "../../../lib/useFetch";
 import { fetchPortalEstateById } from "../../../services/portalEstatesService";
 import {
-  PLOT_IMPORT_DEFAULTS, PLOT_IMPORT_LIMIT, fetchPlotImportTemplate, importPlots, previewPlotImport,
+  PLOT_IMPORT_DEFAULTS, PLOT_IMPORT_LIMIT, distinctTierValues, fetchPlotImportTemplate, fetchPriceTiers, importPlots, openTiers,
+  previewPlotImport, tierDisplayLabel, type PortalPriceTier,
   type PlotImportIssue, type PlotImportOptions, type PlotImportReport,
 } from "../../../services/portalInventoryService";
 import StatusBadge from "../../../components/StatusBadge";
@@ -31,6 +32,10 @@ export default function ImportPortalPlots() {
   const { estateId } = useParams<{ estateId: string }>();
   const scope = usePortalScope();
   const estate = useFetch(async () => (scope && estateId ? fetchPortalEstateById(estateId, scope) : null), [scope?.tenantId, scope?.branchId, estateId]);
+  // Open tiers only: a mapping to a retired tier would be refused.
+  const tiers = useFetch(async () => (scope && estateId ? openTiers(await fetchPriceTiers(estateId, scope)) : []), [scope?.tenantId, scope?.branchId, estateId]);
+  const [fileText, setFileText] = useState<string | null>(null);
+  const [tierMapping, setTierMapping] = useState<Record<string, string>>({});
 
   const fileInput = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -51,7 +56,10 @@ export default function ImportPortalPlots() {
     );
   }
 
-  const options: PlotImportOptions = { status, ...columns };
+  // Only values actually mapped are sent; the rest still match by label or size.
+  const mapped = Object.fromEntries(Object.entries(tierMapping).filter(([, id]) => id));
+  const options: PlotImportOptions = { status, ...columns, tierMapping: mapped };
+  const tierValues = fileText ? distinctTierValues(fileText, columns.tierProperty || "tier") : null;
 
   const downloadTemplate = async () => {
     setBusy("template");
@@ -150,7 +158,13 @@ export default function ImportPortalPlots() {
             <h2 className="text-sm font-semibold text-[var(--foreground)]">2. Choose the file and check it</h2>
             <div>
               <input ref={fileInput} type="file" accept=".geojson,.json,application/geo+json,application/json" className="sr-only" id="import-file"
-                onChange={(e) => { setFile(e.target.files?.[0] ?? null); invalidate(); }} />
+                onChange={async (e) => {
+                  const chosen = e.target.files?.[0] ?? null;
+                  setFile(chosen);
+                  setTierMapping({});
+                  setFileText(chosen ? await chosen.text() : null);
+                  invalidate();
+                }} />
               <label htmlFor="import-file" className="inline-block cursor-pointer px-4 py-2 border border-[var(--border)] rounded-md text-sm text-[var(--foreground)] hover:bg-[var(--muted)]">
                 {file ? "Choose a different file" : "Choose file"}
               </label>
@@ -176,6 +190,15 @@ export default function ImportPortalPlots() {
                 ))}
               </div>
             </details>
+
+            {tierValues && tierValues.length > 0 && (
+              <TierMappingSection
+                values={tierValues}
+                tiers={tiers.data ?? []}
+                mapping={tierMapping}
+                onChange={(next) => { setTierMapping(next); invalidate(); }}
+              />
+            )}
 
             <button type="button" onClick={check} disabled={!file || busy !== null}
               className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
@@ -289,5 +312,47 @@ function IssueList({ title, issues, tone }: { title: string; issues: PlotImportI
         </table>
       </div>
     </div>
+  );
+}
+
+// FI-6: a file whose tier column doesn't use this estate's labels or sizes —
+// "A", "B", "Zone 3" — mapped once per value: 450 plots, four assignments.
+// A value left on "match automatically" still matches by label or size.
+function TierMappingSection({ values, tiers, mapping, onChange }: {
+  values: string[]; tiers: PortalPriceTier[]; mapping: Record<string, string>; onChange: (next: Record<string, string>) => void;
+}) {
+  // What a value would match on its own, by the import's own rule: a tier's
+  // label (any case), or a land tier's size in sqm.
+  const automatic = (value: string) => tiers.find((t) => t.label?.toLowerCase() === value.toLowerCase())
+    ?? (Number.isNaN(Number(value)) ? undefined : tiers.find((t) => t.tierType === "land_size" && t.sizeSqm === Number(value)));
+  const unmatched = values.filter((v) => !automatic(v) && !mapping[v]).length;
+
+  return (
+    <section className="rounded-lg border border-[var(--border)] p-4 space-y-3" aria-label="Tier mapping">
+      <div>
+        <h3 className="text-sm font-semibold text-[var(--foreground)]">Match the file's tiers to yours</h3>
+        <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+          The file uses {values.length} tier {values.length === 1 ? "value" : "values"}.
+          {unmatched > 0
+            ? unmatched === 1 ? " 1 doesn't match a tier on its own — choose one for it." : ` ${unmatched} don't match a tier on their own — choose one for each.`
+            : " Each one matches a tier."}
+        </p>
+      </div>
+      <ul className="space-y-2">
+        {values.map((value) => {
+          const auto = automatic(value);
+          return (
+            <li key={value} className="grid sm:grid-cols-[1fr_1.5fr] gap-2 items-center">
+              <span className="text-sm font-mono-data text-[var(--foreground)]">{value}</span>
+              <select aria-label={`Tier for ${value}`} value={mapping[value] ?? ""} className={inputClass}
+                onChange={(e) => onChange({ ...mapping, [value]: e.target.value })}>
+                <option value="">{auto ? `Matches ${tierDisplayLabel(auto)} automatically` : "No match — choose a tier"}</option>
+                {tiers.map((t) => <option key={t.id} value={t.id}>{tierDisplayLabel(t)}</option>)}
+              </select>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

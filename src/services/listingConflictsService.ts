@@ -19,6 +19,7 @@
 import { apiClient } from "../lib/apiClient";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import { polygonOverlap, type GeoPoint } from "../lib/geometry";
+import { conflictChangesBetween, type ConflictChanges, type ConflictItem } from "./conflictChanges";
 import { ESTATES, type Estate } from "../data/mockData";
 import { fetchTenantByIdSync, tenantDisplayName, recordAuditEntry } from "./tenantsService";
 
@@ -57,6 +58,9 @@ export interface ListingConflict {
   reviewedBy?: string;
   reviewedAt?: string;
   resolutionNote?: string;
+  // Set when a cross-company overlap no longer exists but the conflict is
+  // still open: it keeps blocking until a reviewer closes it.
+  geometryClearedAt?: string;
 }
 
 function newId(prefix: string): string {
@@ -110,20 +114,63 @@ function conflictBetween(a: Estate, b: Estate, overlap: NonNullable<ReturnType<t
   };
 }
 
-/** Mock mode: detection for ONE estate that just gained a boundary, against
- * every other estate — the stand-in for the backend's detectForEstateBoundary
- * running in the same transaction. New conflicts join the store, so the
- * readiness read and the add-boundary result agree. */
-export function detectMockConflictsForEstate(estate: Estate, others: Estate[]): ListingConflict[] {
-  const detectedAt = new Date().toISOString();
-  const found = others
-    .filter((other) => other.id !== estate.id)
-    .flatMap((other) => {
-      const overlap = polygonOverlap(estate.footprint, other.footprint);
-      return overlap ? [conflictBetween(estate, other, overlap, detectedAt)] : [];
+const LIVE: ConflictStatus[] = ["open", "investigating", "confirmed_duplicate"];
+
+// The tenant's view of one estate's conflicts — its own side only, the other
+// party never named — as ConflictItems, the backend's snapshot shape.
+function snapshotForEstate(estateId: string): ConflictItem[] {
+  return store()
+    .filter((c) => c.estateAId === estateId || c.estateBId === estateId)
+    .map((c) => {
+      const live = LIVE.includes(c.status);
+      const underReview = live && !!c.geometryClearedAt;
+      const blocks = live && (c.severity === "high" || c.status === "confirmed_duplicate");
+      const ownName = c.estateAId === estateId ? c.estateAName : c.estateBName;
+      return {
+        id: c.id, conflictType: "estate_overlap" as const, yourEntityId: estateId, yourEntityLabel: ownName,
+        overlapAreaSqm: Math.round(c.overlapAreaSqm * 100) / 100, severity: c.severity, status: c.status, live,
+        blocksPublication: blocks, underReview,
+        guidance: !live
+          ? "This was resolved automatically once the boundaries no longer overlapped."
+          : underReview
+            ? "The boundaries no longer overlap. Because this involved another company's land, our team reviews it before it's closed — until then it still blocks publication."
+            : c.crossTenant
+              ? "This boundary overlaps land registered by another company. Correct it if it's wrong — our team reviews the correction."
+              : "Two of your own estate boundaries share some ground. Usually one of them needs correcting.",
+      };
     });
-  store().push(...found);
-  return found;
+}
+
+/** Mock mode: the stand-in for detectForEstateBoundary after an estate gains
+ * or changes a boundary. Existing conflicts are re-measured — a same-company
+ * one that no longer overlaps auto-resolves; a cross-company one is marked
+ * cleared but stays open for a reviewer — and new overlaps are raised. Returns
+ * what changed, from the estate's own side. */
+export function redetectMockConflictsForEstate(estate: Estate, others: Estate[]): ConflictChanges {
+  const before = snapshotForEstate(estate.id);
+  const detectedAt = new Date().toISOString();
+  const touched = new Set<string>();
+  for (const c of store()) {
+    if (!LIVE.includes(c.status) || (c.estateAId !== estate.id && c.estateBId !== estate.id)) continue;
+    const otherId = c.estateAId === estate.id ? c.estateBId : c.estateAId;
+    const other = others.find((o) => o.id === otherId);
+    touched.add(otherId);
+    const overlap = other ? polygonOverlap(estate.footprint, other.footprint) : null;
+    if (overlap) {
+      c.overlapAreaSqm = overlap.areaSqm;
+      c.geometryClearedAt = undefined;
+    } else if (c.crossTenant) {
+      c.geometryClearedAt = c.geometryClearedAt ?? detectedAt;
+    } else {
+      c.status = "auto_resolved";
+    }
+  }
+  for (const other of others) {
+    if (other.id === estate.id || touched.has(other.id)) continue;
+    const overlap = polygonOverlap(estate.footprint, other.footprint);
+    if (overlap) store().push(conflictBetween(estate, other, overlap, detectedAt));
+  }
+  return conflictChangesBetween(before, snapshotForEstate(estate.id));
 }
 
 // Computed once per session and then mutated in place as reviews land —

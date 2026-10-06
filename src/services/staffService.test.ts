@@ -171,3 +171,14 @@ describe("the token comes from the URL fragment", () => {
     expect(tokenFromHash("")).toBeNull();
   });
 });
+
+describe("creating a tenant invites its first Executive Director", () => {
+  it("refuses a primary contact whose email already has an account, with the backend's code", async () => {
+    const { createTenantDraft } = await import("./tenantsService");
+    const err = await createTenantDraft({
+      identity: {} as never, presence: {} as never, plan: "starter",
+      primaryContact: { fullName: "Emeka O", roleTitle: "MD", workEmail: "emeka.okonkwo@gmail.com", phone: "", govIdType: "NIN", govIdNumber: "" },
+    }).catch((e) => e);
+    expect(err).toMatchObject({ status: 409, body: { code: "EMAIL_ALREADY_REGISTERED" } });
+  });
+});

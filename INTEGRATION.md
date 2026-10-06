@@ -111,13 +111,25 @@ Wired:
 
 **Found while wiring:** the mock branch manager held `portal.estates.manage`. Changeset 041 grants that only to `executive_director` and `surveyor_project_manager`, so the portal was offering branch managers estate creation and editing that the real backend refuses. Corrected, and the add-tier, add-block and add-plots forms are now gated on it too.
 
-**Asks for the backend:**
+**Asks for the backend** (1–4 and 7 resolved by `9cef857`, see G):
 1. **No endpoint lists roles.** Names and scopes are hard-coded in `staffService.ts` from changesets 015/067. A `GET /api/portal/roles` returning `{code, name, scope}` would remove the copy.
 2. **Changing an estate boundary isn't supported** (`BOUNDARY_ALREADY_SET`), so a correction can't be offered.
 3. **Conflicts aren't itemised.** Estate and plot boundary results report counts or a blocked flag, not which conflicts resolved or were raised.
 4. **Import maps tiers by exact value only.** It can't map a file value (e.g. `zone = A`) to a tier: only the property *name* is configurable.
 5. **Stale Javadoc:** `CreateEstateRequest` still says `branchId` is required for an Executive Director (EB-1 made it optional).
 6. **No `X-Branch-Id` branch switcher** for directors yet; the portal always acts company-wide for them.
+7. **`TenancyExceptionHandler` reports every data-integrity conflict as `RC_NUMBER_ALREADY_REGISTERED`.** That's fine while RC number is the only unique field a tenant create can hit, but any other constraint would be mislabelled as a duplicate RC number. The tenant wizard trusts the code and sends the user back to the RC number field.
+
+### G. Backend `9cef857` ("frontend raised issue fixes") — wired 2026-10-06
+
+The asks in F, now built on both sides:
+- **Roles:** `GET /api/portal/roles` drives the invite and role-change forms. Roles the caller can't grant (`canGrant: false`) are shown but disabled, and scope arrives lowercase. `MOCK_ROLES` stays only as mock data.
+- **Estate boundary correction (FP-2):** the estate page has *Correct the boundary* and a boundary history with *Withdraw*. A published estate whose land changes by more than 5% returns 202 `pending`. The Super Admin reviews it at `/admin/boundary-changes`, which shows both shapes on one map.
+- **Itemised conflicts:** add-boundary, estate correction (and its approval) and plot correction all show raised, resolved, awaiting review and still open, through `ConflictChangesView`.
+- **Import tier mapping (FI-6):** the import page lists the file's distinct tier values and lets each be mapped to a tier, sent as the `tierMapping` form field.
+- **Tenant-create errors:** `DUPLICATE_RECORD` is no longer reported as an RC-number clash; the wizard only sends the user to the RC field on `RC_NUMBER_ALREADY_REGISTERED`.
+
+**Fixed while verifying:** `EstateBoundaryMap` clipped its own legend. The legend sat inside the fixed-height, overflow-hidden map box, so no legend passed to it had ever been visible, including the inventory's plot-status legend.
 
 ### Also worth a look, lower priority
 

@@ -375,3 +375,93 @@ describe("the state check's refusal reaches the developer", () => {
     expect(err.message).toContain("Benue");
   });
 });
+
+// ─── Backend 9cef857: roles, boundary correction, itemised conflicts, tier mapping ───
+
+describe("roles come from GET /api/portal/roles", () => {
+  it("passes the backend's lowercase scope and canGrant straight through", async () => {
+    const roles = [{ code: "branch_manager", name: "Branch Manager", description: null, scope: "branch", permissions: ["portal.estates.view"], canGrant: false, custom: false }];
+    respond({ "GET /api/portal/roles": { status: 200, body: roles } });
+    const { fetchAssignableRoles, branchRuleForScope } = await import("./staffService");
+
+    const fetched = await fetchAssignableRoles({ tenantId: "t", branchId: null, email: "e" });
+    expect(fetched).toEqual(roles);
+    expect(branchRuleForScope(fetched[0].scope)).toBe("required");
+  });
+});
+
+describe("estate boundary correction against the real endpoints", () => {
+  const polygon = { type: "Polygon" as const, coordinates: [[[7.4, 9.1], [7.41, 9.1], [7.41, 9.11], [7.4, 9.1]]] as [number, number][][] };
+
+  it("PUTs { footprint, reason }; a 202 'pending' comes back as the change, not an error", async () => {
+    respond({ "PUT /api/portal/estates/e1/boundary": { status: 202, body: { id: "c1", status: "pending", changedPct: 12.5 } } });
+    const { correctEstateBoundary } = await import("./portalEstatesService");
+
+    const change = await correctEstateBoundary("e1", polygon, " Re-survey ", { tenantId: "t" });
+    expect(calls[0]).toMatchObject({ method: "PUT", body: { footprint: polygon, reason: "Re-survey" } });
+    expect(change).toMatchObject({ status: "pending", changedPct: 12.5 });
+  });
+
+  it.each([
+    [409, "BOUNDARY_CHANGE_PENDING"], [409, "BOUNDARY_NOT_SET"], [400, "BOUNDARY_UNCHANGED"], [400, "PLOT_OUTSIDE_ESTATE"], [400, "BOUNDARY_OUTSIDE_STATE"],
+  ])("a %i %s keeps its code and the server's message", async (status, code) => {
+    respond({ "PUT /api/portal/estates/e1/boundary": { status, body: { code, message: `server says ${code}` } } });
+    const { correctEstateBoundary } = await import("./portalEstatesService");
+    await expect(correctEstateBoundary("e1", polygon, "r", { tenantId: "t" })).rejects.toMatchObject({ code, message: `server says ${code}` });
+  });
+
+  it("history is a GET; withdraw, approve and reject are POSTs — a blank approve note is left out", async () => {
+    respond({
+      "GET /api/portal/estates/e1/boundary-changes": { status: 200, body: [] },
+      "POST /api/portal/estates/e1/boundary-changes/c1/withdraw": { status: 200, body: { id: "c1", status: "withdrawn" } },
+      "GET /api/admin/boundary-changes": { status: 404 },
+      "POST /api/admin/boundary-changes/c1/approve": { status: 200, body: { id: "c1", status: "approved" } },
+      "POST /api/admin/boundary-changes/c2/reject": { status: 200, body: { id: "c2", status: "rejected" } },
+    });
+    const { fetchBoundaryChanges, withdrawBoundaryChange, decideBoundaryChange } = await import("./portalEstatesService");
+
+    await fetchBoundaryChanges("e1", { tenantId: "t" });
+    await withdrawBoundaryChange("e1", "c1", { tenantId: "t" });
+    await decideBoundaryChange("c1", "approve", "  ");
+    await decideBoundaryChange("c2", "reject", "Title disagrees.");
+    expect(calls.map((c) => [c.method, c.url, c.body])).toEqual([
+      ["GET", "/api/portal/estates/e1/boundary-changes", undefined],
+      ["POST", "/api/portal/estates/e1/boundary-changes/c1/withdraw", undefined],
+      ["POST", "/api/admin/boundary-changes/c1/approve", {}],
+      ["POST", "/api/admin/boundary-changes/c2/reject", { note: "Title disagrees." }],
+    ]);
+  });
+
+  it("the review queue asks for a status", async () => {
+    respond({ "GET /api/admin/boundary-changes?status=pending": { status: 200, body: [] } });
+    const { fetchBoundaryChangesForReview } = await import("./portalEstatesService");
+    await fetchBoundaryChangesForReview();
+    expect(calls[0].url).toBe("/api/admin/boundary-changes?status=pending");
+  });
+});
+
+describe("itemised conflicts pass through untouched", () => {
+  it("add-boundary carries conflictChanges", async () => {
+    const conflictChanges = { raised: [{ id: "k1", conflictType: "estate_overlap", yourEntityId: "e1", yourEntityLabel: "Mine",
+      overlapAreaSqm: 120.5, severity: "high", status: "open", live: true, blocksPublication: true, underReview: false, guidance: "Correct it." }],
+      resolved: [], awaitingReview: [], stillOpen: [] };
+    respond({ "POST /api/portal/estates/e1/boundary": { status: 200, body: { estateId: "e1", footprintAreaSqm: 1, publicationBlocked: true, blockReason: "x", warningConflictCount: 0, conflictChanges } } });
+    const { addEstateBoundary } = await import("./portalEstatesService");
+    const polygon = { type: "Polygon" as const, coordinates: [[[7.4, 9.1], [7.41, 9.1], [7.41, 9.11], [7.4, 9.1]]] as [number, number][][] };
+    expect((await addEstateBoundary("e1", polygon, { tenantId: "t" })).conflictChanges).toEqual(conflictChanges);
+  });
+});
+
+describe("import tier mapping as a form field", () => {
+  it("sends tierMapping as a JSON form field — and leaves it out when nothing is mapped", async () => {
+    respond({ "POST /api/portal/estates/e1/plots/import/preview": { status: 200, body: { errors: [] } } });
+    const { previewPlotImport } = await import("./portalInventoryService");
+    const file = new File(["{}"], "plots.geojson");
+
+    await previewPlotImport("e1", file, { status: "available-dev", tierMapping: { A: "t-premium" } }, { tenantId: "x" });
+    await previewPlotImport("e1", file, { status: "available-dev", tierMapping: {} }, { tenantId: "x" });
+
+    expect(JSON.parse((calls[0].body as FormData).get("tierMapping") as string)).toEqual({ A: "t-premium" });
+    expect((calls[1].body as FormData).has("tierMapping")).toBe(false);
+  });
+});

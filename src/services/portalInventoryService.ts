@@ -26,6 +26,7 @@ import type { Currency, PlotStatus } from "../data/mockData";
 // The backend's PlotOrientation @JsonValue strings — uppercase compass points.
 export type PlotOrientation = "N" | "S" | "E" | "W" | "NE" | "NW" | "SE" | "SW";
 import { ApiError, apiClient } from "../lib/apiClient";
+import { conflictChangesBetween, type ConflictChanges, type ConflictItem } from "./conflictChanges";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import { polygonAreaSqm, polygonOverlap } from "../lib/geometry";
 import {
@@ -936,6 +937,8 @@ export interface PlotBoundaryCorrection {
   actualAreaSqm: number;
   plotOverlapsInEstateBefore: number;
   plotOverlapsInEstateAfter: number;
+  // Which plot overlaps this correction raised, cleared or left open.
+  conflictChanges: ConflictChanges | null;
 }
 
 // PlotTierChangeDto — price and size before and after.
@@ -992,6 +995,37 @@ function plotLabel(plot: PortalPlot): string {
   return `${plot.blockName ? `${plot.blockName}, ` : ""}Plot ${plot.plotNumber}`;
 }
 
+const PLOT_OVERLAP_GUIDANCE = "Two plot boundaries in this estate share some ground. This is usually a surveying or data-entry slip — correcting the plot coordinates clears it automatically.";
+
+// The mock's plot-overlap "records": one per overlapping pair, keyed by the
+// pair so the same overlap has the same id before and after a correction.
+function mockPlotConflicts(estateId: string): ConflictItem[] {
+  const shaped = mockPlots.filter((p) => p.estateId === estateId && mockFootprints.has(p.id));
+  const items: ConflictItem[] = [];
+  for (let i = 0; i < shaped.length; i++) {
+    for (let j = i + 1; j < shaped.length; j++) {
+      const ring = (p: PortalPlot) => mockFootprints.get(p.id)!.coordinates[0].map(([lng, lat]) => ({ lat, lng }));
+      const overlap = polygonOverlap(ring(shaped[i]), ring(shaped[j]));
+      if (!overlap) continue;
+      items.push({
+        id: `plot-pair-${shaped[i].id}-${shaped[j].id}`, conflictType: "plot_overlap", yourEntityId: shaped[i].id,
+        yourEntityLabel: `${plotLabel(shaped[i])} and ${plotLabel(shaped[j])}`, overlapAreaSqm: round2(overlap.areaSqm),
+        severity: "medium", status: "open", live: true, blocksPublication: false, underReview: false, guidance: PLOT_OVERLAP_GUIDANCE,
+      });
+    }
+  }
+  return items;
+}
+
+// Before and after, with an overlap that's gone carried into "after" as
+// auto-resolved — exactly how the backend's records read.
+function mockPlotConflictChanges(before: ConflictItem[], estateId: string): ConflictChanges {
+  const current = mockPlotConflicts(estateId);
+  const gone = before.filter((b) => !current.some((c) => c.id === b.id))
+    .map((b) => ({ ...b, live: false, status: "auto_resolved", guidance: "Resolved automatically once the plot boundaries no longer overlapped." }));
+  return conflictChangesBetween(before, [...current, ...gone]);
+}
+
 function countPlotOverlaps(estateId: string): number {
   const shapes = mockPlots
     .filter((p) => p.estateId === estateId && mockFootprints.has(p.id))
@@ -1016,6 +1050,7 @@ export async function correctPlotBoundary(estateId: string, plotId: string, foot
     throw new InventoryEditError("footprint", "PLOT_OUTSIDE_ESTATE", `The corrected boundary for ${plotLabel(plot)} falls outside the estate's boundary.`);
   }
   const before = countPlotOverlaps(estateId);
+  const beforeItems = mockPlotConflicts(estateId);
   const previousActualAreaSqm = plot.actualAreaSqm;
   mockFootprints.set(plot.id, footprint);
   plot.hasFootprint = true;
@@ -1023,6 +1058,7 @@ export async function correctPlotBoundary(estateId: string, plotId: string, foot
   return {
     plotId, previousActualAreaSqm, actualAreaSqm: plot.actualAreaSqm,
     plotOverlapsInEstateBefore: before, plotOverlapsInEstateAfter: countPlotOverlaps(estateId),
+    conflictChanges: mockPlotConflictChanges(beforeItems, estateId),
   };
 }
 
@@ -1153,6 +1189,10 @@ export interface PlotImportReport {
 // Which property carries what. The defaults match the downloaded template.
 export interface PlotImportOptions {
   status: "available-dev" | "available-inv";
+  // For a file that doesn't use the estate's tier labels or sizes: the file's
+  // value → a tier id ({"A": "<tier id>"}). Values not in it still match by
+  // label or size. 450 plots, four assignments.
+  tierMapping?: Record<string, string>;
   plotNumberProperty?: string;
   blockProperty?: string;
   tierProperty?: string;
@@ -1168,8 +1208,11 @@ export const PLOT_IMPORT_LIMIT = 500;
 function importForm(file: File, options: PlotImportOptions): FormData {
   const form = new FormData();
   form.append("file", file);
-  const merged = { ...PLOT_IMPORT_DEFAULTS, ...options };
+  const { tierMapping, ...rest } = options;
+  const merged = { ...PLOT_IMPORT_DEFAULTS, ...rest };
   for (const [key, value] of Object.entries(merged)) if (value) form.append(key, value);
+  // A JSON object, as a form field — only when something is mapped.
+  if (tierMapping && Object.keys(tierMapping).length > 0) form.append("tierMapping", JSON.stringify(tierMapping));
   return form;
 }
 
@@ -1235,7 +1278,7 @@ export async function importPlots(estateId: string, file: File, options: PlotImp
     return {
       plotNumber: String(props[keys.plotNumberProperty]).trim(),
       blockId: blockName ? blocks.find((b) => b.name.toLowerCase() === blockName.toLowerCase())?.id : undefined,
-      priceTierId: matchTier(estateId, props[keys.tierProperty]).tier!.id,
+      priceTierId: matchTier(estateId, props[keys.tierProperty], options.tierMapping).tier!.id,
       isCorner: props[keys.cornerProperty] === true || String(props[keys.cornerProperty]).toLowerCase() === "true",
       status: options.status,
       footprint: polygonOf(f.geometry)!,
@@ -1261,10 +1304,17 @@ function polygonOf(geometry: ImportFeature["geometry"]): GeoJsonPolygon | null {
 }
 
 // A tier's label (case-insensitive) or, failing that, a land tier's size.
-function matchTier(estateId: string, value: unknown): { tier?: PortalPriceTier; code?: string; message?: string } {
+function matchTier(estateId: string, value: unknown, mapping?: Record<string, string>): { tier?: PortalPriceTier; code?: string; message?: string } {
   const raw = String(value ?? "").trim();
   if (!raw) return { code: "UNKNOWN_TIER", message: "No tier given." };
   const tiers = mockTiers.filter((t) => t.estateId === estateId);
+  // A mapped value goes straight to its tier; anything unmapped falls back to
+  // matching by label or size.
+  if (mapping && raw in mapping) {
+    const mapped = tiers.find((t) => t.id === mapping[raw]);
+    if (mapped?.retiredAt) return { code: "TIER_RETIRED", message: `'${raw}' is mapped to a retired tier, which accepts no new plots.` };
+    if (mapped) return { tier: mapped };
+  }
   let matches = tiers.filter((t) => t.label?.toLowerCase() === raw.toLowerCase());
   if (matches.length === 0 && !Number.isNaN(Number(raw))) matches = tiers.filter((t) => t.tierType === "land_size" && t.sizeSqm === Number(raw));
   if (matches.length === 0) return { code: "UNKNOWN_TIER", message: `'${raw}' doesn't match any tier's label or size on this estate.` };
@@ -1295,6 +1345,11 @@ async function mockAnalyseImport(estateId: string, text: string, options: PlotIm
   const fileError = (code: string, message: string): PlotImportReport => ({ ...empty, errors: [{ feature: null, plotNumber: null, code, message }] });
 
   if (!(await assertInScope(estateId, scope))) throw new Error("Estate not found.");
+  // A mapping to a tier that isn't on this estate is refused outright, as the
+  // backend refuses it (400) — never silently ignored.
+  const estateTierIds = new Set(mockTiers.filter((t) => t.estateId === estateId).map((t) => t.id));
+  const badTarget = Object.entries(options.tierMapping ?? {}).find(([, id]) => !estateTierIds.has(id));
+  if (badTarget) throw new Error(`'${badTarget[0]}' is mapped to a tier that isn't on this estate.`);
   let parsed: { type?: string; features?: ImportFeature[]; crs?: { properties?: { name?: string } } };
   try { parsed = JSON.parse(text); } catch { return fileError("INVALID_FILE", "This isn't valid JSON. Export the plots from QGIS as GeoJSON."); }
   if (parsed?.type !== "FeatureCollection" || !Array.isArray(parsed.features)) {
@@ -1332,7 +1387,7 @@ async function mockAnalyseImport(estateId: string, text: string, options: PlotIm
     if (plotNumber && existingNumbers.has(key)) issue("PLOT_NUMBER_EXISTS", "This plot number already exists on the estate in that block.");
     seen.add(key);
 
-    const tier = matchTier(estateId, props[keys.tierProperty]);
+    const tier = matchTier(estateId, props[keys.tierProperty], options.tierMapping);
     if (!tier.tier) issue(tier.code!, tier.message!);
 
     const polygon = polygonOf(feature.geometry);
@@ -1392,4 +1447,23 @@ export async function fetchInventoryGeoJson(
 
   const boundaryFeatures = (boundary?.features ?? []).map((f) => ({ ...f, properties: { ...f.properties, kind: "boundary" } }));
   return { type: "FeatureCollection", features: [...boundaryFeatures, ...plotFeatures] };
+}
+
+// The distinct values the file's tier property holds, read client-side so a
+// developer can map them (FI-6) — at most 100, so a property full of unique
+// ids can't flood the screen. Null when the file can't be read as GeoJSON.
+export function distinctTierValues(text: string, tierProperty: string = PLOT_IMPORT_DEFAULTS.tierProperty): string[] | null {
+  try {
+    const parsed = JSON.parse(text) as { features?: { properties?: Record<string, unknown> | null }[] };
+    if (!Array.isArray(parsed.features)) return null;
+    const values = new Set<string>();
+    for (const f of parsed.features) {
+      const v = String(f.properties?.[tierProperty] ?? "").trim();
+      if (v) values.add(v);
+      if (values.size >= 100) break;
+    }
+    return [...values].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  } catch {
+    return null;
+  }
 }

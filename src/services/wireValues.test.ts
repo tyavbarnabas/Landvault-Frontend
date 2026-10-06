@@ -30,12 +30,13 @@ import {
 import type { EstateStateOverride } from "./estateStateOverrideService";
 import { NIGERIAN_STATES, STATE_ISO_CODES } from "../data/nigerianStates";
 import {
-  TENANT_ROLES, branchRuleFor,
+  MOCK_ROLES, branchRuleForScope, type AssignableRole, type RoleScope,
   type InvitationPreview, type InvitationStatus, type StaffInvitation, type StaffMember, type StaffStatus,
 } from "./staffService";
 import type { PortalBranch } from "./branchesService";
 import { BRANCHES_MANAGE_PERMISSION, STAFF_INVITE_PERMISSION, STAFF_REQUEST_PERMISSION } from "./authService";
-import type { EstateBoundaryResult, EstateIntent, UpdateEstateInput } from "./portalEstatesService";
+import type { BoundaryChange, BoundaryChangeStatus, EstateBoundaryResult, EstateIntent, UpdateEstateInput } from "./portalEstatesService";
+import type { ConflictChanges, ConflictItem, ConflictType } from "./conflictChanges";
 import type { Currency, PlotStatus, PaymentPlan } from "../data/mockData";
 import { BUYER_FACING_STATUSES, CREATABLE_STATUSES, STATUS_COLORS, STATUS_LABELS } from "../lib/plotStatus";
 import type { TitleType } from "./marketplaceService";
@@ -365,18 +366,19 @@ describe("plot status, import and estate editing shapes", () => {
     expect(wireValues(["development", "investment"] satisfies readonly EstateIntent[])).toEqual(["development", "investment"]);
   });
 
-  it("EstateBoundaryDto — five fields, and no counterparty", () => {
-    const result: EstateBoundaryResult = { estateId: "e", footprintAreaSqm: 1, publicationBlocked: false, blockReason: null, warningConflictCount: 0 };
-    expect(Object.keys(result).sort()).toEqual(["blockReason", "estateId", "footprintAreaSqm", "publicationBlocked", "warningConflictCount"]);
+  it("EstateBoundaryDto — six fields including conflictChanges, and no counterparty", () => {
+    const result: EstateBoundaryResult = { estateId: "e", footprintAreaSqm: 1, publicationBlocked: false, blockReason: null, warningConflictCount: 0,
+      conflictChanges: { raised: [], resolved: [], awaitingReview: [], stillOpen: [] } };
+    expect(Object.keys(result).sort()).toEqual(["blockReason", "conflictChanges", "estateId", "footprintAreaSqm", "publicationBlocked", "warningConflictCount"]);
   });
 });
 
 // IE-9, IE-10 and SB-1 — transcribed from PlotBoundaryDto, PlotTierChangeDto,
 // MovePlotTierRequest, EstateStateOverrideDto and the nigerian_states dataset.
 describe("plot edit and state-override shapes", () => {
-  it("PlotBoundaryDto — five fields", () => {
-    const dto: PlotBoundaryCorrection = { plotId: "p", previousActualAreaSqm: null, actualAreaSqm: 1, plotOverlapsInEstateBefore: 0, plotOverlapsInEstateAfter: 0 };
-    expect(Object.keys(dto).sort()).toEqual(["actualAreaSqm", "plotId", "plotOverlapsInEstateAfter", "plotOverlapsInEstateBefore", "previousActualAreaSqm"]);
+  it("PlotBoundaryDto — six fields including conflictChanges", () => {
+    const dto: PlotBoundaryCorrection = { plotId: "p", previousActualAreaSqm: null, actualAreaSqm: 1, plotOverlapsInEstateBefore: 0, plotOverlapsInEstateAfter: 0, conflictChanges: null };
+    expect(Object.keys(dto).sort()).toEqual(["actualAreaSqm", "conflictChanges", "plotId", "plotOverlapsInEstateAfter", "plotOverlapsInEstateBefore", "previousActualAreaSqm"]);
   });
 
   it("PlotTierChangeDto — eight fields", () => {
@@ -439,15 +441,46 @@ describe("branches, staff and invitations", () => {
     expect(Object.keys(p).sort()).toEqual(["branchName", "companyName", "email", "expiresAt", "firstName", "roleName"]);
   });
 
-  it("the tenant-assignable roles, their seeded names and their scopes", () => {
-    expect(TENANT_ROLES.map((r) => [r.code, r.name, r.scope])).toEqual([
-      ["executive_director", "Executive Director", "COMPANY"],
-      ["branch_manager", "Branch Manager", "BRANCH"],
-      ["sales_manager", "Sales Manager", "EITHER"],
-      ["surveyor_project_manager", "Surveyor / Project Manager", "EITHER"],
-      ["finance_officer", "Finance Officer", "EITHER"],
-      ["legal_officer", "Legal Officer", "EITHER"],
+  it("AssignableRoleDto — seven fields; scope is LOWERCASE on the wire", () => {
+    const role: AssignableRole = { code: "", name: "", description: null, scope: "either", permissions: [], canGrant: true, custom: false };
+    expect(Object.keys(role).sort()).toEqual(["canGrant", "code", "custom", "description", "name", "permissions", "scope"]);
+    expect(wireValues(["company", "branch", "either"] satisfies readonly RoleScope[])).toEqual(["company", "branch", "either"]);
+    expect(["company", "branch", "either"].map((sc) => branchRuleForScope(sc as RoleScope))).toEqual(["forbidden", "required", "optional"]);
+  });
+
+  it("the mock role catalogue matches the seeded roles (mock mode only — real mode fetches them)", () => {
+    expect(MOCK_ROLES.map((r) => [r.code, r.name, r.scope])).toEqual([
+      ["executive_director", "Executive Director", "company"],
+      ["branch_manager", "Branch Manager", "branch"],
+      ["sales_manager", "Sales Manager", "either"],
+      ["surveyor_project_manager", "Surveyor / Project Manager", "either"],
+      ["finance_officer", "Finance Officer", "either"],
+      ["legal_officer", "Legal Officer", "either"],
     ]);
-    expect(TENANT_ROLES.map((r) => branchRuleFor(r.code))).toEqual(["forbidden", "required", "optional", "optional", "optional", "optional"]);
+  });
+});
+
+// Backend 9cef857 — BoundaryChangeDto, BoundaryChangeStatus, ConflictChanges,
+// ConflictItem (conflictType from ConflictType.getValue()).
+describe("boundary correction and itemised conflict shapes", () => {
+  it("BoundaryChangeDto — twenty-one fields, by name", () => {
+    const change: BoundaryChange = { id: "", estateId: "", estateName: "", companyName: null, status: "applied", previousAreaSqm: null,
+      proposedAreaSqm: null, changedAreaSqm: null, changedPct: null, reason: "", requestedBy: null, createdAt: "", decidedBy: null,
+      decidedAt: null, decisionNote: null, previousFootprint: null, proposedFootprint: null, publicationBlocked: null, blockReason: null,
+      warningConflictCount: null, conflictChanges: null };
+    expect(Object.keys(change).sort()).toEqual(["blockReason", "changedAreaSqm", "changedPct", "companyName", "conflictChanges", "createdAt",
+      "decidedAt", "decidedBy", "decisionNote", "estateId", "estateName", "id", "previousAreaSqm", "previousFootprint", "proposedAreaSqm",
+      "proposedFootprint", "publicationBlocked", "reason", "requestedBy", "status", "warningConflictCount"]);
+    expect(wireValues(["applied", "pending", "approved", "rejected", "withdrawn"] satisfies readonly BoundaryChangeStatus[]))
+      .toEqual(["applied", "pending", "approved", "rejected", "withdrawn"]);
+  });
+
+  it("ConflictChanges — four buckets; ConflictItem — eleven fields; types are the enum's wire values", () => {
+    const item: ConflictItem = { id: "", conflictType: "plot_overlap", yourEntityId: "", yourEntityLabel: "", overlapAreaSqm: null,
+      severity: "medium", status: "open", live: true, blocksPublication: false, underReview: false, guidance: null };
+    const changes: ConflictChanges = { raised: [item], resolved: [], awaitingReview: [], stillOpen: [] };
+    expect(Object.keys(changes).sort()).toEqual(["awaitingReview", "raised", "resolved", "stillOpen"]);
+    expect(Object.keys(item)).toHaveLength(11);
+    expect(wireValues(["estate_overlap", "plot_overlap"] satisfies readonly ConflictType[])).toEqual(["estate_overlap", "plot_overlap"]);
   });
 });

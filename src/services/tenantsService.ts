@@ -12,7 +12,8 @@
 // intentional, not a bug: forcing full verification before any portal access
 // kills onboarding completion.
 
-import { apiClient } from "../lib/apiClient";
+import { ApiError, apiClient } from "../lib/apiClient";
+import { mockAccountExists } from "./authService";
 import type { Currency } from "../data/mockData";
 import type { NigerianState } from "../data/nigerianStates";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
@@ -607,6 +608,11 @@ export async function fetchTenantById(id: string): Promise<Tenant | undefined> {
 // verified (enforced by checks against `verificationState`, not `status`).
 export async function createTenantDraft(input: CreateTenantDraftInput): Promise<Tenant> {
   if (apiClient.isMockMode) {
+    // Same refusal as the backend: the primary contact is invited as the
+    // first Executive Director, which needs an email with no account yet.
+    if (mockAccountExists(input.primaryContact.workEmail)) {
+      throw new ApiError(409, "An account with this email already exists.", { code: "EMAIL_ALREADY_REGISTERED", message: "An account with this email already exists." });
+    }
     const tenant: Tenant = {
       id: newId("tenant"),
       status: "active",

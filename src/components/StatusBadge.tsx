@@ -5,6 +5,7 @@ import type { TenantStatus, VerificationState } from "../services/tenantsService
 import type { ConflictStatus } from "../services/listingConflictsService";
 import type { PortalEstateStatus } from "../services/portalEstatesService";
 import type { InvitationStatus, StaffStatus } from "../services/staffService";
+import type { BoundaryChangeStatus } from "../services/portalEstatesService";
 
 export type BadgeVariant = "neutral" | "info" | "warning" | "success" | "error";
 
@@ -91,5 +92,15 @@ export function staffStatusBadge(status: StaffStatus): { label: string; variant:
     case "pending_verification": return { label: "Pending verification", variant: "warning" };
     case "suspended": return { label: "Suspended", variant: "error" };
     case "deactivated": return { label: "Deactivated", variant: "neutral" };
+  }
+}
+
+export function boundaryChangeBadge(status: BoundaryChangeStatus): { label: string; variant: BadgeVariant } {
+  switch (status) {
+    case "applied": return { label: "Applied", variant: "success" };
+    case "pending": return { label: "Waiting for review", variant: "warning" };
+    case "approved": return { label: "Approved", variant: "success" };
+    case "rejected": return { label: "Rejected", variant: "error" };
+    case "withdrawn": return { label: "Withdrawn", variant: "neutral" };
   }
 }
