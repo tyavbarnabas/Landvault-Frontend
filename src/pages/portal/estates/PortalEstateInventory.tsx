@@ -5,7 +5,7 @@ import { formatAmount, type Currency } from "../../../data/mockData";
 import { STATUS_COLORS, STATUS_LABELS } from "../../../lib/plotStatus";
 import { useApp } from "../../../contexts/AppContext";
 import { canManageEstates } from "../../../services/authService";
-import { fetchEstateGeoJson, fetchPortalEstateById } from "../../../services/portalEstatesService";
+import { fetchEstateGeoJson, fetchPortalEstateById, isReadOnlyForScope } from "../../../services/portalEstatesService";
 import {
   BULK_STATUS_LIMIT, InventoryEditError, availableCount, changePlotStatus, changePlotStatuses, countFor, createBlock,
   correctPlotBoundary, createPriceTier, fetchBlocks, fetchInventoryGeoJson, fetchPlots, fetchPriceTierImpact, fetchPriceTiers,
@@ -29,7 +29,7 @@ export default function PortalEstateInventory() {
   const { estateId } = useParams<{ estateId: string }>();
   const scope = usePortalScope();
   const { user } = useApp();
-  const canManage = canManageEstates(user);
+  const mayManage = canManageEstates(user);
   // Tab lives in the URL so it's linkable — and so returning here after
   // creating plots lands back on the plots list rather than the first tab.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -65,6 +65,9 @@ export default function PortalEstateInventory() {
   }
 
   const { tiers, blocks, plots, mapData } = loaded.data!;
+  // EB-2: branch staff see a company-level estate but can't change it.
+  const readOnly = isReadOnlyForScope(estate, scope);
+  const canManage = mayManage && !readOnly;
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -73,6 +76,8 @@ export default function PortalEstateInventory() {
       <p className="text-sm text-[var(--muted-foreground)] mb-6">
         Price by tier, not per plot: {plots.length} plot{plots.length === 1 ? "" : "s"} priced by {tiers.length} tier{tiers.length === 1 ? "" : "s"}.
       </p>
+
+      {readOnly && <ReadOnlyNotice />}
 
       <div className="border-b border-[var(--border)] mb-5">
         <TabBar
@@ -269,7 +274,7 @@ function TiersPanel({ estateId, tiers, canManage, onCreated }: {
 
       {lastEdit && <TierEditResult tierName={lastEdit.tierName} update={lastEdit.update} onDismiss={() => setLastEdit(null)} />}
 
-      <form onSubmit={submit} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 space-y-4">
+      {canManage && <form onSubmit={submit} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 space-y-4">
         <h2 className="text-sm font-semibold text-[var(--foreground)]">Add a price tier</h2>
 
         <div>
@@ -310,7 +315,7 @@ function TiersPanel({ estateId, tiers, canManage, onCreated }: {
         <button type="submit" disabled={saving} className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
           {saving ? "Adding…" : "Add tier"}
         </button>
-      </form>
+      </form>}
     </div>
   );
 }
@@ -377,7 +382,7 @@ function BlocksPanel({ estateId, blocks, canManage, onCreated }: {
         </ul>
       )}
 
-      <form onSubmit={submit} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 space-y-4">
+      {canManage && <form onSubmit={submit} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 space-y-4">
         <h2 className="text-sm font-semibold text-[var(--foreground)]">Add a block</h2>
         <div className="grid sm:grid-cols-2 gap-4">
           <TierField id="block-name" label="Name" value={name} onChange={setName} placeholder="Block C" />
@@ -387,7 +392,7 @@ function BlocksPanel({ estateId, blocks, canManage, onCreated }: {
         <button type="submit" disabled={saving || !name.trim()} className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
           {saving ? "Adding…" : "Add block"}
         </button>
-      </form>
+      </form>}
     </div>
   );
 }
@@ -461,9 +466,11 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData, canManage, onChan
               Import from file
             </Link>
           )}
-          <Link to={`/portal/estates/${estateId}/plots/new`} className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90">
-            Add plots
-          </Link>
+          {canManage && (
+            <Link to={`/portal/estates/${estateId}/plots/new`} className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90">
+              Add plots
+            </Link>
+          )}
         </div>
       </div>
 
@@ -1232,5 +1239,15 @@ function TierField({ id, errorKey = id, label, value, onChange, type = "text", p
       />
       {invalid && <p id={`${id}-error`} className="text-xs text-red-700 mt-1">{error!.message}</p>}
     </div>
+  );
+}
+
+// EB-2. Said once at the top rather than leaving a branch user to discover it
+// action by action.
+export function ReadOnlyNotice() {
+  return (
+    <p className="text-sm text-[var(--muted-foreground)] bg-[var(--muted)] rounded-lg px-4 py-3 mb-5" role="note">
+      This estate belongs to the company rather than a branch. You can see it, but only company-wide staff can change it.
+    </p>
   );
 }

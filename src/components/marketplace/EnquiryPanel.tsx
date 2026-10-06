@@ -42,7 +42,7 @@ export default function EnquiryPanel({ listing, plot, onClose }: EnquiryPanelPro
           <div className="text-center py-6">
             <div className="text-2xl mb-2">✅</div>
             <div className="font-medium text-sm mb-1">Enquiry sent</div>
-            <p className="text-xs text-[var(--muted-foreground)] mb-4">{listing.seller.branchName}'s sales team will respond via {contact === "in_app" ? "in-app message" : contact === "whatsapp" ? "WhatsApp" : "phone"}, usually within a business day.</p>
+            <p className="text-xs text-[var(--muted-foreground)] mb-4">{listing.seller.branchName ?? listing.seller.companyName}'s sales team will respond via {contact === "in_app" ? "in-app message" : contact === "whatsapp" ? "WhatsApp" : "phone"}, usually within a business day.</p>
             <div className="flex gap-2 justify-center">
               <Link to="/enquiries" className="text-xs px-3 py-1.5 border border-[var(--border)] rounded-md hover:bg-[var(--muted)]">View my enquiries</Link>
               <button onClick={onClose} className="text-xs px-3 py-1.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:opacity-90">Close</button>

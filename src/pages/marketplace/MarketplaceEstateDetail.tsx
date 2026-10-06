@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
 import { fetchListingById, fetchSimilarListings, fromPrice, type Listing } from "../../services/marketplaceService";
 import ListingTypeBadge from "../../components/marketplace/ListingTypeBadge";
-import SellerLine from "../../components/marketplace/SellerLine";
+import SellerLine, { SellerOffice } from "../../components/marketplace/SellerLine";
 import PriceTierTable from "../../components/marketplace/PriceTierTable";
 import WishlistButton from "../../components/marketplace/WishlistButton";
 import EstateCard from "../../components/marketplace/EstateCard";
@@ -84,6 +84,7 @@ export default function MarketplaceEstateDetail() {
           </div>
           <p className="text-sm text-[var(--muted-foreground)]">{listing.area}, {listing.city}, {listing.state}</p>
           <SellerLine seller={listing.seller} className="text-sm text-[var(--muted-foreground)] block mt-0.5" />
+          <SellerOffice seller={listing.seller} />
         </div>
         <div className="text-right shrink-0">
           <div className="text-xs text-[var(--muted-foreground)]">{listing.titleType} · verified {listing.lastVerifiedDate}</div>

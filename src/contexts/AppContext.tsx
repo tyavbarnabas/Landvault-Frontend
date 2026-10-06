@@ -6,6 +6,7 @@ import {
   MOCK_CLIENT_USER, type AuthUser, type LoginOutcome, type RegisterInput,
 } from "../services/authService";
 import { IS_MOCK_MODE, onSessionEvent } from "../lib/apiClient";
+import { acceptInvitation as acceptInvitationRequest } from "../services/staffService";
 import { fetchNotifications, markNotificationRead as markNotificationReadRequest, addNotification as addNotificationRequest, type Notification } from "../services/notificationsService";
 import type { WishlistItem } from "../services/marketplaceService";
 
@@ -34,6 +35,8 @@ interface AppContextValue {
   // for a real session.
   completeTwoFactor: (challengeToken: string, code: string) => Promise<User>;
   register: (input: RegisterInput) => Promise<User>;
+  // Accepting a staff invitation signs the person in, exactly as login does.
+  acceptInvitation: (token: string, password: string) => Promise<User>;
   logout: () => void;
   // The server clears `mustChangePassword` on a successful change; this
   // mirrors that on the user already in hand rather than re-fetching it.
@@ -128,6 +131,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const register = async (input: RegisterInput) => signIn(await registerRequest(input));
 
+  const acceptInvitation = async (token: string, password: string) => signIn(await acceptInvitationRequest(token, password));
+
   // Signed out in the UI at once; the server call and dropping the access
   // token follow under the cross-tab lock (see apiClient.logoutSession).
   const logout = () => {
@@ -169,7 +174,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ user, isAuthenticated: !!user, restoringSession, signOutNotice, clearSignOutNotice: () => setSignOutNotice(null), sessionProblem, login, completeTwoFactor, register, logout, passwordChanged, savedPlots, toggleSavedPlot, currency, setCurrency, notifications, markNotificationRead, addNotification, wishlist, isWishlisted, toggleWishlistItem }}>
+    <AppContext.Provider value={{ user, isAuthenticated: !!user, restoringSession, signOutNotice, clearSignOutNotice: () => setSignOutNotice(null), sessionProblem, login, completeTwoFactor, register, acceptInvitation, logout, passwordChanged, savedPlots, toggleSavedPlot, currency, setCurrency, notifications, markNotificationRead, addNotification, wishlist, isWishlisted, toggleWishlistItem }}>
       {children}
     </AppContext.Provider>
   );

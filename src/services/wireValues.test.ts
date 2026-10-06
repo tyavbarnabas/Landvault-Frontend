@@ -29,6 +29,12 @@ import {
 } from "./portalInventoryService";
 import type { EstateStateOverride } from "./estateStateOverrideService";
 import { NIGERIAN_STATES, STATE_ISO_CODES } from "../data/nigerianStates";
+import {
+  TENANT_ROLES, branchRuleFor,
+  type InvitationPreview, type InvitationStatus, type StaffInvitation, type StaffMember, type StaffStatus,
+} from "./staffService";
+import type { PortalBranch } from "./branchesService";
+import { BRANCHES_MANAGE_PERMISSION, STAFF_INVITE_PERMISSION, STAFF_REQUEST_PERMISSION } from "./authService";
 import type { EstateBoundaryResult, EstateIntent, UpdateEstateInput } from "./portalEstatesService";
 import type { Currency, PlotStatus, PaymentPlan } from "../data/mockData";
 import { BUYER_FACING_STATUSES, CREATABLE_STATUSES, STATUS_COLORS, STATUS_LABELS } from "../lib/plotStatus";
@@ -388,5 +394,60 @@ describe("plot edit and state-override shapes", () => {
     expect(new Set(Object.values(STATE_ISO_CODES)).size).toBe(37);
     expect(STATE_ISO_CODES["Federal Capital Territory (Abuja)"]).toBe("NG-FC");
     expect(Object.values(STATE_ISO_CODES).every((c) => /^NG-[A-Z]{2}$/.test(c))).toBe(true);
+  });
+});
+
+// Tenant self-service — transcribed from PortalBranchDto, StaffInvitationDto,
+// StaffMemberDto, InvitationPreviewDto, changesets 015/065/067/068 and
+// InvitationExceptionHandler (backend 16bfff3, 6dfa23f).
+describe("branches, staff and invitations", () => {
+  it("the three new permission slugs, exactly", () => {
+    expect([BRANCHES_MANAGE_PERMISSION, STAFF_INVITE_PERMISSION, STAFF_REQUEST_PERMISSION])
+      .toEqual(["portal.branches.manage", "portal.staff.invite", "portal.staff.request"]);
+  });
+
+  it("PortalBranchDto — eight fields", () => {
+    const b: PortalBranch = { id: "b", name: "n", street: null, city: null, state: null, phone: null, email: null, createdAt: "" };
+    expect(Object.keys(b).sort()).toEqual(["city", "createdAt", "email", "id", "name", "phone", "state", "street"]);
+  });
+
+  it("StaffInvitationDto — nineteen fields, and no link among them", () => {
+    const i: StaffInvitation = { id: "i", email: "", firstName: "", lastName: "", roleCode: "", roleName: "", branchId: null, branchName: null,
+      status: "pending", createdAt: "", expiresAt: "", acceptedAt: null, revokedAt: null, sendCount: 1, approvalRequired: false,
+      requestedBy: null, approvedAt: null, rejectedAt: null, rejectionReason: null };
+    const keys = Object.keys(i);
+    expect(keys).toHaveLength(19);
+    expect(keys.some((k) => /token|link|url/i.test(k))).toBe(false);
+  });
+
+  it("invitation and staff statuses, exactly", () => {
+    expect(wireValues(["awaiting_approval", "rejected", "pending", "expired", "accepted", "revoked"] satisfies readonly InvitationStatus[]))
+      .toEqual(["awaiting_approval", "rejected", "pending", "expired", "accepted", "revoked"]);
+    expect(wireValues(["active", "pending_verification", "suspended", "deactivated"] satisfies readonly StaffStatus[]))
+      .toEqual(["active", "pending_verification", "suspended", "deactivated"]);
+  });
+
+  it("StaffMemberDto — nine fields; a role is four", () => {
+    const m: StaffMember = { userId: "u", firstName: "", lastName: "", email: "", phone: null, status: "active",
+      roles: [{ roleCode: "", roleName: "", branchId: null, branchName: null }], lastLoginAt: null, createdAt: "" };
+    expect(Object.keys(m).sort()).toEqual(["createdAt", "email", "firstName", "lastLoginAt", "lastName", "phone", "roles", "status", "userId"]);
+    expect(Object.keys(m.roles[0]).sort()).toEqual(["branchId", "branchName", "roleCode", "roleName"]);
+  });
+
+  it("InvitationPreviewDto — six fields", () => {
+    const p: InvitationPreview = { email: "", firstName: "", companyName: "", roleName: "", branchName: null, expiresAt: "" };
+    expect(Object.keys(p).sort()).toEqual(["branchName", "companyName", "email", "expiresAt", "firstName", "roleName"]);
+  });
+
+  it("the tenant-assignable roles, their seeded names and their scopes", () => {
+    expect(TENANT_ROLES.map((r) => [r.code, r.name, r.scope])).toEqual([
+      ["executive_director", "Executive Director", "COMPANY"],
+      ["branch_manager", "Branch Manager", "BRANCH"],
+      ["sales_manager", "Sales Manager", "EITHER"],
+      ["surveyor_project_manager", "Surveyor / Project Manager", "EITHER"],
+      ["finance_officer", "Finance Officer", "EITHER"],
+      ["legal_officer", "Legal Officer", "EITHER"],
+    ]);
+    expect(TENANT_ROLES.map((r) => branchRuleFor(r.code))).toEqual(["forbidden", "required", "optional", "optional", "optional", "optional"]);
   });
 });

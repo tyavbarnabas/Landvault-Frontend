@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { useFetch } from "../../../lib/useFetch";
 import { formatAmount } from "../../../data/mockData";
 import {
-  EstateEditError, addEstateBoundary, fetchEstateGeoJson, fetchPortalEstateById,
+  EstateEditError, addEstateBoundary, fetchEstateGeoJson, fetchPortalEstateById, isReadOnlyForScope,
   type EstateBoundaryResult, type GeoJsonPolygon, type PortalScope,
 } from "../../../services/portalEstatesService";
 import BoundaryField from "../../../components/portal/BoundaryField";
@@ -13,12 +13,15 @@ import PublicationPanel from "../../../components/portal/PublicationPanel";
 import StatusBadge, { portalEstateStatusBadge } from "../../../components/StatusBadge";
 import EstateBoundaryMap from "../../../components/map/EstateBoundaryMap";
 import { usePortalScope } from "../usePortalScope";
+import { ownershipLabel, useBranchNames } from "../useBranchNames";
+import { ReadOnlyNotice } from "./PortalEstateInventory";
 
 export default function PortalEstateDetail() {
   const { estateId } = useParams<{ estateId: string }>();
   const scope = usePortalScope();
   const { user } = useApp();
-  const canManage = canManageEstates(user);
+  const mayManage = canManageEstates(user);
+  const branchNames = useBranchNames(scope);
 
   const loaded = useFetch(async () => {
     if (!scope || !estateId) return null;
@@ -49,6 +52,9 @@ export default function PortalEstateDetail() {
   }
 
   const badge = portalEstateStatusBadge(estate.status);
+  // EB-2: branch staff see a company-level estate but can't change it.
+  const readOnly = isReadOnlyForScope(estate, scope);
+  const canManage = mayManage && !readOnly;
   const boundary = loaded.data?.boundary ?? null;
 
   return (
@@ -59,7 +65,7 @@ export default function PortalEstateDetail() {
         <div>
           <h1 className="font-display text-3xl text-[var(--foreground)] mb-1">{estate.name}</h1>
           <p className="text-sm text-[var(--muted-foreground)]">
-            {estate.area}, {estate.city}, {estate.state} · {estate.branchId} branch
+            {estate.area}, {estate.city}, {estate.state} · {ownershipLabel(estate.branchId, branchNames)}
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
@@ -71,6 +77,8 @@ export default function PortalEstateDetail() {
           )}
         </div>
       </div>
+
+      {readOnly && <ReadOnlyNotice />}
 
       {estate.description && <p className="text-sm text-[var(--foreground)] leading-relaxed mb-6">{estate.description}</p>}
 

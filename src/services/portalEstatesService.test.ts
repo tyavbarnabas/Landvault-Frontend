@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   BOUNDARY_TEMPLATE_JSON, ELIGIBILITY_CONDITIONS, PUBLICATION_REFUSAL_CONDITIONS, blockingReasonsFor, boundaryAreaSqm,
-  EstateEditError, addEstateBoundary, conflictIsBlocking, createPortalEstate, fetchEstateGeoJson, fetchPortalEstateById, updatePortalEstate,
+  EstateEditError, addEstateBoundary, isReadOnlyForScope, conflictIsBlocking, createPortalEstate, fetchEstateGeoJson, fetchPortalEstateById, updatePortalEstate,
   fetchPortalEstates, parseBoundary, publishEstate, refusalFromError, statusFor, unpublishEstate,
   type EstateEligibility, type PortalScope,
 } from "./portalEstatesService";
@@ -561,5 +561,40 @@ describe("state override", () => {
     const { setStateOverride } = await import("./estateStateOverrideService");
     await expect(setStateOverride("anything", "  ")).rejects.toMatchObject({ code: "VALIDATION" });
     await expect(setStateOverride("no-such-estate", "reason")).rejects.toMatchObject({ code: "ESTATE_NOT_FOUND" });
+  });
+});
+
+// ─── EB-1 / EB-2: company-level estates ──────────────────────────────────────
+
+describe("an estate with no branch", () => {
+  it("a director can create one; it belongs to the company", async () => {
+    const estate = await createPortalEstate({
+      name: "Company Level Estate", description: "", area: "Guzape", city: "Abuja", state: "Federal Capital Territory (Abuja)",
+      address: "", cornerPremiumPct: 0, amenities: [],
+    }, DIRECTOR);
+    expect(estate.branchId).toBeNull();
+  });
+
+  it("branch staff can see it but not change it; another branch's estate stays invisible", async () => {
+    const estate = await createPortalEstate({
+      name: "Company Visible Estate", description: "", area: "Guzape", city: "Abuja", state: "Federal Capital Territory (Abuja)",
+      address: "", cornerPremiumPct: 0, amenities: [],
+    }, DIRECTOR);
+    const seen = await fetchPortalEstateById(estate.id, HERITAGE_MANAGER);
+    expect(seen?.branchId).toBeNull();
+    expect(isReadOnlyForScope(seen!, HERITAGE_MANAGER)).toBe(true);
+    expect(isReadOnlyForScope(seen!, DIRECTOR)).toBe(false);
+
+    const list = await fetchPortalEstates(HERITAGE_MANAGER, {}, { limit: 200 });
+    expect(list.items.some((e) => e.id === estate.id)).toBe(true);
+    expect(list.items.every((e) => e.branchId === null || e.branchId === "heritage")).toBe(true);
+  });
+
+  it("a branch-scoped user always creates in their own branch, whatever they send", async () => {
+    const estate = await createPortalEstate({
+      name: "Branch Forced Estate", description: "", area: "Guzape", city: "Abuja", state: "Federal Capital Territory (Abuja)",
+      address: "", cornerPremiumPct: 0, amenities: [], branchId: "premium",
+    }, HERITAGE_MANAGER);
+    expect(estate.branchId).toBe("heritage");
   });
 });

@@ -62,7 +62,9 @@ export interface Estate {
   // marketplace publication gate and the Seller shown on a published
   // listing; see marketplaceService.ts's projectListing().
   tenantId: string;
-  branchId: string;
+  // Null = a company-level estate (EB-1): it belongs to the organisation
+  // directly, as a single-office developer's estates do.
+  branchId: string | null;
   totalPlots: number;
   availablePlots: number;
   priceFrom: number;

@@ -5,7 +5,8 @@ import { createPortalEstate, type GeoJsonPolygon } from "../../../services/porta
 import BoundaryField, { type BoundaryFieldState } from "../../../components/portal/BoundaryField";
 import { serverMessage } from "../../../components/portal/formParts";
 import { usePortalScope } from "../usePortalScope";
-import { useApp } from "../../../contexts/AppContext";
+import { useFetch } from "../../../lib/useFetch";
+import { fetchBranches } from "../../../services/branchesService";
 
 // A real Abuja boundary, offered as the example so a developer can see the
 // expected shape — and so a transposed paste is visibly different from this.
@@ -23,7 +24,7 @@ const EXAMPLE_BOUNDARY = `{
 export default function CreatePortalEstate() {
   const navigate = useNavigate();
   const scope = usePortalScope();
-  const { user } = useApp();
+  const branches = useFetch(async () => (scope ? fetchBranches(scope) : []), [scope?.tenantId, scope?.branchId]);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -33,7 +34,12 @@ export default function CreatePortalEstate() {
   const [address, setAddress] = useState("");
   const [cornerPremiumPct, setCornerPremiumPct] = useState("0");
   const [amenities, setAmenities] = useState("");
-  const [branchId, setBranchId] = useState(user?.branchId ?? "");
+  // EB-1: "no branch" is a DELIBERATE choice — null until the developer picks
+  // one of the two, never an empty dropdown that looks like something is
+  // missing. A branch-scoped user always creates in their own branch.
+  const [ownership, setOwnership] = useState<"company" | "branch" | null>(null);
+  const [branchId, setBranchId] = useState("");
+  const branchScoped = !!scope?.branchId;
 
   const [boundary, setBoundary] = useState<GeoJsonPolygon | null>(null);
   const [boundaryUnresolved, setBoundaryUnresolved] = useState(false);
@@ -50,7 +56,8 @@ export default function CreatePortalEstate() {
     e.preventDefault();
     if (!scope) return;
     if (!state) { setFormError("Choose the state this estate is in."); return; }
-    if (!branchId.trim()) { setFormError("Enter the branch this estate belongs to."); return; }
+    if (!branchScoped && ownership === null) { setFormError("Choose whether this estate belongs to the company or to one of its branches."); return; }
+    if (!branchScoped && ownership === "branch" && !branchId) { setFormError("Choose the branch this estate belongs to."); return; }
     if (boundaryUnresolved) { setFormError("Fix the boundary, or clear it and add it later."); return; }
 
     setSubmitting(true);
@@ -66,7 +73,8 @@ export default function CreatePortalEstate() {
         cornerPremiumPct: Number(cornerPremiumPct) || 0,
         amenities: amenities.split(",").map((a) => a.trim()).filter(Boolean),
         boundary: boundary ?? undefined,
-        branchId: branchId.trim(),
+        // Left out for a company-level estate; ignored for a branch-scoped user.
+        branchId: !branchScoped && ownership === "branch" ? branchId : undefined,
       }, scope);
       navigate(`/portal/estates/${created.id}`);
     } catch (err) {
@@ -96,7 +104,8 @@ export default function CreatePortalEstate() {
         Created as a draft. Publishing is a separate step once the inventory, title and fee schedule are in place.
       </p>
 
-      <form onSubmit={submit} className="space-y-5">
+      {/* Same card, spacing and buttons as New branch and Invite someone. */}
+      <form onSubmit={submit} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 space-y-4">
         <Field label="Estate name" value={name} onChange={setName} required />
         <Field label="Description" value={description} onChange={setDescription} textarea />
 
@@ -127,10 +136,42 @@ export default function CreatePortalEstate() {
 
         <Field label="Address" value={address} onChange={setAddress} />
 
-        <div className="grid sm:grid-cols-2 gap-4">
-          <Field label="Corner premium (%)" value={cornerPremiumPct} onChange={setCornerPremiumPct} type="number" />
-          <Field label="Branch" value={branchId} onChange={setBranchId} required disabled={!!user?.branchId} />
-        </div>
+        <Field label="Corner premium (%)" value={cornerPremiumPct} onChange={setCornerPremiumPct} type="number" />
+
+        {branchScoped ? (
+          <p className="text-sm text-[var(--muted-foreground)]">
+            This estate will belong to your branch{branches.data?.[0] ? `, ${branches.data[0].name}` : ""}.
+          </p>
+        ) : (
+          <fieldset>
+            <legend className="block text-sm font-medium text-[var(--foreground)] mb-1.5">Who does this estate belong to?</legend>
+            <div className="space-y-2">
+              <label className={`flex items-start gap-2 px-3 py-2 rounded-md border text-sm cursor-pointer ${ownership === "company" ? "border-[var(--accent)] bg-[var(--muted)]" : "border-[var(--border)] bg-[var(--card)]"}`}>
+                <input type="radio" name="ownership" checked={ownership === "company"} onChange={() => setOwnership("company")} className="mt-0.5" />
+                <span>
+                  <span className="text-[var(--foreground)]">The company itself — no branch</span>
+                  <span className="block text-xs text-[var(--muted-foreground)]">For a single-office developer. Branch staff can see it, but only company-wide staff can change it.</span>
+                </span>
+              </label>
+              <label className={`flex items-start gap-2 px-3 py-2 rounded-md border text-sm ${branches.data && branches.data.length === 0 ? "opacity-60" : "cursor-pointer"} ${ownership === "branch" ? "border-[var(--accent)] bg-[var(--muted)]" : "border-[var(--border)] bg-[var(--card)]"}`}>
+                <input type="radio" name="ownership" checked={ownership === "branch"} disabled={branches.data?.length === 0}
+                  onChange={() => setOwnership("branch")} className="mt-0.5" />
+                <span className="flex-1">
+                  <span className="text-[var(--foreground)]">One of your branches</span>
+                  {branches.data?.length === 0 ? (
+                    <span className="block text-xs text-[var(--muted-foreground)]">Your company has no branches yet.</span>
+                  ) : ownership === "branch" && (
+                    <select aria-label="Branch" value={branchId} onChange={(e) => setBranchId(e.target.value)}
+                      className="mt-2 w-full px-3 py-2 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm focus:outline-none focus:border-[var(--accent)]">
+                      <option value="">Choose a branch</option>
+                      {(branches.data ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    </select>
+                  )}
+                </span>
+              </label>
+            </div>
+          </fieldset>
+        )}
 
         <Field label="Amenities (comma separated)" value={amenities} onChange={setAmenities} placeholder="Perimeter Fencing, Motorable Roads" />
 
@@ -138,13 +179,18 @@ export default function CreatePortalEstate() {
 
         {formError && <p className="text-sm text-red-700">{formError}</p>}
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full py-3 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
-        >
-          {submitting ? "Creating…" : "Create draft estate"}
-        </button>
+        <div className="flex gap-3">
+          <button
+            type="submit"
+            disabled={submitting}
+            className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60"
+          >
+            {submitting ? "Creating…" : "Create draft estate"}
+          </button>
+          <Link to="/portal/estates" className="px-4 py-2 border border-[var(--border)] rounded-md text-sm text-[var(--foreground)] hover:bg-[var(--muted)]">
+            Cancel
+          </Link>
+        </div>
       </form>
     </div>
   );

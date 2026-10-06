@@ -38,7 +38,7 @@ export default function NewInspection() {
       listingName: listing.name,
       plotId: plot.id,
       plotLabel: plotLabel(plot),
-      sellerBranchName: listing.seller.branchName,
+      sellerBranchName: listing.seller.branchName ?? listing.seller.companyName,
       type: value.type,
       date: value.date,
       timeSlot: value.timeSlot,

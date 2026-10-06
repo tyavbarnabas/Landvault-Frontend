@@ -52,6 +52,11 @@ const CreatePortalPlots = lazy(() => import("./pages/portal/estates/CreatePortal
 const PortalEstateDisclosure = lazy(() => import("./pages/portal/estates/PortalEstateDisclosure"));
 const EditPortalEstate = lazy(() => import("./pages/portal/estates/EditPortalEstate"));
 const StateOverride = lazy(() => import("./pages/admin/estates/StateOverride"));
+const PortalBranches = lazy(() => import("./pages/portal/branches/PortalBranches"));
+const NewPortalBranch = lazy(() => import("./pages/portal/branches/PortalBranches").then((m) => ({ default: m.NewPortalBranch })));
+const PortalStaff = lazy(() => import("./pages/portal/staff/PortalStaff"));
+const NewStaffInvitation = lazy(() => import("./pages/portal/staff/PortalStaff").then((m) => ({ default: m.NewStaffInvitation })));
+const AcceptInvitation = lazy(() => import("./pages/auth/AcceptInvitation"));
 const ImportPortalPlots = lazy(() => import("./pages/portal/estates/ImportPortalPlots"));
 const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
 const TenantDirectory = lazy(() => import("./pages/admin/tenants/TenantDirectory"));
@@ -116,6 +121,15 @@ function PortalRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// A page within the portal that needs a permission beyond portal access —
+// routed on permissions, never on a role string. Without it, the reader is
+// sent back to the estates list rather than shown an error.
+function PermissionGate({ anyOf, children }: { anyOf: string[]; children: React.ReactNode }) {
+  const { user } = useApp();
+  if (!anyOf.some((p) => user?.permissions?.includes(p))) return <Navigate to="/portal/estates" replace />;
+  return <>{children}</>;
+}
+
 function PortalPage({ children }: { children: React.ReactNode }) {
   return (
     <PortalRoute>
@@ -167,6 +181,9 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
+      {/* Public: the invited person has no account yet. The token rides in
+          the URL fragment and is read client-side. */}
+      <Route path="/accept-invitation" element={<Suspense fallback={<PageLoading />}><AcceptInvitation /></Suspense>} />
       <Route path="/reset-password" element={<ResetPassword />} />
       {/* Routed to on mustChangePassword / mustSetUpTwoFa — never blocked on. */}
       <Route path="/change-password" element={<PrivateRoute><ChangePassword /></PrivateRoute>} />
@@ -232,6 +249,11 @@ function AppRoutes() {
       <Route path="/portal/estates/:estateId/plots/new" element={<PortalPage><CreatePortalPlots /></PortalPage>} />
       <Route path="/portal/estates/:estateId/disclosure" element={<PortalPage><PortalEstateDisclosure /></PortalPage>} />
       <Route path="/portal/estates/:estateId/edit" element={<PortalPage><EditPortalEstate /></PortalPage>} />
+      <Route path="/portal/branches" element={<PortalPage><PermissionGate anyOf={["portal.branches.manage"]}><PortalBranches /></PermissionGate></PortalPage>} />
+      <Route path="/portal/branches/new" element={<PortalPage><PermissionGate anyOf={["portal.branches.manage"]}><NewPortalBranch /></PermissionGate></PortalPage>} />
+      <Route path="/portal/staff" element={<PortalPage><PermissionGate anyOf={["portal.staff.invite", "portal.staff.request"]}><PortalStaff /></PermissionGate></PortalPage>} />
+      <Route path="/portal/staff/new" element={<PortalPage><PermissionGate anyOf={["portal.staff.invite", "portal.staff.request"]}><NewStaffInvitation /></PermissionGate></PortalPage>} />
+      <Route path="/portal/staff/invitations" element={<Navigate to="/portal/staff" replace />} />
       <Route path="/portal/estates/:estateId/plots/import" element={<PortalPage><ImportPortalPlots /></PortalPage>} />
 
       <Route path="/admin/dashboard" element={<AdminPage><AdminDashboard /></AdminPage>} />

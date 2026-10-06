@@ -16,6 +16,7 @@ import {
 import { Field, inputClass } from "../../../components/portal/formParts";
 import { STATE_BOUNDARY_ATTRIBUTION } from "../../../components/portal/BoundaryField";
 import { usePortalScope } from "../usePortalScope";
+import { ownershipLabel, useBranchNames } from "../useBranchNames";
 
 export default function EditPortalEstate() {
   const { estateId } = useParams<{ estateId: string }>();
@@ -39,6 +40,7 @@ export default function EditPortalEstate() {
 function EditForm({ estate }: { estate: PortalEstate }) {
   const navigate = useNavigate();
   const scope = usePortalScope();
+  const branchNames = useBranchNames(scope);
   const [name, setName] = useState(estate.name);
   const [description, setDescription] = useState(estate.description);
   const [area, setArea] = useState(estate.area);
@@ -151,7 +153,7 @@ function EditForm({ estate }: { estate: PortalEstate }) {
         </Field>
 
         <div className="text-xs text-[var(--muted-foreground)] space-y-1">
-          <p>Branch: {estate.branchId}. An estate can't be moved to another branch.</p>
+          <p>{ownershipLabel(estate.branchId, branchNames)}. An estate can't be moved to another branch.</p>
           <p>The boundary and publication are managed on the estate page.</p>
         </div>
 

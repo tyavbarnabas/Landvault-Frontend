@@ -7,12 +7,18 @@ import StatusBadge, { portalEstateStatusBadge } from "../../../components/Status
 import EmptyState from "../../../components/marketplace/EmptyState";
 import { usePortalScope } from "../usePortalScope";
 import { useApp } from "../../../contexts/AppContext";
+import { canManageEstates } from "../../../services/authService";
+import { ownershipLabel, useBranchNames } from "../useBranchNames";
 
 const PAGE_SIZE = 20;
 
 export default function PortalEstateList() {
   const scope = usePortalScope();
   const { user } = useApp();
+  const branchNames = useBranchNames(scope);
+  // Creating an estate needs portal.estates.manage — which a branch manager
+  // doesn't hold (only the director and the surveyor do).
+  const canCreate = canManageEstates(user);
   const [query, setQuery] = useState("");
 
   const estates = useFetch(async () => {
@@ -35,15 +41,19 @@ export default function PortalEstateList() {
           <p className="text-sm text-[var(--muted-foreground)]">
             {/* Says whose estates these are, so a short list reads as a scope
                 rather than as missing data. */}
-            {scope.branchId ? `Managed by your branch — ${user?.name}.` : "Every estate across your company's branches."}
+            {scope.branchId
+              ? `Your branch's estates${branchNames[scope.branchId] ? ` (${branchNames[scope.branchId]})` : ""}, and the company's own.`
+              : "Every estate across your company — its branches' and its own."}
           </p>
         </div>
-        <Link
-          to="/portal/estates/new"
-          className="shrink-0 px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 transition-opacity"
-        >
-          New estate
-        </Link>
+        {canCreate && (
+          <Link
+            to="/portal/estates/new"
+            className="shrink-0 px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 transition-opacity"
+          >
+            New estate
+          </Link>
+        )}
       </div>
 
       <input
@@ -67,14 +77,14 @@ export default function PortalEstateList() {
         <EmptyState
           title={query ? "No estates match that search" : "No estates yet"}
           description={query ? "Try a different name, area or city." : "Create your first estate to start building its inventory."}
-          action={!query ? <Link to="/portal/estates/new" className="inline-block px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium hover:opacity-90">Create an estate</Link> : undefined}
+          action={!query && canCreate ? <Link to="/portal/estates/new" className="inline-block px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium hover:opacity-90">Create an estate</Link> : undefined}
         />
       )}
 
       {!estates.loading && !estates.error && (estates.data?.items.length ?? 0) > 0 && (
         <>
           <div className="space-y-3">
-            {estates.data!.items.map((estate) => <EstateRow key={estate.id} estate={estate} />)}
+            {estates.data!.items.map((estate) => <EstateRow key={estate.id} estate={estate} branchNames={branchNames} />)}
           </div>
           <p className="text-xs text-[var(--muted-foreground)] mt-4">
             Showing {estates.data!.items.length} of {estates.data!.total}.
@@ -85,19 +95,19 @@ export default function PortalEstateList() {
   );
 }
 
-function EstateRow({ estate }: { estate: PortalEstate }) {
+function EstateRow({ estate, branchNames }: { estate: PortalEstate; branchNames: Record<string, string> }) {
   const badge = portalEstateStatusBadge(estate.status);
 
   return (
     <Link
       to={`/portal/estates/${estate.id}`}
-      className="block bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 hover:border-[var(--accent)]/50 transition-colors"
+      className="block bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 min-h-28 hover:border-[var(--accent)]/50 transition-colors"
     >
       <div className="flex items-start justify-between gap-4 mb-2">
         <div className="min-w-0">
           <div className="font-semibold text-[var(--foreground)]">{estate.name}</div>
           <div className="text-xs text-[var(--muted-foreground)]">
-            {estate.area}, {estate.city}, {estate.state} · {estate.branchId} branch
+            {estate.area}, {estate.city}, {estate.state} · {ownershipLabel(estate.branchId, branchNames)}
           </div>
         </div>
         <StatusBadge label={badge.label} variant={badge.variant} />

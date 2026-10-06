@@ -99,6 +99,26 @@ Wired: withhold/return and bulk status with dry-run preview (`PUT .../plots/{id}
 
 **Gap for the backend:** there is no admin endpoint that lists or reads estates, and the override isn't on any read DTO. So the override screen starts from an estate id the developer quotes (the portal shows it when a boundary is refused), and it can't show whether an override already exists until one is set or removed. **Mock mode** doesn't run the state check at all: it has no state polygons, and says nothing rather than pretend.
 
+### F. Branches, staff and invitations — wired 2026-10-06 (backend `16bfff3`, `6dfa23f`)
+
+Wired:
+- Branches with their public office details (`/portal/branches`).
+- Company-level estates. "No branch" is an explicit choice on New estate, and branch staff see such estates read-only (EB-2).
+- Invitations: invite, branch request, approve, reject, cancel, revoke and resend.
+- The public `/accept-invitation` page, which reads the token from `#token=` and signs the person in.
+- Staff management: role change, deactivate and reactivate.
+- The three new permissions, plus the FP-1 wording for a listing that went dark because it has no boundary.
+
+**Found while wiring:** the mock branch manager held `portal.estates.manage`. Changeset 041 grants that only to `executive_director` and `surveyor_project_manager`, so the portal was offering branch managers estate creation and editing that the real backend refuses. Corrected, and the add-tier, add-block and add-plots forms are now gated on it too.
+
+**Asks for the backend:**
+1. **No endpoint lists roles.** Names and scopes are hard-coded in `staffService.ts` from changesets 015/067. A `GET /api/portal/roles` returning `{code, name, scope}` would remove the copy.
+2. **Changing an estate boundary isn't supported** (`BOUNDARY_ALREADY_SET`), so a correction can't be offered.
+3. **Conflicts aren't itemised.** Estate and plot boundary results report counts or a blocked flag, not which conflicts resolved or were raised.
+4. **Import maps tiers by exact value only.** It can't map a file value (e.g. `zone = A`) to a tier: only the property *name* is configurable.
+5. **Stale Javadoc:** `CreateEstateRequest` still says `branchId` is required for an Executive Director (EB-1 made it optional).
+6. **No `X-Branch-Id` branch switcher** for directors yet; the portal always acts company-wide for them.
+
 ### Also worth a look, lower priority
 
 - **`POST /api/auth/login`'s OpenAPI description says to "check for a `challengeId` field".** `TwoFactorChallengeResponse` has no such field — it is `challengeToken`. The frontend discriminates on `twoFactorRequired`, which is unambiguous, but the description is misleading and worth correcting.

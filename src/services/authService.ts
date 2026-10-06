@@ -93,6 +93,25 @@ const PORTAL_PERMISSIONS = [
   "portal.estates.manage",
 ];
 
+// Tenant self-service (changesets 065, 067, 068), granted exactly as the
+// backend grants them:
+//   portal.branches.manage — executive_director only
+//   portal.staff.invite    — executive_director only
+//   portal.staff.request   — branch_manager AND executive_director. The
+//     director holds it only so that inviting a branch manager passes SI-4
+//     ("never grant what you don't hold"); the backend refuses anyone holding
+//     portal.staff.invite at /requests, so a director never actually asks.
+export const BRANCHES_MANAGE_PERMISSION = "portal.branches.manage";
+export const STAFF_INVITE_PERMISSION = "portal.staff.invite";
+export const STAFF_REQUEST_PERMISSION = "portal.staff.request";
+
+const DIRECTOR_PERMISSIONS = [...PORTAL_PERMISSIONS, BRANCHES_MANAGE_PERMISSION, STAFF_INVITE_PERMISSION, STAFF_REQUEST_PERMISSION];
+// NOT portal.estates.manage: changeset 041 grants that to executive_director
+// and surveyor_project_manager only. A branch manager reads their branch's
+// estates and asks head office for staff — the surveyor they ask for is the
+// one who builds the inventory.
+const BRANCH_MANAGER_PERMISSIONS = ["portal.estates.view", STAFF_REQUEST_PERMISSION];
+
 // ─── Surface helpers — permissions, never role strings ───────────────────────
 
 export const PORTAL_VIEW_PERMISSION = "portal.estates.view";
@@ -115,6 +134,23 @@ export const PORTAL_MANAGE_PERMISSION = "portal.estates.manage";
 
 export function canManageEstates(user: AuthUser | null | undefined): boolean {
   return can(user, PORTAL_MANAGE_PERMISSION);
+}
+
+// Create and rename branches. The backend ALSO refuses a caller whose current
+// scope is one branch, so this is a menu gate, never the control itself.
+export function canManageBranches(user: AuthUser | null | undefined): boolean {
+  return can(user, BRANCHES_MANAGE_PERMISSION);
+}
+
+// Invite staff, approve or reject branch requests, manage the team.
+export function canInviteStaff(user: AuthUser | null | undefined): boolean {
+  return can(user, STAFF_INVITE_PERMISSION);
+}
+
+// Ask head office for staff. Whoever can invite never asks — the backend
+// refuses them at /requests — so they don't count here.
+export function canRequestStaff(user: AuthUser | null | undefined): boolean {
+  return can(user, STAFF_REQUEST_PERMISSION) && !canInviteStaff(user);
 }
 
 export function isPlatformStaff(user: AuthUser | null | undefined): boolean {
@@ -193,7 +229,7 @@ const MOCK_PORTAL_DIRECTOR: AuthUser = {
   // "client", not a bespoke role — this is exactly what the backend sends for
   // a tenant's staff member. The portal permissions are what matter.
   role: "client",
-  permissions: PORTAL_PERMISSIONS,
+  permissions: DIRECTOR_PERMISSIONS,
   tenantId: "estintin-group",
   branchId: null,
 };
@@ -208,7 +244,7 @@ const MOCK_PORTAL_BRANCH_MANAGER: AuthUser = {
   kycType: "local",
   twoFAEnabled: false,
   role: "client",
-  permissions: PORTAL_PERMISSIONS,
+  permissions: BRANCH_MANAGER_PERMISSIONS,
   tenantId: "estintin-group",
   branchId: "heritage",
 };
@@ -221,6 +257,31 @@ const MOCK_ACCOUNTS_BY_EMAIL: Record<string, AuthUser> = {
   [MOCK_PORTAL_DIRECTOR.email]: MOCK_PORTAL_DIRECTOR,
   [MOCK_PORTAL_BRANCH_MANAGER.email]: MOCK_PORTAL_BRANCH_MANAGER,
 };
+
+// Mock mode only: an accepted invitation creates an account that can then
+// sign in like any other — a fresh login, not the demo buyer fallback.
+export function registerMockAccount(user: AuthUser): void {
+  MOCK_ACCOUNTS_BY_EMAIL[user.email.trim().toLowerCase()] = user;
+}
+
+export function mockAccountExists(email: string): boolean {
+  return email.trim().toLowerCase() in MOCK_ACCOUNTS_BY_EMAIL || email.trim().toLowerCase() === MOCK_CLIENT_USER.email;
+}
+
+// The permissions a mock account holds for a tenant role — the backend's
+// role_permissions, for the roles a tenant can assign.
+// Transcribed from changesets 041, 045, 065, 067 and 068.
+export function mockPermissionsForRole(roleCode: string): string[] {
+  switch (roleCode) {
+    case "executive_director": return DIRECTOR_PERMISSIONS;
+    case "branch_manager": return BRANCH_MANAGER_PERMISSIONS;
+    case "surveyor_project_manager": return PORTAL_PERMISSIONS;
+    case "sales_manager":
+    case "finance_officer":
+    case "legal_officer": return ["portal.estates.view"];
+    default: return [];
+  }
+}
 
 // ─── Login, and the second step when 2FA is on ───────────────────────────────
 

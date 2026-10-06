@@ -48,6 +48,8 @@ const NAV_SECTIONS = [
     label: "My company",
     items: [
       { path: "/portal/estates", label: "Estates", icon: MapIcon, permission: "portal.estates.view" },
+      { path: "/portal/staff", label: "Staff", icon: UsersIcon, permission: ["portal.staff.invite", "portal.staff.request"] },
+      { path: "/portal/branches", label: "Branches", icon: BriefcaseIcon, permission: "portal.branches.manage" },
     ],
   },
   {
@@ -275,7 +277,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const visibleNavSections = NAV_SECTIONS
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => !item.permission || user?.permissions?.includes(item.permission)),
+      // A string, or a list where holding any one is enough.
+      items: section.items.filter((item) => {
+        const needed: string | string[] | undefined = item.permission
+        if (!needed) return true
+        return (Array.isArray(needed) ? needed : [needed]).some((p) => user?.permissions?.includes(p))
+      }),
     }))
     .filter((section) => section.items.length > 0)
 

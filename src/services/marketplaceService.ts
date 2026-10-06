@@ -45,9 +45,21 @@ export type TitleType = "C of O" | "R of O" | "Governor's Consent" | "Gazette";
 export type PaymentPlanType = "outright" | "installment" | "milestone";
 export type ListingIntent = "development" | "investment" | "both";
 
+// SellerDto. `branchName` is null for a company-level estate, which has no
+// branch. `office` is the selling branch's office — shown publicly, and null
+// when there's no branch or it has no office details recorded.
 export interface Seller {
-  branchName: string;
+  branchName: string | null;
   companyName: string;
+  office?: BranchOffice | null;
+}
+
+export interface BranchOffice {
+  street: string | null;
+  city: string | null;
+  state: string | null;
+  phone: string | null;
+  email: string | null;
 }
 
 // One estate = one marketplace listing. `cornerPremiumPct` is set once per
@@ -160,9 +172,10 @@ export function cornerPrice(tier: PriceTier, listing: Pick<Estate, "cornerPremiu
 // check with a tenant lookup behind it.
 export function projectListing(estate: MockEstate): Listing | null {
   const tenant = fetchTenantByIdSync(estate.tenantId);
-  const branch = tenant?.branches.find((b) => b.id === estate.branchId);
+  // A company-level estate has no branch, and is listed under the company.
+  const branch = estate.branchId ? tenant?.branches.find((b) => b.id === estate.branchId) : undefined;
   if (!estate.published) return null;
-  if (!tenant || !branch) return null;
+  if (!tenant || (estate.branchId && !branch)) return null;
   if (tenant.verificationState !== "verified") return null;
   if (!tenant.entitlements.marketplacePublishing) return null;
   if (tenant.status === "suspended") return null;
@@ -183,7 +196,8 @@ export function projectListing(estate: MockEstate): Listing | null {
     paymentPlans: estate.paymentPlans,
     intent: estate.intent,
     publishedDate: estate.publishedDate,
-    seller: { branchName: branch.name, companyName: tenantDisplayName(tenant) },
+    // No office in mock data: none was ever recorded, and none is invented.
+    seller: { branchName: branch?.name ?? null, companyName: tenantDisplayName(tenant), office: null },
     verified: true,
   };
 }

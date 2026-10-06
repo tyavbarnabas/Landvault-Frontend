@@ -105,6 +105,15 @@ export default function PublicationPanel({ estate, scope, canManage, onChanged }
             {estate.blockingReasons.join(". ")}. Your listing hasn't been unpublished — it returns to the marketplace by itself once this
             clears, with nothing for you to redo.
           </p>
+          {/* FP-1. The boundary rule has no grandfathering: an estate with no
+              boundary is invisible to overlap checks, so publishing without
+              one was a way around them. Said plainly, as recoverable. */}
+          {eligibility && !eligibility.hasBoundary && (
+            <p className="text-xs text-amber-800 leading-relaxed mt-2">
+              Every listing now needs a boundary — even ones published before the rule — because an estate without one can't be checked
+              against neighbouring land. Add it in the Boundary section below and the listing comes back straight away.
+            </p>
+          )}
         </div>
       )}
 

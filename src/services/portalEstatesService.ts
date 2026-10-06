@@ -366,7 +366,9 @@ export async function unpublishEstate(id: string, scope: PortalScope): Promise<P
 
 function ownedMockEstate(id: string, scope: PortalScope): Estate {
   const estate = mockStore().find((e) => e.id === id);
-  if (!estate || estate.tenantId !== scope.tenantId || (scope.branchId && estate.branchId !== scope.branchId)) {
+  // Standing in for RLS: a branch-scoped caller reaches their own branch's
+  // estates and the company-level ones (EB-2), never another branch's.
+  if (!estate || estate.tenantId !== scope.tenantId || (scope.branchId && estate.branchId !== null && estate.branchId !== scope.branchId)) {
     throw new ApiError(404, "Estate not found.", { code: "ESTATE_NOT_FOUND", message: "Estate not found." });
   }
   return estate;
@@ -387,7 +389,9 @@ export interface PortalEstate {
   area: string;
   city: string;
   state: NigerianState;
-  branchId: string;
+  // Null = a company-level estate (EB-1), belonging to the organisation
+  // directly. Branch staff can SEE such an estate but not change it (EB-2).
+  branchId: string | null;
   tenantId: string;
   cornerPremiumPct: number;
   amenities: string[];
@@ -428,7 +432,7 @@ interface PlotCountsDto {
 
 interface EstateSummaryDto {
   id: string;
-  branchId: string;
+  branchId: string | null;
   name: string;
   slug: string;
   area: string;
@@ -621,7 +625,8 @@ export async function fetchPortalEstates(
   // passing a branchId filter.
   let source = mockStore().filter((e) => e.tenantId === scope.tenantId);
   if (scope.branchId) {
-    source = source.filter((e) => e.branchId === scope.branchId);
+    // Their branch's estates and the company's (EB-2) — never a sibling's.
+    source = source.filter((e) => e.branchId === scope.branchId || e.branchId === null);
   } else if (filters.branchId) {
     source = source.filter((e) => e.branchId === filters.branchId);
   }
@@ -647,7 +652,8 @@ export async function fetchPortalEstateById(id: string, scope: PortalScope): Pro
   // Same scope rule as the list — an id from another tenant or branch is not
   // reachable just because it was typed into the URL.
   if (estate.tenantId !== scope.tenantId) return null;
-  if (scope.branchId && estate.branchId !== scope.branchId) return null;
+  // Company-level estates are visible to branch staff too (EB-2).
+  if (scope.branchId && estate.branchId !== null && estate.branchId !== scope.branchId) return null;
   return projectPortalEstate(estate);
 }
 
@@ -657,7 +663,7 @@ export async function fetchEstateGeoJson(id: string, scope: PortalScope): Promis
   }
   const estate = mockStore().find((e) => e.id === id && e.tenantId === scope.tenantId);
   if (!estate || estate.footprint.length < 3) return null;
-  if (scope.branchId && estate.branchId !== scope.branchId) return null;
+  if (scope.branchId && estate.branchId !== null && estate.branchId !== scope.branchId) return null;
   return {
     type: "FeatureCollection",
     features: [{ type: "Feature", geometry: footprintToPolygon(estate.footprint), properties: { name: estate.name, estateId: estate.id } }],
@@ -675,7 +681,11 @@ export interface CreateEstateInput {
   amenities: string[];
   // Optional: an estate may exist as a draft before it has been surveyed.
   boundary?: GeoJsonPolygon;
-  branchId: string;
+  // Optional (EB-1). Left out by a company-wide caller, the estate belongs to
+  // the organisation directly — a deliberate choice on the form, never an
+  // empty dropdown. A branch-scoped caller always creates in their own
+  // branch: the backend ignores any value they send.
+  branchId?: string;
 }
 
 // Always creates a DRAFT. Publication is a separate, deliberate action (DP-14,
@@ -685,10 +695,10 @@ export async function createPortalEstate(input: CreateEstateInput, scope: Portal
     // The backend's field is `footprint` (CreateEstateRequest). Sending
     // `boundary` was silently dropped by Jackson — every estate came out
     // boundary-less, and since BG-1 no such estate can be published.
-    const { boundary, ...rest } = input;
+    const { boundary, branchId, ...rest } = input;
     // EstateDto: the summary's fields without plot counts — a new estate has none.
     const dto = await apiClient.post<Omit<EstateSummaryDto, "plotCounts"> & { tenantId: string }>(
-      "/api/portal/estates", { ...rest, ...(boundary ? { footprint: boundary } : {}) });
+      "/api/portal/estates", { ...rest, ...(branchId ? { branchId } : {}), ...(boundary ? { footprint: boundary } : {}) });
     return fromSummaryDto({ ...dto, plotCounts: null }, dto.tenantId, null);
   }
 
@@ -708,7 +718,7 @@ export async function createPortalEstate(input: CreateEstateInput, scope: Portal
     state: input.state,
     location: `${input.area}, ${input.city}`,
     tenantId: scope.tenantId,
-    branchId: input.branchId,
+    branchId: scope.branchId ?? input.branchId ?? null,
     // A new estate has no inventory yet — plots, tiers and blocks are DP-7 to
     // DP-10. Zero here is the real count, not a placeholder.
     totalPlots: 0,
@@ -916,6 +926,13 @@ export function registerMockPlotsOutsideCheck(check: (estateId: string, boundary
 
 // Mock mode only, for the Super Admin's state override: platform staff look
 // an estate up by id across every company — no tenant scope applies.
+// EB-2: branch staff can see a company-level estate but never change it —
+// the backend refuses every write (ESTATE_READ_ONLY_FOR_BRANCH). Applied in
+// the UI too, so no screen offers an action that can only fail.
+export function isReadOnlyForScope(estate: Pick<PortalEstate, "branchId">, scope: PortalScope | null): boolean {
+  return !!scope?.branchId && estate.branchId === null;
+}
+
 export function findMockEstateForAdmin(id: string): Estate | undefined {
   return mockStore().find((e) => e.id === id);
 }

@@ -12,7 +12,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useFetch } from "../../../lib/useFetch";
 import { useApp } from "../../../contexts/AppContext";
 import { canManageEstates } from "../../../services/authService";
-import { fetchPortalEstateById } from "../../../services/portalEstatesService";
+import { isReadOnlyForScope, fetchPortalEstateById } from "../../../services/portalEstatesService";
 import { fetchCostDisclosure } from "../../../services/costDisclosureService";
 import {
   fetchDefaultTerms, fetchFeeSchedule, fetchRefundTerms, toPublicFee,
@@ -33,7 +33,7 @@ export default function PortalEstateDisclosure() {
   const { estateId } = useParams<{ estateId: string }>();
   const scope = usePortalScope();
   const { user } = useApp();
-  const canManage = canManageEstates(user);
+  const mayManage = canManageEstates(user);
   const [searchParams, setSearchParams] = useSearchParams();
   const requested = searchParams.get("tab") as Tab | null;
   const tab: Tab = requested && TABS.includes(requested) ? requested : "fees";
@@ -66,6 +66,8 @@ export default function PortalEstateDisclosure() {
   }
 
   const { estate, fees, refund, defaults, computed } = loaded.data;
+  // EB-2: branch staff can read a company-level estate's terms, not declare them.
+  const canManage = mayManage && !isReadOnlyForScope(estate, scope);
 
   return (
     <div className="p-6 max-w-4xl mx-auto">

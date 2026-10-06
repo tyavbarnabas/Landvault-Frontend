@@ -4,6 +4,7 @@
 import type { TenantStatus, VerificationState } from "../services/tenantsService";
 import type { ConflictStatus } from "../services/listingConflictsService";
 import type { PortalEstateStatus } from "../services/portalEstatesService";
+import type { InvitationStatus, StaffStatus } from "../services/staffService";
 
 export type BadgeVariant = "neutral" | "info" | "warning" | "success" | "error";
 
@@ -68,5 +69,27 @@ export function portalEstateStatusBadge(status: PortalEstateStatus): { label: st
     // genuinely unknown there. Neutral, never positive — an unknown condition
     // is not a met one.
     case "unknown": return { label: "Readiness unknown", variant: "neutral" };
+  }
+}
+
+// "Awaiting approval" must read as PENDING, never as sent: a branch request
+// sends nothing to the person until head office approves it.
+export function invitationStatusBadge(status: InvitationStatus): { label: string; variant: BadgeVariant } {
+  switch (status) {
+    case "awaiting_approval": return { label: "Awaiting approval — not sent", variant: "warning" };
+    case "pending": return { label: "Invitation sent", variant: "info" };
+    case "accepted": return { label: "Accepted", variant: "success" };
+    case "expired": return { label: "Expired", variant: "neutral" };
+    case "revoked": return { label: "Revoked", variant: "neutral" };
+    case "rejected": return { label: "Rejected", variant: "error" };
+  }
+}
+
+export function staffStatusBadge(status: StaffStatus): { label: string; variant: BadgeVariant } {
+  switch (status) {
+    case "active": return { label: "Active", variant: "success" };
+    case "pending_verification": return { label: "Pending verification", variant: "warning" };
+    case "suspended": return { label: "Suspended", variant: "error" };
+    case "deactivated": return { label: "Deactivated", variant: "neutral" };
   }
 }
