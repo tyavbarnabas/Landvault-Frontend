@@ -1,5 +1,6 @@
 import { NIGERIAN_STATES } from "../../data/nigerianStates";
 import type { UnifiedListingFilters } from "../../services/marketplaceFeedService";
+import { isLive } from "../../lib/backends";
 
 interface FilterBarProps {
   filters: UnifiedListingFilters;
@@ -74,10 +75,13 @@ export default function FilterBar({ filters, onChange }: FilterBarProps) {
         <input type="number" placeholder="Max sqm" value={filters.maxSize ?? ""} onChange={(e) => onChange({ maxSize: numOrUndefined(e.target.value) })} className="w-24 px-2.5 py-2 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm" />
       </div>
 
-      <label className="flex items-center gap-1.5 px-3 py-2 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm cursor-pointer">
+      {/* Live, every listed developer is verified (unverified companies are
+          never listed), so the filter would do nothing — and would suggest the
+          LAND is what's verified. Demo mode only. */}
+      {!isLive("marketplace") && <label className="flex items-center gap-1.5 px-3 py-2 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm cursor-pointer">
         <input type="checkbox" checked={filters.verifiedOnly ?? false} onChange={(e) => onChange({ verifiedOnly: e.target.checked || undefined })} className="w-3.5 h-3.5 accent-[var(--accent)]" />
-        Verified only
-      </label>
+        Verified developers only
+      </label>}
 
       <select value={filters.sort ?? "newest"} onChange={(e) => onChange({ sort: e.target.value as UnifiedListingFilters["sort"] })} className="px-3 py-2 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm cursor-pointer">
         <option value="newest">Newest</option>

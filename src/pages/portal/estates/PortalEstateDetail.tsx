@@ -87,6 +87,17 @@ export default function PortalEstateDetail() {
 
       {estate.description && <p className="text-sm text-[var(--foreground)] leading-relaxed mb-6">{estate.description}</p>}
 
+      {estate.plotsWithoutBoundary > 0 && (
+        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900" role="note">
+          <span className="font-semibold">
+            {estate.plotsWithoutBoundary} {estate.plotsWithoutBoundary === 1 ? "plot isn't" : "plots aren't"} on the map.
+          </span>{" "}
+          {estate.plotsWithoutBoundary === 1 ? "It has" : "They have"} no surveyed boundary, so buyers see “boundary not surveyed” and
+          LandVault can't check {estate.plotsWithoutBoundary === 1 ? "it" : "them"} for double allocation. Add boundaries in{" "}
+          <Link to={`/portal/estates/${estate.id}/inventory`} className="underline">Inventory</Link>.
+        </div>
+      )}
+
       <PublicationPanel estate={estate} scope={scope!} canManage={canManage} onChanged={loaded.refetch} />
 
       <section className="mb-8">

@@ -126,7 +126,7 @@ export default function MarketplaceCheckout() {
       isCorner: plot.isCorner,
       cornerPremiumPct: listing.cornerPremiumPct,
       basePrice: base,
-      titleType: listing.titleType,
+      titleType: listing.titleType ?? "",
       location: `${listing.area}, ${listing.city}, ${listing.state}`,
       reservationId: reservation.id,
       tierId: plot.tierId,

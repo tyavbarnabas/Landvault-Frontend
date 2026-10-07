@@ -16,7 +16,7 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { formatAmount } from "../../data/mockData";
 import type { Listing } from "../../services/marketplaceService";
-import { pricePerSqm, fromPrice } from "../../services/marketplaceService";
+import { pricePerSqm, fromPrice, titleLabel, landCheckLabel } from "../../services/marketplaceService";
 import type { ListingPlot } from "../../services/marketplacePlotsService";
 import { plotLabel, priceForPlot } from "../../services/marketplacePlotsService";
 import { useApp } from "../../contexts/AppContext";
@@ -88,12 +88,12 @@ export default function PlotDetailPanel({ plot, listing, onClose, onOpenEnquiry 
         <div className="grid grid-cols-2 gap-3">
           {[
             { label: "Nominal size", value: `${plot.sizeSqm} sqm` },
-            { label: "Actual surveyed area", value: `${plot.actualAreaSqm} sqm` },
+            { label: "Actual surveyed area", value: plot.hasBoundary === false ? "Not surveyed yet" : `${plot.actualAreaSqm} sqm` },
             { label: "Type", value: plot.isCorner ? "Corner piece ★" : "Standard" },
             // Live plots carry no orientation; an empty cell says nothing false.
             { label: "Orientation", value: plot.orientation || "—" },
             { label: "Block reference", value: plotLabel(plot) },
-            { label: "Title type", value: listing.titleType },
+            { label: "Title type", value: titleLabel(listing.titleType) },
           ].map((d) => (
             <div key={d.label} className="bg-[var(--muted)] rounded-lg p-3">
               <div className="text-xs text-[var(--muted-foreground)] mb-0.5">{d.label}</div>
@@ -104,7 +104,7 @@ export default function PlotDetailPanel({ plot, listing, onClose, onOpenEnquiry 
 
         <div className="flex items-center gap-2">
           <VerifiedBadge />
-          <span className="text-xs text-[var(--muted-foreground)]">verified {listing.lastVerifiedDate}</span>
+          <span className="text-xs text-[var(--muted-foreground)]">{landCheckLabel(listing.lastVerifiedDate)}</span>
         </div>
 
         <div className="pt-3 border-t border-[var(--border)]">
@@ -127,6 +127,13 @@ export default function PlotDetailPanel({ plot, listing, onClose, onOpenEnquiry 
             <div className="text-xs font-medium text-blue-900 mb-1">Investment projection (estimate)</div>
             <div className="text-sm text-blue-800">~{plot.projectedROI}% capital appreciation over {plot.holdingYears} years.</div>
             <div className="text-xs text-blue-600 mt-1">Not a guarantee of returns.</div>
+          </div>
+        )}
+
+        {plot.hasBoundary === false && (
+          // The backend's own rule: never present an unsurveyed plot like a surveyed one.
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900">
+            <span className="font-semibold">Boundary not surveyed yet.</span> This plot isn't on the map, its exact position in the estate isn't confirmed, and it isn't covered by LandVault's double-allocation check until it's surveyed. Ask the developer before you commit.
           </div>
         )}
 

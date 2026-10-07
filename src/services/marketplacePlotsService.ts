@@ -49,14 +49,17 @@ export interface ListingPlot {
   // sold are deliberately indistinguishable to buyers (they would reveal sales
   // velocity), so an unavailable plot is never labelled one or the other.
   publicAvailability?: "available" | "unavailable";
+  // Live only. False: no surveyed boundary — not on the map, its position in
+  // the estate isn't confirmed, and it's outside double-allocation checks.
+  // Still for sale; the buyer must be told.
+  hasBoundary?: boolean;
 }
 
 // ─── Live: plots come from the estate's public map ───────────────────────────
 //
-// The backend has no marketplace plot list; GET /api/marketplace/estates/{id}/
-// geojson carries every plot that has a surveyed boundary, with its id, number,
-// block, tier, corner flag, sizes and availability. A plot WITHOUT a boundary
-// is omitted there, so it can't be chosen online yet (INTEGRATION_TESTING.md).
+// GET /api/marketplace/estates/{id}/geojson draws the plots that have a
+// surveyed boundary; GET …/plots lists EVERY plot (with `hasBoundary`). The
+// picker lists from …/plots and draws from …/geojson.
 
 interface PlotFeatureProps {
   kind: "plot" | "estate";
@@ -79,7 +82,12 @@ export async function fetchListingMap(listingId: string): Promise<EstateMapGeoJs
   return nullIfNotFound(apiClient.get<EstateMapGeoJson>(`/api/marketplace/estates/${listingId}/geojson`));
 }
 
-function fromPlotFeature(listingId: string, p: PlotFeatureProps): ListingPlot {
+// GET /api/marketplace/estates/{id}/plots — every plot, boundary or not.
+interface MarketplacePlotDto extends Omit<PlotFeatureProps, "kind"> {
+  hasBoundary: boolean;
+}
+
+function fromPlotFeature(listingId: string, p: Omit<PlotFeatureProps, "kind"> & { hasBoundary?: boolean }): ListingPlot {
   const available = p.availability?.toUpperCase() === "AVAILABLE";
   return {
     id: p.id,
@@ -100,12 +108,46 @@ function fromPlotFeature(listingId: string, p: PlotFeatureProps): ListingPlot {
     // read THAT, never this status, to say why.
     status: available ? "available-dev" : "reserved",
     publicAvailability: available ? "available" : "unavailable",
+    hasBoundary: p.hasBoundary ?? true,
   };
 }
 
+// One page of one tier's plots — what the picker shows. The backend filters
+// by tier and pages (cursor); a big estate is never loaded whole for a list.
+// The tier filter is re-applied here too, so a backend that predates it
+// shows short pages rather than another tier's plots.
+export async function fetchTierPlots(listingId: string, tierId: string, opts: { availableOnly?: boolean; limit?: number; cursor?: string } = {}): Promise<Page<ListingPlot>> {
+  if (isMock("marketplacePlots")) {
+    const all = (await fetchPlotsForListing(listingId, { limit: CANVAS_PLOT_FETCH_LIMIT })).items
+      .filter((p) => p.tierId === tierId && (!opts.availableOnly || p.status.startsWith("available")));
+    return paginateMock(all, { limit: opts.limit, cursor: opts.cursor });
+  }
+  const qp = new URLSearchParams({ priceTierId: tierId, limit: String(opts.limit ?? 20) });
+  if (opts.availableOnly) qp.set("available", "true");
+  if (opts.cursor) qp.set("cursor", opts.cursor);
+  const page = await apiClient.get<{ items: MarketplacePlotDto[]; total: number; cursor: string | null; hasMore: boolean }>(
+    `/api/marketplace/estates/${listingId}/plots?${qp}`);
+  return {
+    items: page.items.filter((p) => p.priceTierId === tierId).map((p) => fromPlotFeature(listingId, p)),
+    total: page.total,
+    cursor: page.hasMore && page.cursor ? page.cursor : undefined,
+    hasMore: page.hasMore,
+  };
+}
+
+// The plot LIST, not the map: the map omits plots with no boundary, and those
+// are still for sale. Every page, 500 at a time (the backend's maximum).
 async function livePlots(listingId: string): Promise<ListingPlot[]> {
-  const map = await fetchListingMap(listingId);
-  return (map?.features ?? []).filter((f) => f.properties.kind === "plot").map((f) => fromPlotFeature(listingId, f.properties));
+  const plots: ListingPlot[] = [];
+  let cursor: string | null = null;
+  do {
+    const qp: URLSearchParams = new URLSearchParams({ limit: "500", ...(cursor ? { cursor } : {}) });
+    const page: { items: MarketplacePlotDto[]; cursor: string | null; hasMore: boolean } = await apiClient.get(
+      `/api/marketplace/estates/${listingId}/plots?${qp}`);
+    plots.push(...page.items.map((p) => fromPlotFeature(listingId, p)));
+    cursor = page.hasMore ? page.cursor : null;
+  } while (cursor);
+  return plots;
 }
 
 // Exported (not just used internally) so pages that already hold a full

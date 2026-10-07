@@ -112,16 +112,43 @@ describe("cost disclosure comes from the listing", () => {
   });
 });
 
-describe("plots come from the estate map", () => {
-  it("lists the map's plots with their public availability", async () => {
-    respond({ "GET /api/marketplace/estates/e1/geojson": { status: 200, body: MAP } });
-    const { fetchPlotsForListing, fetchPlotById, plotLabel } = await import("./marketplacePlotsService");
+describe("plots come from the plot list, boundary or not", () => {
+  const dto = (id: string, plotNumber: string, availability: string, hasBoundary: boolean, isCorner = false) => ({
+    id, plotNumber, blockName: "Block A", availability, isCorner, priceTierId: "t1", nominalSizeSqm: 500, actualAreaSqm: hasBoundary ? 512 : null, hasBoundary,
+  });
+
+  it("lists every plot, including unsurveyed ones, following the cursor", async () => {
+    respond({
+      "GET /api/marketplace/estates/e1/plots?limit=500": { status: 200, body: { items: [dto("p1", "1", "AVAILABLE", true), dto("p2", "2", "UNAVAILABLE", true, true)], total: 3, cursor: "c2", hasMore: true } },
+      "GET /api/marketplace/estates/e1/plots?limit=500&cursor=c2": { status: 200, body: { items: [dto("p3", "3", "AVAILABLE", false)], total: 3, cursor: null, hasMore: false } },
+    });
+    const { fetchPlotsForListing, plotLabel } = await import("./marketplacePlotsService");
     const page = await fetchPlotsForListing("e1");
-    expect(page.items.map((p) => [p.id, p.publicAvailability, p.isCorner])).toEqual([["p1", "available", false], ["p2", "unavailable", true]]);
+    expect(page.items.map((p) => [p.id, p.publicAvailability, p.isCorner, p.hasBoundary])).toEqual([
+      ["p1", "available", false, true], ["p2", "unavailable", true, true], ["p3", "available", false, false],
+    ]);
     expect(page.items[0].tierId).toBe("t1");
     expect(plotLabel(page.items[0])).not.toMatch(/Block Block/);
-    expect((await fetchPlotById("e1", "p2"))?.plotNumber).toBe("2");
+  });
+
+  it("finds one plot by id, and undefined for an unknown one", async () => {
+    respond({ "GET /api/marketplace/estates/e1/plots?limit=500": { status: 200, body: { items: [dto("p3", "3", "AVAILABLE", false)], total: 1, cursor: null, hasMore: false } } });
+    const { fetchPlotById } = await import("./marketplacePlotsService");
+    expect((await fetchPlotById("e1", "p3"))?.hasBoundary).toBe(false);
     expect(await fetchPlotById("e1", "missing")).toBeUndefined();
+  });
+});
+
+describe("listings never claim more than the backend says", () => {
+  it("a missing title or land check stays missing — never a plausible default", async () => {
+    respond({ "GET /api/marketplace/estates/e1": { status: 200, body: { ...LISTING, titleType: null, lastVerifiedDate: null } } });
+    const { fetchListingById, titleLabel, landCheckLabel } = await import("./marketplaceService");
+    const l = await fetchListingById("e1");
+    expect(l?.titleType).toBeNull();
+    expect(l?.lastVerifiedDate).toBeNull();
+    expect(titleLabel(l?.titleType)).toBe("Title not recorded");
+    expect(landCheckLabel(l?.lastVerifiedDate)).toBe("Land not checked yet");
+    expect(landCheckLabel("2026-09-01")).toBe("Land checked 2026-09-01");
   });
 });
 
@@ -244,5 +271,28 @@ describe("admin lists, as the backend returns them", () => {
     respond({ "GET /api/admin/tenants?": { status: 200, body: { items: [row], total: 1, cursor: null, hasMore: false } } });
     const { fetchTenants } = await import("./tenantsService");
     expect((await fetchTenants()).items[0]).toEqual(row);
+  });
+});
+
+describe("the plot picker pages one tier at a time", () => {
+  const row = (id: string, tier: string) => ({ id, plotNumber: id, blockName: "A", availability: "AVAILABLE", isCorner: false, priceTierId: tier, nominalSizeSqm: 250, actualAreaSqm: 250, hasBoundary: true });
+
+  it("asks for one tier's available plots, 20 at a time, and passes the cursor on", async () => {
+    respond({
+      "GET /api/marketplace/estates/e1/plots?priceTierId=t1&limit=20&available=true": { status: 200, body: { items: [row("p1", "t1")], total: 39, cursor: "1", hasMore: true } },
+      "GET /api/marketplace/estates/e1/plots?priceTierId=t1&limit=20&available=true&cursor=1": { status: 200, body: { items: [row("p21", "t1")], total: 39, cursor: null, hasMore: false } },
+    });
+    const { fetchTierPlots } = await import("./marketplacePlotsService");
+    const first = await fetchTierPlots("e1", "t1", { availableOnly: true, limit: 20 });
+    expect(first).toMatchObject({ total: 39, cursor: "1", hasMore: true });
+    const second = await fetchTierPlots("e1", "t1", { availableOnly: true, limit: 20, cursor: first.cursor });
+    expect(second.items.map((p) => p.id)).toEqual(["p21"]);
+    expect(second.cursor).toBeUndefined();
+  });
+
+  it("never shows another tier's plots, even from a backend that ignores the filter", async () => {
+    respond({ "GET /api/marketplace/estates/e1/plots?priceTierId=t1&limit=20": { status: 200, body: { items: [row("p1", "t1"), row("p9", "t2")], total: 2, cursor: null, hasMore: false } } });
+    const { fetchTierPlots } = await import("./marketplacePlotsService");
+    expect((await fetchTierPlots("e1", "t1")).items.map((p) => p.id)).toEqual(["p1"]);
   });
 });

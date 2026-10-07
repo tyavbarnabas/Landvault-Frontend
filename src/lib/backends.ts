@@ -56,7 +56,11 @@ export const SERVICES = {
   // ── The backend has it, the frontend doesn't match yet ────────────────────
   estates: {
     label: "Estates browse (/estates)", status: "misaligned", paths: ["/api/estates"],
-    reason: "The plot-grid browse needs every plot; the backend's marketplace serves listings and a map, not a plot grid.",
+    // Retired in live mode — /estates redirects to /marketplace (App.tsx).
+    // Real plots have boundaries, not grid positions, and the backend has
+    // decided not to add any. Only demo-only screens (syndicates, upgrades)
+    // still read it.
+    reason: "Retired with a backend: /estates redirects to /marketplace. The grid needs row/column positions real plots don't have, and the backend won't add them.",
   },
 
   // ── No backend yet ────────────────────────────────────────────────────────
@@ -162,7 +166,7 @@ export function serviceLabel(key: ServiceKey | null): string {
 // The backend's CORS_ALLOWED_ORIGINS defaults to http://localhost:8443. From
 // any other origin EVERY request fails at the first step as "Failed to fetch"
 // — Spring rejects it before the backend can return a readable code.
-export const BACKEND_ALLOWED_ORIGINS = ((import.meta.env.VITE_BACKEND_ALLOWED_ORIGINS as string | undefined) ?? "http://localhost:8443")
+export const BACKEND_ALLOWED_ORIGINS = ((import.meta.env.VITE_BACKEND_ALLOWED_ORIGINS as string | undefined) || "http://localhost:8443")
   .split(",").map((o) => o.trim()).filter(Boolean);
 
 export function originLooksAllowed(origin: string): boolean {

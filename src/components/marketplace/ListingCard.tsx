@@ -9,6 +9,7 @@ import { Link } from "react-router-dom";
 import { formatAmount } from "../../data/mockData";
 import { formatCompactCurrency } from "../../lib/formatCurrency";
 import type { MarketplaceListing } from "../../services/marketplaceFeedService";
+import { titleLabel } from "../../services/marketplaceService";
 import type { ResaleListing } from "../../services/resaleService";
 import EstateCard from "./EstateCard";
 import ListingTypeBadge from "./ListingTypeBadge";
@@ -73,7 +74,7 @@ function ResaleListingCard({ listing, priceChangeSinceSaved }: { listing: Resale
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--muted-foreground)] pt-2.5 border-t border-[var(--border)]">
           <span>{listing.sqm} sqm</span>
           <span>·</span>
-          <span>{listing.titleType}</span>
+          <span>{titleLabel(listing.titleType)}</span>
           <span>·</span>
           <span>Listed {listing.daysListed} day{listing.daysListed !== 1 ? "s" : ""} ago</span>
         </div>

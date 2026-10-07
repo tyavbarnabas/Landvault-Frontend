@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { fetchListings, fromPrice, type Listing } from "../services/marketplaceService";
+import { fetchListings, fromPrice, titleLabel, type Listing } from "../services/marketplaceService";
 import { formatCurrency } from "../data/mockData";
 
 export default function Landing() {
@@ -18,7 +18,7 @@ export default function Landing() {
   const loading = listings === null;
   const previews = (listings ?? []).slice(0, 3);
   const plotsAvailable = (listings ?? []).reduce((sum, l) => sum + l.priceTiers.reduce((s, t) => s + t.plotsRemaining, 0), 0);
-  const titleTypeCount = new Set((listings ?? []).map((l) => l.titleType)).size;
+  const titleTypeCount = new Set((listings ?? []).map((l) => l.titleType).filter(Boolean)).size;
   const statesCovered = Array.from(new Set((listings ?? []).map((l) => l.state)));
   return (
     <div className="min-h-full bg-[var(--background)] font-body">
@@ -65,7 +65,7 @@ export default function Landing() {
                 transaction-volume data to derive one from. */}
             <div className="flex flex-wrap gap-6 mt-10">
               {[
-                { label: "Verified title types", value: loading ? "—" : `${titleTypeCount}` },
+                { label: "Title types listed", value: loading ? "—" : `${titleTypeCount}` },
                 { label: "Estates active", value: loading ? "—" : `${listings!.length} estates` },
                 { label: "Plots available", value: loading ? "—" : plotsAvailable.toLocaleString() },
               ].map((t) => (
@@ -175,7 +175,7 @@ export default function Landing() {
                     <div className="p-4">
                       <div className="flex items-start justify-between gap-2 mb-1">
                         <div className="font-semibold text-sm text-[var(--foreground)]">{listing.name}</div>
-                        <span className="text-xs font-mono-data text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full whitespace-nowrap">{listing.titleType}</span>
+                        <span className={`text-xs font-mono-data px-2 py-0.5 rounded-full whitespace-nowrap ${listing.titleType ? "text-emerald-700 bg-emerald-50" : "text-[var(--muted-foreground)] bg-[var(--muted)]"}`}>{titleLabel(listing.titleType)}</span>
                       </div>
                       <div className="text-xs text-[var(--muted-foreground)]">{listing.area}, {listing.city}</div>
                       <div className="mt-3 pt-3 border-t border-[var(--border)] flex items-center justify-between">

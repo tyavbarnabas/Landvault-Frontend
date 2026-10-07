@@ -7,7 +7,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { fetchListingById, type Listing } from "../../services/marketplaceService";
-import { fetchPlotsForListing, CANVAS_PLOT_FETCH_LIMIT, type ListingPlot } from "../../services/marketplacePlotsService";
+import { fetchPlotById, fetchPlotsForListing, CANVAS_PLOT_FETCH_LIMIT, type ListingPlot } from "../../services/marketplacePlotsService";
 import PlotCanvas from "../../components/PlotCanvas";
 import LivePlotPicker from "../../components/marketplace/LivePlotPicker";
 import LoadError from "../../components/LoadError";
@@ -25,17 +25,33 @@ export default function MarketplacePlotSelection() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [enquiryOpen, setEnquiryOpen] = useState(false);
+  // Live: the picker loads one page at a time, so the chosen plot is kept
+  // here rather than looked up in a full plot list.
+  const live = isLive("marketplacePlots");
+  const [livePlot, setLivePlot] = useState<ListingPlot | null>(null);
 
   const sizeParam = searchParams.get("size");
   const selectedSize = sizeParam ? Number(sizeParam) : null;
   const selectedPlotId = searchParams.get("plot");
-  const selectedPlot = plots.find((p) => p.id === selectedPlotId) ?? null;
+  const selectedPlot = live
+    ? (livePlot?.id === selectedPlotId ? livePlot : null)
+    : plots.find((p) => p.id === selectedPlotId) ?? null;
+
+  // A link straight to a plot (shared, or resuming after sign-in): look it up.
+  useEffect(() => {
+    if (!live || !estateId || !selectedPlotId || livePlot?.id === selectedPlotId) return;
+    let cancelled = false;
+    fetchPlotById(estateId, selectedPlotId).then((p) => { if (!cancelled) setLivePlot(p ?? null); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [live, estateId, selectedPlotId, livePlot?.id]);
 
   useEffect(() => {
     if (!estateId) return;
     setLoading(true);
     setLoadError(null);
-    Promise.all([fetchListingById(estateId), fetchPlotsForListing(estateId, { limit: CANVAS_PLOT_FETCH_LIMIT })]).catch((err) => {
+    // Live, the whole estate is never loaded for the list — the picker pages it.
+    const allPlots = live ? Promise.resolve({ items: [] as ListingPlot[], total: 0, hasMore: false }) : fetchPlotsForListing(estateId, { limit: CANVAS_PLOT_FETCH_LIMIT });
+    Promise.all([fetchListingById(estateId), allPlots]).catch((err) => {
       setLoadError(err);
       setLoading(false);
       return null;
@@ -64,10 +80,10 @@ export default function MarketplacePlotSelection() {
   if (!listing) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Estate not found.</div>;
 
   const setSize = (sqm: number) => setSearchParams((prev) => { prev.set("size", String(sqm)); prev.delete("plot"); return prev; });
-  const setPlot = (plot: ListingPlot | null) => setSearchParams((prev) => {
+  const setPlot = (plot: ListingPlot | null) => { setLivePlot(plot); setSearchParams((prev) => {
     if (plot) prev.set("plot", plot.id); else prev.delete("plot");
     return prev;
-  });
+  }); };
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -79,16 +95,15 @@ export default function MarketplacePlotSelection() {
 
       <div className="mb-6">
         <h1 className="font-display text-2xl text-[var(--foreground)] mb-1">{listing.name} — select a plot</h1>
-        <p className="text-sm text-[var(--muted-foreground)]">{listing.area}, {listing.city}, {listing.state}. Choose a size tier, then click an available plot on the map.</p>
+        <p className="text-sm text-[var(--muted-foreground)]">{listing.area}, {listing.city}, {listing.state}. Choose a size tier, then {isLive("marketplacePlots") ? "pick an available plot from the list" : "click an available plot on the map"}.</p>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          {isLive("marketplacePlots") ? (
+          {live ? (
             // The backend has a map, not a grid: choose from the map's plots.
             <LivePlotPicker
               listing={listing}
-              plots={plots}
               selectedSizeSqm={selectedSize}
               onSelectSizeSqm={setSize}
               selectedPlotId={selectedPlotId ?? undefined}
@@ -120,7 +135,8 @@ export default function MarketplacePlotSelection() {
           ) : (
             <div className="bg-[var(--muted)] rounded-xl border border-dashed border-[var(--border)] p-6 text-center text-sm text-[var(--muted-foreground)]">
               <div className="text-2xl mb-2">👆</div>
-              Click any available plot on the map to see its details, pricing, and booking options.
+              {live ? "Pick an available plot from the list to see its details, pricing, and booking options."
+                : "Click any available plot on the map to see its details, pricing, and booking options."}
             </div>
           )}
         </div>

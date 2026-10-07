@@ -15,7 +15,7 @@ export default function ListingTypeBadge({ type }: { type: ListingType }) {
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
           <path d="M20 6 9 17l-5-5" />
         </svg>
-        Verified developer estate
+        Verified developer
       </span>
     );
   }

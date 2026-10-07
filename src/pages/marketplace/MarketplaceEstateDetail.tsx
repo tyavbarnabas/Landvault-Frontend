@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
+import { isLive } from "../../lib/backends";
 import { useApp } from "../../contexts/AppContext";
-import { fetchListingById, fetchSimilarListings, fromPrice, type Listing } from "../../services/marketplaceService";
+import { fetchListingById, fetchSimilarListings, fromPrice, titleLabel, landCheckLabel, type Listing } from "../../services/marketplaceService";
 import ListingTypeBadge from "../../components/marketplace/ListingTypeBadge";
 import SellerLine, { SellerOffice } from "../../components/marketplace/SellerLine";
 import PriceTierTable from "../../components/marketplace/PriceTierTable";
@@ -87,7 +88,7 @@ export default function MarketplaceEstateDetail() {
           <SellerOffice seller={listing.seller} />
         </div>
         <div className="text-right shrink-0">
-          <div className="text-xs text-[var(--muted-foreground)]">{listing.titleType} · verified {listing.lastVerifiedDate}</div>
+          <div className="text-xs text-[var(--muted-foreground)]">{titleLabel(listing.titleType)} · {landCheckLabel(listing.lastVerifiedDate)}</div>
         </div>
       </div>
 
@@ -194,7 +195,7 @@ export default function MarketplaceEstateDetail() {
 
       <div className="flex items-center justify-between mt-8">
         <Link to="/marketplace" className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]">← Back to marketplace</Link>
-        {isAuthenticated && (
+        {isAuthenticated && !isLive("marketplace") && (
           <Link to={`/estates/${listing.id}`} className="text-sm text-[var(--accent)] hover:underline">Explore this estate in detail →</Link>
         )}
       </div>

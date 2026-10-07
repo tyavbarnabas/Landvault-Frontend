@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from "react-router-dom";
+import { isLive } from "./lib/backends";
 import { AppProvider, useApp } from "./contexts/AppContext";
 import { isPlatformStaff, isPortalStaff } from "./services/authService";
 import Layout from "./components/Layout";
@@ -201,8 +202,10 @@ function AppRoutes() {
 
       {/* Core app */}
       <Route path="/dashboard" element={<AppPage><Dashboard /></AppPage>} />
-      <Route path="/estates" element={<AppPage><Browse /></AppPage>} />
-      <Route path="/estates/:id" element={<AppPage><EstateDetail /></AppPage>} />
+      {/* Live, the grid browse is retired: the same estates, with real plots
+          on a real map, are in the marketplace. Demo mode keeps the grid. */}
+      <Route path="/estates" element={isLive("marketplace") ? <Navigate to="/marketplace" replace /> : <AppPage><Browse /></AppPage>} />
+      <Route path="/estates/:id" element={isLive("marketplace") ? <EstateToMarketplace /> : <AppPage><EstateDetail /></AppPage>} />
       <Route path="/portfolio" element={<AppPage><Portfolio /></AppPage>} />
       <Route path="/portfolio/:id" element={<AppPage><PlotView /></AppPage>} />
       <Route path="/documents" element={<AppPage><Vault /></AppPage>} />
@@ -288,4 +291,9 @@ export default function App() {
       </BrowserRouter>
     </ErrorBoundary>
   );
+}
+
+function EstateToMarketplace() {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={`/marketplace/${id}`} replace />;
 }

@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { formatAmount } from "../../data/mockData";
 import { formatCompactCurrency } from "../../lib/formatCurrency";
-import { fromPrice, cheapestTier, pricePerSqm, type Listing } from "../../services/marketplaceService";
+import { fromPrice, cheapestTier, pricePerSqm, titleLabel, type Listing } from "../../services/marketplaceService";
 import { fetchCostDisclosure, tierCommitmentForLandPrice } from "../../services/costDisclosureService";
 import { useFetch } from "../../lib/useFetch";
 import MoneyRangeDisplay from "../cost/MoneyRangeDisplay";
@@ -84,7 +84,7 @@ export default function EstateCard({ listing, priceChangeSinceSaved }: EstateCar
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--muted-foreground)] pt-2.5 border-t border-[var(--border)]">
           <span>{sizeRange}</span>
           <span>·</span>
-          <span>{listing.titleType}</span>
+          <span>{titleLabel(listing.titleType)}</span>
           <span>·</span>
           <span>{plotsRemaining} plots left</span>
         </div>

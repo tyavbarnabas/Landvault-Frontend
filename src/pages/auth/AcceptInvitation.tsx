@@ -10,6 +10,9 @@
 // anything is committed. An unknown, expired, revoked or already-used link
 // all get ONE message — telling them apart would reveal which links existed.
 
+import { assessPassword } from "../../lib/passwordPolicy";
+import PasswordInput from "../../components/auth/PasswordInput";
+import PasswordStrength from "../../components/auth/PasswordStrength";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
@@ -29,7 +32,6 @@ export default function AcceptInvitation() {
   const [preview, setPreview] = useState<InvitationPreview | null>(null);
   const [invalid, setInvalid] = useState(!token);
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -47,10 +49,9 @@ export default function AcceptInvitation() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token) return;
-    // A typo guard only — the password carries registration's rule and no
-    // stricter one invented here.
-    if (!password) { setError("Choose a password."); return; }
-    if (password !== confirm) { setError("Those passwords don't match."); return; }
+    // The same rule as sign-up (passwordPolicy.ts) — one rule for every password.
+    const pw = assessPassword(password, { email: preview?.email });
+    if (!pw.acceptable) { setError(pw.problem ?? "Choose a stronger password."); return; }
     setSaving(true);
     setError("");
     try {
@@ -88,8 +89,11 @@ export default function AcceptInvitation() {
               <div>This link expires {new Date(preview.expiresAt).toLocaleString()} and works once.</div>
             </dl>
             <form onSubmit={submit} className="space-y-4" noValidate>
-              <PasswordField id="inv-password" label="Choose a password" value={password} onChange={setPassword} />
-              <PasswordField id="inv-confirm" label="Confirm password" value={confirm} onChange={setConfirm} />
+              <div>
+                <label htmlFor="inv-password" className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Choose a password</label>
+                <PasswordInput id="inv-password" value={password} onChange={setPassword} autoComplete="new-password" placeholder="Choose a strong password" describedBy="inv-password-guide" />
+                <PasswordStrength id="inv-password-guide" assessment={assessPassword(password, { email: preview.email })} started={password.length > 0} />
+              </div>
               {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
               <button type="submit" disabled={saving} className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium disabled:opacity-60 hover:opacity-90">
                 {saving ? "Setting up your account…" : "Accept and sign in"}
@@ -99,15 +103,5 @@ export default function AcceptInvitation() {
         )}
       </div>
     </AuthShell>
-  );
-}
-
-function PasswordField({ id, label, value, onChange }: { id: string; label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <div>
-      <label htmlFor={id} className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">{label}</label>
-      <input id={id} type="password" autoComplete="new-password" value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm text-[var(--foreground)]" />
-    </div>
   );
 }

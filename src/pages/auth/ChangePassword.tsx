@@ -13,6 +13,9 @@
 // the backend applies registration's rule and nothing stricter, and a rule
 // the backend won't enforce would only be theatre.
 
+import { assessPassword } from "../../lib/passwordPolicy";
+import PasswordInput from "../../components/auth/PasswordInput";
+import PasswordStrength from "../../components/auth/PasswordStrength";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
@@ -20,14 +23,13 @@ import { MOCK_DEMO_CODES, changePassword, errorCodeOf, landingRouteFor } from ".
 import { AuthShell } from "./Login";
 import { isLive } from "../../lib/backends";
 
-type FieldKey = "currentPassword" | "newPassword" | "confirm";
+type FieldKey = "currentPassword" | "newPassword";
 
 export default function ChangePassword() {
   const navigate = useNavigate();
   const { user, passwordChanged } = useApp();
   const [current, setCurrent] = useState("");
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
   const [formError, setFormError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -39,8 +41,10 @@ export default function ChangePassword() {
     e.preventDefault();
     const errors: Partial<Record<FieldKey, string>> = {};
     if (!current) errors.currentPassword = "Enter your current password.";
-    if (!password.trim()) errors.newPassword = "Choose a new password.";
-    else if (password !== confirm) errors.confirm = "Those passwords don't match.";
+    const pw = assessPassword(password, { email: user?.email });
+    if (!password) errors.newPassword = "Choose a new password.";
+    else if (!pw.acceptable) errors.newPassword = pw.problem ?? "Choose a stronger password.";
+    else if (password === current) errors.newPassword = "Choose a password different from your current one.";
     setFieldErrors(errors);
     setFormError("");
     if (Object.keys(errors).length > 0) return;
@@ -59,6 +63,9 @@ export default function ChangePassword() {
         const serverFields = (err as { body?: { fieldErrors?: Record<string, string> } }).body?.fieldErrors;
         if (serverFields && (serverFields.currentPassword || serverFields.newPassword)) {
           setFieldErrors({ currentPassword: serverFields.currentPassword, newPassword: serverFields.newPassword });
+        } else if ((errorCodeOf(err) as string | null) === "WEAK_PASSWORD") {
+          // The backend's pending password rule — its message, as-is.
+          setFieldErrors({ newPassword: err instanceof Error && err.message ? err.message : "Choose a stronger password." });
         } else {
           setFormError("Couldn't change your password. Please try again.");
         }
@@ -82,8 +89,9 @@ export default function ChangePassword() {
             </p>
             <form onSubmit={submit} className="space-y-4" noValidate>
               <Field id="cp-current" label={temporary ? "Temporary password" : "Current password"} value={current} onChange={setCurrent} error={fieldErrors.currentPassword} autoComplete="current-password" />
-              <Field id="cp-password" label="New password" value={password} onChange={setPassword} error={fieldErrors.newPassword} autoComplete="new-password" />
-              <Field id="cp-confirm" label="Confirm new password" value={confirm} onChange={setConfirm} error={fieldErrors.confirm} autoComplete="new-password" />
+              <Field id="cp-password" label="New password" value={password} onChange={setPassword} error={fieldErrors.newPassword} autoComplete="new-password">
+                <PasswordStrength id="cp-password-guide" assessment={assessPassword(password, { email: user?.email })} started={password.length > 0} />
+              </Field>
               {formError && <p className="text-sm text-red-600" role="alert">{formError}</p>}
               <button type="submit" disabled={loading} className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium disabled:opacity-60 hover:opacity-90">
                 {loading ? "Updating…" : "Change password"}
@@ -120,20 +128,15 @@ export default function ChangePassword() {
   );
 }
 
-function Field({ id, label, value, onChange, error, autoComplete }: {
-  id: string; label: string; value: string; onChange: (v: string) => void; error?: string; autoComplete: string;
+function Field({ id, label, value, onChange, error, autoComplete, children }: {
+  id: string; label: string; value: string; onChange: (v: string) => void; error?: string; autoComplete: "current-password" | "new-password"; children?: React.ReactNode;
 }) {
   return (
     <div>
       <label htmlFor={id} className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">{label}</label>
-      <input
-        id={id} type="password" value={value} placeholder="••••••••" autoComplete={autoComplete}
-        onChange={(e) => onChange(e.target.value)}
-        aria-invalid={!!error}
-        aria-describedby={error ? `${id}-error` : undefined}
-        className={`w-full px-3 py-2.5 bg-[var(--card)] border rounded-md text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] ${error ? "border-red-400" : "border-[var(--border)]"}`}
-      />
+      <PasswordInput id={id} value={value} onChange={onChange} autoComplete={autoComplete} invalid={!!error} describedBy={error ? `${id}-error` : undefined} />
       {error && <p id={`${id}-error`} className="text-xs text-red-600 mt-1">{error}</p>}
+      {children}
     </div>
   );
 }

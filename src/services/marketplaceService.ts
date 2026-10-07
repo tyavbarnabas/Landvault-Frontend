@@ -75,8 +75,11 @@ export interface Estate {
   description: string;
   amenities: string[];
   imageUrl?: string;
-  titleType: TitleType;
-  lastVerifiedDate: string;
+  // Null when no title is recorded.
+  titleType: TitleType | null;
+  // Null when the land hasn't been checked. Distinct from `verified`, which
+  // is about the DEVELOPER COMPANY, not the land.
+  lastVerifiedDate: string | null;
   priceTiers: PriceTier[];
   cornerPremiumPct: number;
   paymentPlans: PaymentPlanType[];
@@ -126,6 +129,17 @@ export interface ListingFilters {
 }
 
 // ─── Derived/computed helpers — never stored ────────────────────────────────
+
+// What a buyer reads about the LAND. `verified` on a listing is about the
+// developer company; these say plainly when the land has nothing recorded or
+// checked, so an absence can never read as a clean bill of health.
+export function titleLabel(titleType: TitleType | null | undefined): string {
+  return titleType ?? "Title not recorded";
+}
+
+export function landCheckLabel(lastVerifiedDate: string | null | undefined): string {
+  return lastVerifiedDate ? `Land checked ${lastVerifiedDate}` : "Land not checked yet";
+}
 
 export function nonSoldOutTiers(listing: Pick<Estate, "priceTiers">): PriceTier[] {
   return listing.priceTiers.filter((t) => t.availability !== "sold_out");
@@ -272,8 +286,9 @@ function fromListingDto(dto: ListingDto): Listing {
     description: dto.description ?? "",
     amenities: dto.amenities ?? [],
     imageUrl: dto.imageUrl ?? undefined,
-    titleType: (dto.titleType ?? "Gazette") as TitleType,
-    lastVerifiedDate: dto.lastVerifiedDate ?? "",
+    // Null means nothing is recorded — never filled in with a plausible title.
+    titleType: (dto.titleType ?? null) as TitleType | null,
+    lastVerifiedDate: dto.lastVerifiedDate,
     // A unit-type tier has no size of its own; 0 here is "no size", never a
     // figure to compute with (see INTEGRATION_TESTING.md, known limits).
     priceTiers: dto.priceTiers.map((t) => ({

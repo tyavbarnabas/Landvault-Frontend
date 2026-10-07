@@ -16,6 +16,9 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // Tests run in mock mode whatever a developer's .env.local says; a test
+    // that exercises the real API opts in with vi.stubEnv("VITE_API_BASE_URL").
+    env: { VITE_API_BASE_URL: "", VITE_BACKEND_ALLOWED_ORIGINS: "" },
     include: ["src/**/*.test.ts"],
     coverage: {
       provider: "v8",

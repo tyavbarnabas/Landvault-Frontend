@@ -400,8 +400,12 @@ export interface PortalEstate {
   // Both editable through PUT /api/portal/estates/{id}.
   address: string;
   intent: EstateIntent;
-  titleType: Estate["titleType"];
+  // Null when nothing is declared — never filled in with a plausible title.
+  titleType: Estate["titleType"] | null;
   titleVerified: boolean;
+  // Live plots with no surveyed boundary: still for sale, but not on the
+  // public map and outside double-allocation checks. Detail only; 0 in mock.
+  plotsWithoutBoundary: number;
   // Counts and prices arrive computed — the portal displays them, it never
   // recounts a plot grid or re-derives a price range.
   totalPlots: number;
@@ -459,6 +463,7 @@ interface EstateDetailDto extends EstateSummaryDto {
   title: { titleType: Estate["titleType"] } | null;
   verificationChecks: unknown[] | null;
   eligibility: EstateEligibility;
+  plotsWithoutBoundary?: number;
 }
 
 function countOf(counts: PlotCountsDto | null, ...statuses: string[]): number {
@@ -467,6 +472,7 @@ function countOf(counts: PlotCountsDto | null, ...statuses: string[]): number {
 
 function fromSummaryDto(dto: EstateSummaryDto, tenantId: string, eligibility: EstateEligibility | null): PortalEstate {
   return {
+    plotsWithoutBoundary: 0,
     id: dto.id,
     slug: dto.slug,
     name: dto.name,
@@ -510,7 +516,8 @@ function fromDetailDto(dto: EstateDetailDto): PortalEstate {
     cornerPremiumPct: dto.cornerPremiumPct ?? 0,
     amenities: dto.amenities ?? [],
     address: dto.address ?? "",
-    titleType: dto.title?.titleType ?? "Gazette",
+    titleType: dto.title?.titleType ?? null,
+    plotsWithoutBoundary: dto.plotsWithoutBoundary ?? 0,
     // Title verification lives in verificationChecks, which this slice does
     // not interpret. Never shown as verified by default.
     titleVerified: false,
@@ -573,6 +580,7 @@ async function projectPortalEstate(estate: Estate): Promise<PortalEstate> {
   const plots = estate.plots;
 
   return {
+    plotsWithoutBoundary: 0,
     id: estate.id,
     slug: estate.slug ?? estate.id,
     name: estate.name,

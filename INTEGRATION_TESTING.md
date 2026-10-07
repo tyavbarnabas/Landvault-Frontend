@@ -62,10 +62,12 @@ to fetch". The dev panel (bottom right) turns red when the origin is wrong.
 - **the purchase flow, as one group**: marketplace listings, plots (from the
   estate map), the public cost disclosure, reservations, and transactions
 
-**Misaligned** (the backend has it; the frontend is not rewired)
-- `/estates` plot-grid browse. It needs every plot with a grid position. The
-  backend serves listings and a map instead. `/marketplace` is the live buyer
-  entry point.
+**Retired when live**
+- `/estates` plot-grid browse. Real plots have boundaries, not grid positions,
+  and the backend has decided not to add any. With a backend configured,
+  `/estates` redirects to `/marketplace`, `/estates/:id` redirects to
+  `/marketplace/:id`, and the Estates menu item is hidden. Mock mode keeps the
+  grid.
 
 **No backend yet** (demo data by design)
 - portfolio and payment schedules
@@ -90,10 +92,11 @@ to fetch". The dev panel (bottom right) turns red when the origin is wrong.
    verifies a payment, which can't happen yet. The checkout warns about this
    on the plan step and offers "Release this plot" there. Once the purchase is
    recorded, `DELETE /api/reservations/{id}` returns 409.
-2. **Plots without a boundary are invisible to buyers.** The marketplace map
-   (`/geojson`) is the only public plot list, and it omits plots with no
-   footprint. The picker notes when a tier has more plots remaining than it
-   can show.
+2. ~~Plots without a boundary are invisible to buyers.~~ **Resolved:**
+   `GET /api/marketplace/estates/{id}/plots` lists every plot, with
+   `hasBoundary`. The picker lists them marked "boundary not surveyed", and
+   the plot panel warns the buyer. The portal estate page warns the developer
+   using `plotsWithoutBoundary`.
 3. **No tenant document upload.** `submit-documents` fails with
    `NO_DOCUMENTS_UPLOADED`. The onboarding wizard's documents, regulatory
    details, directors and financials are not stored anywhere.
@@ -110,6 +113,14 @@ to fetch". The dev panel (bottom right) turns red when the origin is wrong.
    side blocks other routes, so typing an admin URL skips the forced change.
 9. **The tenant list is a summary** (`TenantSummaryDto`), with no estate
    counts. Seeded tenants can have `primaryContact: null`.
+11. **No password rule on the backend.** `RegisterRequest`, reset,
+    change-password and invitation accept only require a non-blank password,
+    so anyone calling the API directly can set "1". The frontend enforces one
+    shared rule (`src/lib/passwordPolicy.ts`): at least 8 characters, letters
+    and a number, not a common password, not the user's own name or email.
+    The backend should enforce the same rule and answer with a readable code
+    (for example `WEAK_PASSWORD`); the frontend already shows the backend's
+    message as-is.
 10. **Conflicts carry no geometry** in the list, so the overlap diagram shows
     only in mock mode.
 
@@ -136,3 +147,29 @@ Each of these passed in mock mode and broke against the real backend:
 - **Checkout:**
   - a refused reservation or transaction left the spinner running forever
   - the hold countdown kept running after the purchase was recorded
+
+## Honesty rules for listings (2026-10-07)
+
+- `verified` on a listing means the **developer company** is verified, not the
+  land. It is labelled "Verified developer", never just "Verified".
+- A missing `titleType` shows "Title not recorded". A missing
+  `lastVerifiedDate` shows "Land not checked yet". The frontend used to fill
+  in "Gazette" (in both the marketplace and the portal); it no longer does.
+- The "Verified only" filter is hidden when live, because every listed
+  developer is verified.
+- No backend change is needed: the field is accurate, and only the label
+  misled.
+
+## Plot list paging (2026-10-07)
+
+The plot picker loads one size tier at a time, 20 plots per page, from
+`GET /api/marketplace/estates/{id}/plots?priceTierId=&available=true&limit=20&cursor=`,
+with Previous/Next. It shows available plots by default, with a "Show
+unavailable plots too" option. The whole estate is no longer loaded for the
+list.
+
+- The backend must be restarted after adding `priceTierId`. An older backend
+  ignores the filter: the frontend still hides other tiers' plots, but the
+  counts and page numbers come out wrong.
+- **Backend:** plot numbers are sorted as text (1, 10, 11, …, 2). They should
+  be sorted as numbers (1, 2, … 10).

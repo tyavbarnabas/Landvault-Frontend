@@ -273,7 +273,7 @@ export default function PlotView() {
               {plot.titleType && (
                 <div className="mt-3 flex items-center gap-2">
                   <span className="text-xs text-[var(--muted-foreground)]">{plot.titleType}</span>
-                  {plot.titleVerified && <VerifiedBadge />}
+                  {plot.titleVerified && <VerifiedBadge label="Title verified" />}
                 </div>
               )}
             </div>

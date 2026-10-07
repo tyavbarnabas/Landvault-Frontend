@@ -1,4 +1,5 @@
 import { useState } from "react";
+import PasswordInput from "../../components/auth/PasswordInput";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
 import { completePendingWishlistIntent } from "../../lib/pendingWishlist";
@@ -142,7 +143,10 @@ export default function Login() {
         {step === "credentials" ? (
           <form onSubmit={handleCredentials} className="space-y-4">
             <Field label="Email" type="email" value={email} onChange={setEmail} placeholder="emeka@example.com" />
-            <Field label="Password" type="password" value={password} onChange={setPassword} placeholder="••••••••" />
+            <div>
+              <label htmlFor="login-password" className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Password</label>
+              <PasswordInput id="login-password" value={password} onChange={setPassword} autoComplete="current-password" />
+            </div>
             {error && <p className="text-red-600 text-sm">{error}</p>}
             <div className="text-right">
               <Link to="/forgot-password" className="text-xs text-[var(--muted-foreground)] hover:text-[var(--accent)]">Forgot password?</Link>

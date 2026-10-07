@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useApp } from "../contexts/AppContext"
 import { isBuyer, isPlatformStaff, isPortalStaff } from "../services/authService";
 import ErrorBoundary from "./ErrorBoundary"
+import { isLive } from "../lib/backends";
 
 // One nav config for the whole app, not a per-role branch. Every item names
 // the permission it needs; Layout below renders only what the signed-in
@@ -16,7 +17,9 @@ const NAV_SECTIONS = [
     items: [
       { path: "/dashboard", label: "Dashboard", icon: GridIcon, permission: "client.dashboard.view" },
       { path: "/marketplace", label: "Marketplace", icon: TagIcon, permission: "client.marketplace.view" },
-      { path: "/estates", label: "Estates", icon: MapIcon, permission: "client.estates.view" },
+      // The plot-grid browse is demo-only: real plots have boundaries, not grid
+      // positions, and the backend won't invent them. Live, Marketplace is the way in.
+      ...(isLive("marketplace") ? [] : [{ path: "/estates", label: "Estates", icon: MapIcon, permission: "client.estates.view" }]),
     ],
   },
   {

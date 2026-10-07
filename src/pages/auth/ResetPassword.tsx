@@ -7,6 +7,9 @@
 // does a dummy hash comparison on login to keep the timing equal. A helpful
 // "no account found" here would throw all of that away.
 
+import { assessPassword } from "../../lib/passwordPolicy";
+import PasswordInput from "../../components/auth/PasswordInput";
+import PasswordStrength from "../../components/auth/PasswordStrength";
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { AuthShell } from "./Login";
@@ -22,7 +25,6 @@ export default function ResetPassword() {
   const [email, setEmail] = useState(carriedEmail);
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
@@ -31,10 +33,11 @@ export default function ResetPassword() {
     e.preventDefault();
     if (!email.trim()) { setError("Enter the email address you requested the code for."); return; }
     if (!code.trim()) { setError("Enter the reset code from your email."); return; }
-    // Matches the backend's constraint, which is deliberately the same as
-    // registration's — a password acceptable at signup stays acceptable here.
+    // The same rule as sign-up (passwordPolicy.ts) — a reset must not be the
+    // way round it.
+    const pw = assessPassword(password, { email });
     if (!password) { setError("Choose a new password."); return; }
-    if (password !== confirm) { setError("Those passwords don't match."); return; }
+    if (!pw.acceptable) { setError(pw.problem ?? "Choose a stronger password."); return; }
 
     setLoading(true);
     setError("");
@@ -42,10 +45,15 @@ export default function ResetPassword() {
       await resetPassword({ email: email.trim(), code: code.trim(), newPassword: password });
       setDone(true);
     } catch (err) {
-      // One message for every failure mode, on purpose.
-      setError(errorCodeOf(err) === "INVALID_OR_EXPIRED_CODE"
-        ? "That code is invalid or has expired. Request a new one and try again."
-        : "Couldn't reset your password. Please request a new code and try again.");
+      // One message for every code failure, on purpose — except a weak
+      // password, which is about what was typed here, not about the code.
+      // WEAK_PASSWORD: the backend's pending password rule (not in
+      // AUTH_ERROR_CODES until the backend sends it), surfaced as-is.
+      const code: string | null = errorCodeOf(err);
+      setError(code === "WEAK_PASSWORD" && err instanceof Error && err.message ? err.message
+        : code === "INVALID_OR_EXPIRED_CODE"
+          ? "That code is invalid or has expired. Request a new one and try again."
+          : "Couldn't reset your password. Please request a new code and try again.");
       setLoading(false);
     }
   };
@@ -75,8 +83,11 @@ export default function ResetPassword() {
         <form onSubmit={submit} className="space-y-4">
           <Field id="reset-email" label="Email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" />
           <Field id="reset-code" label="Reset code" type="text" value={code} onChange={setCode} placeholder="000000" maxLength={6} />
-          <Field id="reset-password" label="New password" type="password" value={password} onChange={setPassword} placeholder="••••••••" />
-          <Field id="reset-confirm" label="Confirm new password" type="password" value={confirm} onChange={setConfirm} placeholder="••••••••" />
+          <div>
+            <label htmlFor="reset-password" className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">New password</label>
+            <PasswordInput id="reset-password" value={password} onChange={setPassword} autoComplete="new-password" placeholder="Choose a strong password" describedBy="reset-password-guide" />
+            <PasswordStrength id="reset-password-guide" assessment={assessPassword(password, { email })} started={password.length > 0} />
+          </div>
 
           {error && <p className="text-sm text-red-600">{error}</p>}
 

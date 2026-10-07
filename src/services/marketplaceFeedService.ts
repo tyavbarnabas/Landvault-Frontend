@@ -63,7 +63,7 @@ export function listingState(item: MarketplaceListing): NigerianState {
   return item.data.state;
 }
 
-export function listingTitleType(item: MarketplaceListing): TitleType {
+export function listingTitleType(item: MarketplaceListing): TitleType | null {
   return item.data.titleType;
 }
 

@@ -7,6 +7,9 @@ import { completePendingWishlistIntent } from "../../lib/pendingWishlist";
 import { consumePendingIntent } from "../../lib/pendingIntent";
 import { isLive } from "../../lib/backends";
 import { ApiError } from "../../lib/apiClient";
+import { assessPassword } from "../../lib/passwordPolicy";
+import PasswordInput from "../../components/auth/PasswordInput";
+import PasswordStrength from "../../components/auth/PasswordStrength";
 
 // The backend has no sign-up code step: an account is created straight from
 // the details, and phone is required. The emailed-code step is the mock's.
@@ -30,7 +33,8 @@ export default function Register() {
   const handleDetails = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.firstName || !form.lastName || !form.email || !form.password || (LIVE && !form.phone.trim())) { setError("Please fill in all required fields."); return; }
-    if (form.password.length < 8) { setError("Password must be at least 8 characters."); return; }
+    const pw = assessPassword(form.password, form);
+    if (!pw.acceptable) { setError(pw.problem ?? "Choose a stronger password."); return; }
     setError("");
     setStep("country");
   };
@@ -127,8 +131,12 @@ export default function Register() {
             <input value={form.phone} onChange={set("phone")} placeholder="+44 7700 900123" className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Password</label>
-            <input type="password" value={form.password} onChange={set("password")} placeholder="Min. 8 characters" className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm" />
+            <label htmlFor="reg-password" className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Password</label>
+            {/* No confirm field: the eye lets you check what you typed, and a
+                mistyped password is recoverable with "Forgot password". */}
+            <PasswordInput id="reg-password" value={form.password} onChange={(v) => setForm((f) => ({ ...f, password: v }))}
+              autoComplete="new-password" placeholder="Choose a strong password" describedBy="reg-password-guide" />
+            <PasswordStrength id="reg-password-guide" assessment={assessPassword(form.password, form)} started={form.password.length > 0} />
           </div>
           {error && <p className="text-red-600 text-sm">{error}</p>}
           <button type="submit" className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium hover:opacity-90 transition-opacity">
