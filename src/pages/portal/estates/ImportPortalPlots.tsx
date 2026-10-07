@@ -6,6 +6,7 @@
 // import is ALL OR NOTHING and re-checks everything: a preview is not a promise.
 
 import { useRef, useState } from "react";
+import LoadError from "../../../components/LoadError";
 import { Link, useParams } from "react-router-dom";
 import { useFetch } from "../../../lib/useFetch";
 import { fetchPortalEstateById } from "../../../services/portalEstatesService";
@@ -47,6 +48,8 @@ export default function ImportPortalPlots() {
   const [error, setError] = useState("");
 
   if (estate.loading) return <div className="p-8 text-sm text-[var(--muted-foreground)]">Loading…</div>;
+
+  if (estate.error) return <LoadError error={estate.errorValue} what="this estate" onRetry={estate.refetch} />;
   if (!estate.data || !estateId || !scope) {
     return (
       <div className="p-8">

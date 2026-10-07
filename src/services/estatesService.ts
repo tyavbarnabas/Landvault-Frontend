@@ -5,14 +5,15 @@
 
 import { ESTATES, type Estate, type Plot } from "../data/mockData";
 import { apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 
 export async function fetchEstates(): Promise<Estate[]> {
-  if (apiClient.isMockMode) return ESTATES;
+  if (isMock("estates")) return ESTATES;
   return apiClient.get<Estate[]>("/api/estates");
 }
 
 export async function fetchEstateById(id: string): Promise<Estate | undefined> {
-  if (apiClient.isMockMode) return ESTATES.find((e) => e.id === id);
+  if (isMock("estates")) return ESTATES.find((e) => e.id === id);
   try {
     return await apiClient.get<Estate>(`/api/estates/${id}`);
   } catch {
@@ -40,6 +41,9 @@ export interface PriceTier {
   price: number; // this tier's own developer-set price, never derived from a single per-sqm rate
   availability: TierAvailability;
   plotsRemaining: number;
+  // The tier's own currency when the backend gives one (a diaspora tier can
+  // be priced in USD). Absent means NGN.
+  currency?: string;
 }
 
 // Exported so marketplaceService.ts's projectListing() can reuse this exact
@@ -69,7 +73,7 @@ export function tiersFromPlots(estate: Estate): PriceTier[] {
 // TODO (backend): a real developer sets this price list directly, rather
 // than it being derived from generated plot inventory as this mock does.
 export async function fetchPriceTiers(estateId: string): Promise<PriceTier[]> {
-  if (!apiClient.isMockMode) return apiClient.get<PriceTier[]>(`/api/estates/${estateId}/price-tiers`);
+  if (!isMock("estates")) return apiClient.get<PriceTier[]>(`/api/estates/${estateId}/price-tiers`);
   const estate = await fetchEstateById(estateId);
   return estate ? tiersFromPlots(estate) : [];
 }

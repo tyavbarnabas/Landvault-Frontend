@@ -12,12 +12,13 @@
 // side of it. This page is what puts people there.
 
 import { useState } from "react";
+import LoadError from "../../../components/LoadError";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useApp } from "../../../contexts/AppContext";
 import { useFetch } from "../../../lib/useFetch";
-import { apiClient } from "../../../lib/apiClient";
 import { canInviteStaff, canRequestStaff } from "../../../services/authService";
 import { fetchBranches, type PortalBranch } from "../../../services/branchesService";
+import { isLive } from "../../../lib/backends";
 import {
   StaffError, actOnInvitation, branchRuleForScope, fetchAssignableRoles, requestableRoles, type AssignableRole, changeStaffRole, fetchInvitations, fetchStaff,
   inviteStaff, mockInvitationLink, rejectInvitation, requestStaff, setStaffActive,
@@ -51,6 +52,7 @@ export default function PortalStaff() {
 
   if (!caller) return <div className="p-8 text-sm text-[var(--muted-foreground)]">This account isn't linked to a company.</div>;
   if (data.loading && !data.data) return <div className="p-8 text-sm text-[var(--muted-foreground)]">Loading staff…</div>;
+  if (data.error) return <LoadError error={data.errorValue} what="your staff" onRetry={data.refetch} />;
   if (!data.data) {
     return (
       <div className="p-8">
@@ -123,7 +125,7 @@ export default function PortalStaff() {
 
 // What was just sent, shown on return from the invite page.
 function SentNotice({ sent }: { sent: StaffInvitation }) {
-  const demoLink = apiClient.isMockMode ? mockInvitationLink(sent.id) : null;
+  const demoLink = !isLive("staff") ? mockInvitationLink(sent.id) : null;
   return (
     <div className="mb-6 rounded-lg bg-[var(--muted)] p-3 text-sm text-[var(--foreground)] space-y-1" role="status">
       {sent.status === "awaiting_approval"

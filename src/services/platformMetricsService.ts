@@ -9,10 +9,11 @@
 // actual backend exists — every zone that calls these renders a "Preview
 // data" badge so the numbers are never mistaken for real ones.
 
-import { fetchTenants, fetchAuditLog, type AuditLogEntry } from "./tenantsService";
+import { fetchTenants, fetchAuditLog, mockTenantsSnapshot, type AuditLogEntry } from "./tenantsService";
 import { fetchConflicts } from "./listingConflictsService";
 import { CAPABILITIES } from "../lib/capabilities";
 import { apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import { buildPlatformHealthMetrics, MOCK_MARKETPLACE_PULSE, MOCK_REVENUE, MOCK_SYSTEM_HEALTH, type MetricsPeriod } from "../data/mockPlatformMetrics";
 
 export type { MetricsPeriod };
@@ -116,12 +117,11 @@ export interface PlatformHealthMetrics {
 
 // TODO (backend): GET /api/admin/metrics/platform-health?period=
 export async function fetchPlatformHealthMetrics(period: MetricsPeriod): Promise<PlatformHealthMetrics> {
-  if (apiClient.isMockMode) {
+  if (isMock("platformMetrics")) {
     // This is a genuine aggregate over every tenant, not a paginated list —
     // same TODO as Portfolio.tsx's: a real backend should compute this
     // server-side rather than the client requesting "everything."
-    const { items: allTenants } = await fetchTenants({}, { limit: 10_000 });
-    return buildPlatformHealthMetrics(allTenants, period);
+    return buildPlatformHealthMetrics(mockTenantsSnapshot(), period);
   }
   return apiClient.get<PlatformHealthMetrics>(`/api/admin/metrics/platform-health?period=${period}`);
 }
@@ -140,7 +140,7 @@ export interface MarketplacePulseMetrics {
 
 // TODO (backend): GET /api/admin/metrics/marketplace-pulse
 export async function fetchMarketplacePulseMetrics(): Promise<MarketplacePulseMetrics> {
-  if (apiClient.isMockMode) return MOCK_MARKETPLACE_PULSE;
+  if (isMock("platformMetrics")) return MOCK_MARKETPLACE_PULSE;
   return apiClient.get<MarketplacePulseMetrics>("/api/admin/metrics/marketplace-pulse");
 }
 
@@ -155,7 +155,7 @@ export interface RevenueMetrics {
 
 // TODO (backend): GET /api/admin/metrics/revenue
 export async function fetchRevenueMetrics(): Promise<RevenueMetrics> {
-  if (apiClient.isMockMode) return MOCK_REVENUE;
+  if (isMock("platformMetrics")) return MOCK_REVENUE;
   return apiClient.get<RevenueMetrics>("/api/admin/metrics/revenue");
 }
 
@@ -175,7 +175,7 @@ export async function fetchSystemHealthMetrics(): Promise<SystemHealthMetrics> {
   // statuses) is still mock data, but duplicateListingConflicts — the one
   // metric this zone's own comment already called "the core anti-fraud
   // differentiator" — is real now, so it's spliced in rather than left fake.
-  if (apiClient.isMockMode) {
+  if (isMock("platformMetrics")) {
     const { total: openConflicts } = await fetchConflicts({ status: ["open", "investigating"] }, { limit: 1 });
     return { ...MOCK_SYSTEM_HEALTH, duplicateListingConflicts: openConflicts };
   }

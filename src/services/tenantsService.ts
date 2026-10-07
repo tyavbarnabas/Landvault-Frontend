@@ -13,6 +13,7 @@
 // kills onboarding completion.
 
 import { ApiError, apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import { mockAccountExists } from "./authService";
 import type { Currency } from "../data/mockData";
 import type { NigerianState } from "../data/nigerianStates";
@@ -163,7 +164,8 @@ export interface Tenant {
   // Populated together at Stage 1 (account creation) — a tenant never exists
   // without these.
   identity: CompanyIdentity;
-  primaryContact: PrimaryContact;
+  // Null on the backend for tenants created before contacts were captured.
+  primaryContact: PrimaryContact | null;
   presence: CompanyPresence;
 
   // Populated together at Stage 2 (verification submission).
@@ -175,6 +177,36 @@ export interface Tenant {
 
   verificationState: VerificationState;
   verificationHistory: VerificationDecision[]; // append-only audit trail
+}
+
+// One row of the tenant directory — exactly the backend's TenantSummaryDto.
+// The list is a summary on purpose; the full record is fetchTenantById.
+export interface TenantSummary {
+  id: string;
+  displayName: string;
+  primaryContactName: string | null;
+  primaryContactEmail: string;
+  plan: TenantPlan;
+  verificationState: VerificationState;
+  status: TenantStatus;
+  statesOfOperation: string[];
+  branchCount: number;
+  createdDate: string;
+}
+
+function toSummary(t: Tenant): TenantSummary {
+  return {
+    id: t.id, displayName: tenantDisplayName(t), primaryContactName: t.primaryContact?.fullName || null,
+    primaryContactEmail: t.primaryContact?.workEmail ?? "", plan: t.plan, verificationState: t.verificationState, status: t.status,
+    statesOfOperation: t.identity.statesOfOperation, branchCount: t.branches.length, createdDate: t.createdDate,
+  };
+}
+
+// The mock tenants themselves — for mocked services (platform metrics) that
+// aggregate over every tenant. Never the live list: a mocked figure built
+// from real rows is neither real nor demo.
+export function mockTenantsSnapshot(): Tenant[] {
+  return mockTenants;
 }
 
 export function tenantDisplayName(t: Tenant): string {
@@ -553,12 +585,12 @@ export interface TenantFilters {
   submittedAfter?: string;
 }
 
-export async function fetchTenants(filters: TenantFilters = {}, params: PageParams = {}): Promise<Page<Tenant>> {
-  if (apiClient.isMockMode) {
+export async function fetchTenants(filters: TenantFilters = {}, params: PageParams = {}): Promise<Page<TenantSummary>> {
+  if (isMock("tenants")) {
     let results = mockTenants;
     if (filters.query) {
       const q = filters.query.toLowerCase();
-      results = results.filter((t) => tenantDisplayName(t).toLowerCase().includes(q) || t.primaryContact.workEmail.toLowerCase().includes(q));
+      results = results.filter((t) => tenantDisplayName(t).toLowerCase().includes(q) || (t.primaryContact?.workEmail ?? "").toLowerCase().includes(q));
     }
     if (filters.verificationState && filters.verificationState.length > 0) {
       results = results.filter((t) => filters.verificationState!.includes(t.verificationState));
@@ -566,7 +598,7 @@ export async function fetchTenants(filters: TenantFilters = {}, params: PagePara
     if (filters.plan) results = results.filter((t) => t.plan === filters.plan);
     if (filters.state) results = results.filter((t) => t.identity.statesOfOperation.includes(filters.state!));
     if (filters.submittedAfter) results = results.filter((t) => t.createdDate >= filters.submittedAfter!);
-    return paginateMock(results, params);
+    return paginateMock(results.map(toSummary), params);
   }
   const qp = new URLSearchParams();
   if (filters.query) qp.set("query", filters.query);
@@ -576,7 +608,7 @@ export async function fetchTenants(filters: TenantFilters = {}, params: PagePara
   if (filters.submittedAfter) qp.set("submittedAfter", filters.submittedAfter);
   if (params.limit) qp.set("limit", String(params.limit));
   if (params.cursor) qp.set("cursor", params.cursor);
-  return apiClient.get<Page<Tenant>>(`/api/admin/tenants?${qp}`);
+  return apiClient.get<Page<TenantSummary>>(`/api/admin/tenants?${qp}`);
 }
 
 // Mock-mode-only synchronous accessor — same convention as
@@ -594,7 +626,7 @@ export function fetchTenantByIdSync(id: string): Tenant | undefined {
 }
 
 export async function fetchTenantById(id: string): Promise<Tenant | undefined> {
-  if (apiClient.isMockMode) return mockTenants.find((t) => t.id === id);
+  if (isMock("tenants")) return mockTenants.find((t) => t.id === id);
   try {
     return await apiClient.get<Tenant>(`/api/admin/tenants/${id}`);
   } catch {
@@ -607,7 +639,7 @@ export async function fetchTenantById(id: string): Promise<Tenant | undefined> {
 // estates; it just can't publish to the marketplace or take payments until
 // verified (enforced by checks against `verificationState`, not `status`).
 export async function createTenantDraft(input: CreateTenantDraftInput): Promise<Tenant> {
-  if (apiClient.isMockMode) {
+  if (isMock("tenants")) {
     // Same refusal as the backend: the primary contact is invited as the
     // first Executive Director, which needs an email with no account yet.
     if (mockAccountExists(input.primaryContact.workEmail)) {
@@ -638,7 +670,7 @@ export async function createTenantDraft(input: CreateTenantDraftInput): Promise<
 // Stage 2 — verification submission (documents, regulatory, directors,
 // financial). Moves the tenant into the review queue.
 export async function submitForVerification(tenantId: string, input: SubmitVerificationInput): Promise<Tenant | undefined> {
-  if (apiClient.isMockMode) {
+  if (isMock("tenants")) {
     mockTenants = mockTenants.map((t) =>
       t.id === tenantId
         ? {
@@ -654,14 +686,20 @@ export async function submitForVerification(tenantId: string, input: SubmitVerif
     );
     return mockTenants.find((t) => t.id === tenantId);
   }
-  return apiClient.post<Tenant>(`/api/admin/tenants/${tenantId}/submit-verification`, input);
+  // The backend's submit-documents is a state transition only — it takes no
+  // body. The wizard's documents, regulatory details, directors and bank
+  // details have no backend storage yet (and no upload endpoint), so they are
+  // not sent; the backend refuses with NO_DOCUMENTS_UPLOADED until uploads
+  // exist. Recorded in INTEGRATION_TESTING.md.
+  void input;
+  return apiClient.post<Tenant>(`/api/admin/tenants/${tenantId}/submit-documents`);
 }
 
 // Moves a submitted tenant into active review — called when a reviewer opens
 // a "documents_submitted" tenant record, simulating "review has now started"
 // since there's no separate review-queue-claim mechanism built yet.
 export async function beginReview(tenantId: string): Promise<Tenant | undefined> {
-  if (apiClient.isMockMode) {
+  if (isMock("tenants")) {
     mockTenants = mockTenants.map((t) => (t.id === tenantId && t.verificationState === "documents_submitted" ? { ...t, verificationState: "under_review" } : t));
     return mockTenants.find((t) => t.id === tenantId);
   }
@@ -671,7 +709,7 @@ export async function beginReview(tenantId: string): Promise<Tenant | undefined>
 // Records a reviewer's decision — always appended, never overwritten, so the
 // audit trail (SA-9.1-style) stays intact regardless of outcome.
 export async function recordVerificationDecision(tenantId: string, input: RecordDecisionInput): Promise<Tenant | undefined> {
-  if (apiClient.isMockMode) {
+  if (isMock("tenants")) {
     const decision: VerificationDecision = {
       id: newId("vd"),
       reviewerName: input.reviewerName,
@@ -708,7 +746,7 @@ export async function recordVerificationDecision(tenantId: string, input: Record
 // Re-upload for a single rejected document (spec: "allow re-upload of only
 // the specific documents that failed" — not the whole document set).
 export async function resubmitDocument(tenantId: string, documentId: string, file: { fileName: string; size: number }): Promise<Tenant | undefined> {
-  if (apiClient.isMockMode) {
+  if (isMock("tenants")) {
     mockTenants = mockTenants.map((t) =>
       t.id === tenantId
         ? { ...t, documents: t.documents.map((d) => (d.id === documentId ? { ...d, fileName: file.fileName, size: file.size, status: "pending" as const, rejectionReason: undefined, uploadedAt: new Date().toISOString() } : d)) }
@@ -721,7 +759,7 @@ export async function resubmitDocument(tenantId: string, documentId: string, fil
 
 // SA-1.3 — plan and per-feature entitlements, enforced server-side once real.
 export async function updateTenantPlan(id: string, plan: TenantPlan, entitlements: TenantEntitlements): Promise<Tenant | undefined> {
-  if (apiClient.isMockMode) {
+  if (isMock("tenants")) {
     mockTenants = mockTenants.map((t) => (t.id === id ? { ...t, plan, entitlements } : t));
     return mockTenants.find((t) => t.id === id);
   }
@@ -732,7 +770,7 @@ export async function updateTenantPlan(id: string, plan: TenantPlan, entitlement
 // without touching their data; reactivate reverses it. Independent of
 // verificationState (see Northbridge Estates in seed data).
 export async function setTenantStatus(id: string, status: TenantStatus, actor: string): Promise<Tenant | undefined> {
-  if (apiClient.isMockMode) {
+  if (isMock("tenants")) {
     mockTenants = mockTenants.map((t) => (t.id === id ? { ...t, status } : t));
     const updated = mockTenants.find((t) => t.id === id);
     if (updated) logAudit({ actor, action: "tenant_status_changed", tenantId: id, tenantName: tenantDisplayName(updated), detail: `Status changed to ${status}` });
@@ -745,7 +783,7 @@ export async function setTenantStatus(id: string, status: TenantStatus, actor: s
 // grant; it never performs financial or document-signing actions, and a real
 // backend would use this to scope a short-lived, fully-logged session.
 export async function requestSupportAccess(tenantId: string, reason: string, actor: string): Promise<SupportAccessGrant> {
-  if (apiClient.isMockMode) {
+  if (isMock("tenants")) {
     const requestedAt = new Date();
     const grant: SupportAccessGrant = {
       id: newId("support"),
@@ -763,11 +801,11 @@ export async function requestSupportAccess(tenantId: string, reason: string, act
 }
 
 export async function fetchAuditLog(params: PageParams = {}): Promise<Page<AuditLogEntry>> {
-  if (apiClient.isMockMode) return paginateMock(mockAuditLog, params);
+  if (isMock("tenants")) return paginateMock(mockAuditLog, params);
   return apiClient.get<Page<AuditLogEntry>>(`/api/admin/audit-log?${new URLSearchParams(params as Record<string, string>)}`);
 }
 
 export async function fetchSupportAccessGrants(tenantId: string): Promise<SupportAccessGrant[]> {
-  if (apiClient.isMockMode) return mockSupportAccessGrants.filter((g) => g.tenantId === tenantId);
+  if (isMock("tenants")) return mockSupportAccessGrants.filter((g) => g.tenantId === tenantId);
   return apiClient.get<SupportAccessGrant[]>(`/api/admin/tenants/${tenantId}/support-access`);
 }

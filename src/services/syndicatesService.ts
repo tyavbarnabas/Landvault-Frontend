@@ -1,6 +1,7 @@
 // Backend integration seam for co-ownership syndicates. See INTEGRATION.md.
 
 import { apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 
 export interface SyndicateMember {
   id: string;
@@ -57,12 +58,12 @@ const MOCK_SYNDICATES: Syndicate[] = [
 let mockSyndicates: Syndicate[] = [...MOCK_SYNDICATES];
 
 export async function fetchSyndicates(): Promise<Syndicate[]> {
-  if (apiClient.isMockMode) return mockSyndicates;
+  if (isMock("syndicates")) return mockSyndicates;
   return apiClient.get<Syndicate[]>("/api/syndicates");
 }
 
 export async function fetchSyndicateById(id: string): Promise<Syndicate | undefined> {
-  if (apiClient.isMockMode) return mockSyndicates.find((s) => s.id === id);
+  if (isMock("syndicates")) return mockSyndicates.find((s) => s.id === id);
   try {
     return await apiClient.get<Syndicate>(`/api/syndicates/${id}`);
   } catch {
@@ -71,7 +72,7 @@ export async function fetchSyndicateById(id: string): Promise<Syndicate | undefi
 }
 
 export async function createSyndicate(input: CreateSyndicateInput): Promise<Syndicate> {
-  if (apiClient.isMockMode) {
+  if (isMock("syndicates")) {
     const syndicate: Syndicate = {
       id: `syn-${Date.now()}`,
       name: input.name,

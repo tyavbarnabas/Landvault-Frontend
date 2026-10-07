@@ -12,7 +12,15 @@
 // and documents together — see the explicit TODO on runFinanceVerification
 // below where mock mode necessarily runs these as sequential calls instead.
 
-import { apiClient } from "../lib/apiClient";
+import { apiClient, nullIfNotFound } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
+import { PaymentsUnavailableError } from "./paymentsUnavailable";
+
+// Live mode: true while the backend has no payment step. Screens read this to
+// stop at "pending payment" rather than offer a payment that can't happen.
+export function paymentsAvailable(): boolean {
+  return isMock("checkout");
+}
 import type { Currency, Document, OwnedPlot } from "../data/mockData";
 import { FX_RATES } from "../data/mockData";
 import type { PaymentPlanType } from "./marketplaceService";
@@ -96,8 +104,56 @@ export interface InitiateTransactionInput {
 
 const mockTransactions = new Map<string, Transaction>();
 
+// TransactionDto. The backend recomputes the price from the plot as it was
+// held — a price sent by the client is ignored — so basePrice, the corner
+// premium and totalPrice are the BACKEND's, not the screen's.
+interface TransactionDto {
+  id: string;
+  reference: string;
+  estateId: string;
+  plotId: string;
+  reservationId: string;
+  basePrice: number;
+  cornerPremiumPct: number | null;
+  totalPrice: number;
+  intent: "development" | "investment";
+  plan: PaymentPlanType;
+  status: TransactionStatus;
+  createdAt: string;
+}
+
+// The screen's display fields (estate name, plot label, location…) are kept
+// from what the buyer was shown; every money figure comes from the backend.
+function fromTransactionDto(dto: TransactionDto, shown: InitiateTransactionInput): Transaction {
+  return {
+    ...shown,
+    id: dto.id,
+    reference: dto.reference,
+    listingId: dto.estateId,
+    plotId: dto.plotId,
+    reservationId: dto.reservationId,
+    basePrice: dto.basePrice,
+    cornerPremiumPct: dto.cornerPremiumPct ?? undefined,
+    totalPrice: dto.totalPrice,
+    intent: dto.intent,
+    plan: dto.plan,
+    status: dto.status,
+    createdAt: dto.createdAt,
+  };
+}
+
 export async function initiateTransaction(input: InitiateTransactionInput): Promise<Transaction> {
-  if (!apiClient.isMockMode) return apiClient.post<Transaction>("/api/checkout/transactions", input);
+  if (!isMock("checkout")) {
+    // CreateTransactionRequest: { reservationId, intent, plan, installmentMonths
+    // (installment plans only) }. Nothing else — prices are the backend's.
+    const dto = await apiClient.post<TransactionDto>("/api/checkout/transactions", {
+      reservationId: input.reservationId,
+      intent: input.intent,
+      plan: input.plan,
+      ...(input.plan === "installment" && input.installmentMonths ? { installmentMonths: input.installmentMonths } : {}),
+    });
+    return fromTransactionDto(dto, input);
+  }
 
   const txn: Transaction = {
     ...input,
@@ -122,7 +178,8 @@ export interface VirtualAccountDetails {
 // Selecting a method — for a transfer-based method (diaspora), returns the
 // account/wire details to show while we wait for the transfer to land.
 export async function initiatePayment(transactionId: string, method: MarketplacePaymentMethod): Promise<{ requiresTransfer: boolean; account?: VirtualAccountDetails }> {
-  if (!apiClient.isMockMode) return apiClient.post(`/api/checkout/transactions/${transactionId}/payments`, { method });
+  // No payment route on the backend — said, never simulated.
+  if (!isMock("checkout")) throw new PaymentsUnavailableError();
 
   const txn = mockTransactions.get(transactionId);
   if (txn) txn.paymentMethod = method;
@@ -137,7 +194,7 @@ export async function initiatePayment(transactionId: string, method: Marketplace
 // portfolio record so the buyer can close the tab and find it again, then
 // waits for runFinanceVerification below.
 export async function confirmPayment(transactionId: string): Promise<Transaction> {
-  if (!apiClient.isMockMode) return apiClient.get<Transaction>(`/api/checkout/transactions/${transactionId}`);
+  if (!isMock("checkout")) throw new PaymentsUnavailableError();
 
   const txn = mockTransactions.get(transactionId);
   if (!txn) throw new Error("Transaction not found.");
@@ -215,7 +272,7 @@ function buildDocumentsForTransaction(txn: Transaction): Document[] {
 // confirmPayment) — the "rejected" status and its UI exist and are typed for
 // a real backend, exercised the way KYC's reject path is (see kycService.ts).
 export async function runFinanceVerification(transactionId: string): Promise<Transaction> {
-  if (!apiClient.isMockMode) return apiClient.post<Transaction>(`/api/checkout/transactions/${transactionId}/verify`);
+  if (!isMock("checkout")) throw new PaymentsUnavailableError();
 
   const txn = mockTransactions.get(transactionId);
   if (!txn) throw new Error("Transaction not found.");
@@ -247,8 +304,10 @@ export async function runFinanceVerification(transactionId: string): Promise<Tra
 }
 
 export async function fetchTransaction(id: string): Promise<Transaction | undefined> {
-  if (!apiClient.isMockMode) {
-    try { return await apiClient.get<Transaction>(`/api/checkout/transactions/${id}`); } catch { return undefined; }
+  if (!isMock("checkout")) {
+    // Unused by any screen today. Live, this is the backend's TransactionDto —
+    // without the display fields a screen adds from what the buyer was shown.
+    return (await nullIfNotFound(apiClient.get<Transaction>(`/api/checkout/transactions/${id}`))) ?? undefined;
   }
   return mockTransactions.get(id);
 }

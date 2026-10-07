@@ -11,7 +11,7 @@ import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { AuthShell } from "./Login";
 import { MOCK_DEMO_CODES, errorCodeOf, resetPassword } from "../../services/authService";
-import { apiClient } from "../../lib/apiClient";
+import { isLive } from "../../lib/backends";
 
 export default function ResetPassword() {
   const navigate = useNavigate();
@@ -89,7 +89,7 @@ export default function ResetPassword() {
           Didn't get a code? <Link to="/forgot-password" className="text-[var(--accent)] hover:underline">Request another</Link>.
         </p>
 
-        {apiClient.isMockMode && (
+        {!isLive("auth") && (
           <p className="text-xs text-[var(--muted-foreground)] mt-2">Demo mode: the reset code is {MOCK_DEMO_CODES.reset}.</p>
         )}
       </div>

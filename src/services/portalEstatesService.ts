@@ -15,7 +15,8 @@
 
 import { ESTATES, type Estate, type GeoPoint } from "../data/mockData";
 import { polygonAreaSqm, polygonOverlap } from "../lib/geometry";
-import { apiClient, ApiError } from "../lib/apiClient";
+import { apiClient, ApiError, nullIfNotFound } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import { fetchTenantByIdSync } from "./tenantsService";
 import { fetchConflicts, redetectMockConflictsForEstate } from "./listingConflictsService";
@@ -337,7 +338,7 @@ export function refusalFromError(error: unknown): PublicationRefusal | null {
 // Re-publishing an already-published estate re-checks every condition, which
 // is how a developer finds out why a published estate isn't live.
 export async function publishEstate(id: string, scope: PortalScope): Promise<PublicationResult> {
-  if (!apiClient.isMockMode) return apiClient.post<PublicationResult>(`/api/portal/estates/${id}/publish`);
+  if (!isMock("portalEstates")) return apiClient.post<PublicationResult>(`/api/portal/estates/${id}/publish`);
 
   const estate = ownedMockEstate(id, scope);
   const eligibility = (await projectPortalEstate(estate)).eligibility!;
@@ -358,7 +359,7 @@ export async function publishEstate(id: string, scope: PortalScope): Promise<Pub
 
 // PB-4. Only the flag changes; the estate and its plots are untouched.
 export async function unpublishEstate(id: string, scope: PortalScope): Promise<PublicationResult> {
-  if (!apiClient.isMockMode) return apiClient.post<PublicationResult>(`/api/portal/estates/${id}/unpublish`);
+  if (!isMock("portalEstates")) return apiClient.post<PublicationResult>(`/api/portal/estates/${id}/unpublish`);
 
   const estate = ownedMockEstate(id, scope);
   estate.published = false;
@@ -615,7 +616,7 @@ export async function fetchPortalEstates(
   filters: PortalEstateFilters = {},
   params: PageParams = {},
 ): Promise<Page<PortalEstate>> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalEstates")) {
     const qp = new URLSearchParams({ ...(filters as Record<string, string>), ...(params as Record<string, string>) });
     const page = await apiClient.get<Page<EstateSummaryDto>>(`/api/portal/estates?${qp}`);
     return { ...page, items: page.items.map((dto) => fromSummaryDto(dto, scope.tenantId, null)) };
@@ -645,8 +646,10 @@ export async function fetchPortalEstates(
 }
 
 export async function fetchPortalEstateById(id: string, scope: PortalScope): Promise<PortalEstate | null> {
-  if (!apiClient.isMockMode) {
-    try { return fromDetailDto(await apiClient.get<EstateDetailDto>(`/api/portal/estates/${id}`)); } catch { return null; }
+  if (!isMock("portalEstates")) {
+    // Only a 404 is "not found" — a 401, 500 or CORS failure surfaces as itself.
+    const dto = await nullIfNotFound(apiClient.get<EstateDetailDto>(`/api/portal/estates/${id}`));
+    return dto ? fromDetailDto(dto) : null;
   }
   const estate = mockStore().find((e) => e.id === id);
   if (!estate) return null;
@@ -659,8 +662,8 @@ export async function fetchPortalEstateById(id: string, scope: PortalScope): Pro
 }
 
 export async function fetchEstateGeoJson(id: string, scope: PortalScope): Promise<GeoJsonFeatureCollection | null> {
-  if (!apiClient.isMockMode) {
-    try { return await apiClient.get<GeoJsonFeatureCollection>(`/api/portal/estates/${id}/geojson`); } catch { return null; }
+  if (!isMock("portalEstates")) {
+    return nullIfNotFound(apiClient.get<GeoJsonFeatureCollection>(`/api/portal/estates/${id}/geojson`));
   }
   const estate = mockStore().find((e) => e.id === id && e.tenantId === scope.tenantId);
   if (!estate || estate.footprint.length < 3) return null;
@@ -692,7 +695,7 @@ export interface CreateEstateInput {
 // Always creates a DRAFT. Publication is a separate, deliberate action (DP-14,
 // a later slice) — there is no create-and-publish shortcut on purpose.
 export async function createPortalEstate(input: CreateEstateInput, scope: PortalScope): Promise<PortalEstate> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalEstates")) {
     // The backend's field is `footprint` (CreateEstateRequest). Sending
     // `boundary` was silently dropped by Jackson — every estate came out
     // boundary-less, and since BG-1 no such estate can be published.
@@ -813,7 +816,7 @@ export async function updatePortalEstate(id: string, input: UpdateEstateInput, s
     throw new EstateEditError("cornerPremiumPct", "VALIDATION", "The corner premium can't be negative.");
   }
 
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalEstates")) {
     try {
       await apiClient.put(`/api/portal/estates/${id}`, input);
     } catch (err) {
@@ -879,7 +882,7 @@ export interface EstateBoundaryResult {
 }
 
 export async function addEstateBoundary(id: string, boundary: GeoJsonPolygon, scope: PortalScope): Promise<EstateBoundaryResult> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalEstates")) {
     try {
       return await apiClient.post<EstateBoundaryResult>(`/api/portal/estates/${id}/boundary`, { footprint: boundary });
     } catch (err) {
@@ -1018,7 +1021,7 @@ function mockApply(estate: Estate, change: BoundaryChange, proposed: GeoPoint[])
 
 export async function correctEstateBoundary(id: string, boundary: GeoJsonPolygon, reason: string, scope: PortalScope): Promise<BoundaryChange> {
   if (!reason.trim()) throw new EstateEditError("reason", "VALIDATION", "Say why it changed — it's kept in the history and shown to a reviewer.");
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalEstates")) {
     try {
       // 200 applied, or 202 pending — both carry the change.
       return await apiClient.put<BoundaryChange>(`/api/portal/estates/${id}/boundary`, { footprint: boundary, reason: reason.trim() });
@@ -1058,13 +1061,13 @@ export async function correctEstateBoundary(id: string, boundary: GeoJsonPolygon
 
 // Every correction, newest first, with both shapes.
 export async function fetchBoundaryChanges(id: string, scope: PortalScope): Promise<BoundaryChange[]> {
-  if (!apiClient.isMockMode) return apiClient.get<BoundaryChange[]>(`/api/portal/estates/${id}/boundary-changes`);
+  if (!isMock("portalEstates")) return apiClient.get<BoundaryChange[]>(`/api/portal/estates/${id}/boundary-changes`);
   try { ownedMockEstate(id, scope); } catch { return []; }
   return mockBoundaryChanges.filter((c) => c.estateId === id).map((c) => ({ ...c }));
 }
 
 export async function withdrawBoundaryChange(id: string, changeId: string, scope: PortalScope): Promise<BoundaryChange> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalEstates")) {
     try {
       return await apiClient.post<BoundaryChange>(`/api/portal/estates/${id}/boundary-changes/${changeId}/withdraw`);
     } catch (err) {
@@ -1084,7 +1087,7 @@ export async function withdrawBoundaryChange(id: string, changeId: string, scope
 // Oldest first, with both shapes, the share of land changed, the reason and
 // the company. Gated on admin.marketplace.conflicts.
 export async function fetchBoundaryChangesForReview(status: BoundaryChangeStatus = "pending"): Promise<BoundaryChange[]> {
-  if (!apiClient.isMockMode) return apiClient.get<BoundaryChange[]>(`/api/admin/boundary-changes?status=${status}`);
+  if (!isMock("portalEstates")) return apiClient.get<BoundaryChange[]>(`/api/admin/boundary-changes?status=${status}`);
   return mockBoundaryChanges.filter((c) => c.status === status).map((c) => ({ ...c })).reverse();
 }
 
@@ -1092,7 +1095,7 @@ export async function fetchBoundaryChangesForReview(status: BoundaryChangeStatus
 // while it waited), then applies and re-runs detection.
 export async function decideBoundaryChange(changeId: string, decision: "approve" | "reject", note: string): Promise<BoundaryChange> {
   if (decision === "reject" && !note.trim()) throw new EstateEditError("note", "VALIDATION", "Give a reason — the developer sees it.");
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalEstates")) {
     try {
       const body = note.trim() ? { note: note.trim() } : {};
       return await apiClient.post<BoundaryChange>(`/api/admin/boundary-changes/${changeId}/${decision}`, body);

@@ -5,6 +5,7 @@
 // regardless.
 
 import { useState } from "react";
+import LoadError from "../../../components/LoadError";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useFetch } from "../../../lib/useFetch";
 import { NIGERIAN_STATES } from "../../../data/nigerianStates";
@@ -23,6 +24,7 @@ export default function PortalBranches() {
 
   if (!scope) return <div className="p-8 text-sm text-[var(--muted-foreground)]">This account isn't linked to a company.</div>;
   if (branches.loading && !branches.data) return <div className="p-8 text-sm text-[var(--muted-foreground)]">Loading branches…</div>;
+  if (branches.error) return <LoadError error={branches.errorValue} what="your branches" onRetry={branches.refetch} />;
 
   const all = branches.data ?? [];
   // Search only once the list is long enough to need it.

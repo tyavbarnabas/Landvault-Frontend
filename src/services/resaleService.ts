@@ -18,6 +18,7 @@
 // account; only the seller-facing progress view is built here.
 
 import { apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import type { Currency, Document, OwnedPlot } from "../data/mockData";
 import { addDocuments, voidDocument, fetchDocumentsByPlotId } from "./documentsService";
@@ -164,12 +165,12 @@ const mockTransfers: ResaleTransfer[] = [];
 // ─── Listings ────────────────────────────────────────────────────────────────
 
 export async function fetchListings(params: PageParams = {}): Promise<Page<ResaleListing>> {
-  if (!apiClient.isMockMode) return apiClient.get<Page<ResaleListing>>(`/api/resale/listings?${new URLSearchParams(params as Record<string, string>)}`);
+  if (!isMock("resale")) return apiClient.get<Page<ResaleListing>>(`/api/resale/listings?${new URLSearchParams(params as Record<string, string>)}`);
   return paginateMock(mockListings.filter((l) => l.status === "active"), params);
 }
 
 export async function fetchListingById(id: string): Promise<ResaleListing | undefined> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("resale")) {
     try { return await apiClient.get<ResaleListing>(`/api/resale/listings/${id}`); } catch { return undefined; }
   }
   // Deliberately not filtered to status "active" — the wishlist and a buyer
@@ -183,7 +184,7 @@ export async function fetchListingById(id: string): Promise<ResaleListing | unde
 // user created is tagged by sellerName === the signed-in user's name at
 // creation time.
 export async function fetchMyListings(sellerName: string): Promise<ResaleListing[]> {
-  if (!apiClient.isMockMode) return apiClient.get<ResaleListing[]>(`/api/resale/listings?seller=${encodeURIComponent(sellerName)}`);
+  if (!isMock("resale")) return apiClient.get<ResaleListing[]>(`/api/resale/listings?seller=${encodeURIComponent(sellerName)}`);
   return mockListings.filter((l) => l.sellerName === sellerName);
 }
 
@@ -231,7 +232,7 @@ export async function createListing(input: CreateListingInput): Promise<ResaleLi
     createdAt: new Date().toISOString().split("T")[0],
   };
 
-  if (!apiClient.isMockMode) return apiClient.post<ResaleListing>("/api/resale/listings", listing);
+  if (!isMock("resale")) return apiClient.post<ResaleListing>("/api/resale/listings", listing);
   mockListings.unshift(listing);
   return listing;
 }
@@ -239,7 +240,7 @@ export async function createListing(input: CreateListingInput): Promise<ResaleLi
 // ─── Offers ──────────────────────────────────────────────────────────────────
 
 export async function fetchOffersForListing(listingId: string): Promise<ResaleOffer[]> {
-  if (!apiClient.isMockMode) return apiClient.get<ResaleOffer[]>(`/api/resale/listings/${listingId}/offers`);
+  if (!isMock("resale")) return apiClient.get<ResaleOffer[]>(`/api/resale/listings/${listingId}/offers`);
   return mockOffers.filter((o) => o.listingId === listingId);
 }
 
@@ -269,13 +270,13 @@ export async function submitOffer(input: SubmitOfferInput): Promise<ResaleOffer>
     date: new Date().toISOString().split("T")[0],
     status: "pending",
   };
-  if (!apiClient.isMockMode) return apiClient.post<ResaleOffer>(`/api/resale/listings/${input.listingId}/offers`, input);
+  if (!isMock("resale")) return apiClient.post<ResaleOffer>(`/api/resale/listings/${input.listingId}/offers`, input);
   mockOffers.push(offer);
   return offer;
 }
 
 export async function declineOffer(offerId: string, reason?: string): Promise<void> {
-  if (!apiClient.isMockMode) { await apiClient.post(`/api/resale/offers/${offerId}/decline`, { reason }); return; }
+  if (!isMock("resale")) { await apiClient.post(`/api/resale/offers/${offerId}/decline`, { reason }); return; }
   const offer = mockOffers.find((o) => o.id === offerId);
   if (offer) { offer.status = "declined"; offer.declineReason = reason; }
 }
@@ -440,7 +441,7 @@ async function executeTitleTransfer(t: ResaleTransfer): Promise<void> {
 // ─── Reading transfers ───────────────────────────────────────────────────────
 
 export async function fetchResaleTransfer(id: string): Promise<ResaleTransfer | undefined> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("resale")) {
     try { return await apiClient.get<ResaleTransfer>(`/api/resale/transfers/${id}`); } catch { return undefined; }
   }
   return mockTransfers.find((t) => t.id === id);
@@ -449,6 +450,6 @@ export async function fetchResaleTransfer(id: string): Promise<ResaleTransfer | 
 // So a seller can find any in-flight or past transfer from My listings after
 // closing the tab, without needing the transfer id in the URL.
 export async function fetchMyResaleTransfers(sellerName: string): Promise<ResaleTransfer[]> {
-  if (!apiClient.isMockMode) return apiClient.get<ResaleTransfer[]>(`/api/resale/transfers?seller=${encodeURIComponent(sellerName)}`);
+  if (!isMock("resale")) return apiClient.get<ResaleTransfer[]>(`/api/resale/transfers?seller=${encodeURIComponent(sellerName)}`);
   return mockTransfers.filter((t) => t.sellerName === sellerName);
 }

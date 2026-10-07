@@ -23,6 +23,7 @@ import {
   type ResaleListing,
 } from "./resaleService";
 import type { NigerianState } from "../data/nigerianStates";
+import { isLive } from "../lib/backends";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 
 // Both sides of the merge are fetched in full (a generous limit, well above
@@ -138,7 +139,10 @@ export interface UnifiedListingFilters extends ListingFilters {
 
 export async function fetchUnifiedListings(filters: UnifiedListingFilters = {}, params: PageParams = {}): Promise<Page<MarketplaceListing>> {
   const wantPrimary = filters.type !== "resale";
-  const wantResale = filters.type !== "primary";
+  // With the real marketplace on and no resale backend, demo resale listings
+  // would sit among real ones as if real sellers had posted them. Leave them
+  // out — the live feed shows only what the backend actually lists.
+  const wantResale = filters.type !== "primary" && !(isLive("marketplace") && !isLive("resale"));
 
   // Fetched unfiltered from each side, then filtered/sorted uniformly here —
   // resaleService.fetchListings() has no filter params of its own (it only

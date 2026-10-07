@@ -1,4 +1,5 @@
 import { useState } from "react";
+import LoadError from "../../../components/LoadError";
 import { Link } from "react-router-dom";
 import { useFetch } from "../../../lib/useFetch";
 import { formatCompactCurrency } from "../../../lib/formatCurrency";
@@ -66,12 +67,7 @@ export default function PortalEstateList() {
 
       {estates.loading && <div className="text-sm text-[var(--muted-foreground)]">Loading estates…</div>}
 
-      {!estates.loading && estates.error && (
-        <div className="text-center py-10">
-          <p className="text-sm font-medium text-[var(--foreground)] mb-2">Couldn't load your estates.</p>
-          <button onClick={estates.refetch} className="text-sm text-[var(--accent)] hover:underline">Try again</button>
-        </div>
-      )}
+      {!estates.loading && estates.error && <LoadError error={estates.errorValue} what="your estates" onRetry={estates.refetch} />}
 
       {!estates.loading && !estates.error && estates.data?.items.length === 0 && (
         <EmptyState

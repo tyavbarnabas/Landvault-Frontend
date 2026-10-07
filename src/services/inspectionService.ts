@@ -5,6 +5,7 @@
 // touches plot status; that only happens in reservationService.ts.
 
 import { apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 
 export type InspectionType = "physical" | "virtual";
@@ -71,7 +72,7 @@ export interface CreateInspectionInput {
 let mockInspections: Inspection[] = [];
 
 export async function createInspection(input: CreateInspectionInput): Promise<Inspection> {
-  if (!apiClient.isMockMode) return apiClient.post<Inspection>("/api/inspections", input);
+  if (!isMock("inspections")) return apiClient.post<Inspection>("/api/inspections", input);
 
   const inspection: Inspection = {
     id: `insp-${Date.now()}`,
@@ -93,12 +94,12 @@ export async function createInspection(input: CreateInspectionInput): Promise<In
 }
 
 export async function fetchMyInspections(params: PageParams = {}): Promise<Page<Inspection>> {
-  if (apiClient.isMockMode) return paginateMock(mockInspections, params);
+  if (isMock("inspections")) return paginateMock(mockInspections, params);
   return apiClient.get<Page<Inspection>>(`/api/inspections?${new URLSearchParams(params as Record<string, string>)}`);
 }
 
 export async function cancelInspection(id: string): Promise<void> {
-  if (apiClient.isMockMode) {
+  if (isMock("inspections")) {
     mockInspections = mockInspections.map((i) => (i.id === id ? { ...i, status: "cancelled" } : i));
     return;
   }
@@ -106,7 +107,7 @@ export async function cancelInspection(id: string): Promise<void> {
 }
 
 export async function rescheduleInspection(id: string, date: string, timeSlot: string): Promise<Inspection | undefined> {
-  if (apiClient.isMockMode) {
+  if (isMock("inspections")) {
     mockInspections = mockInspections.map((i) => (i.id === id ? { ...i, date, timeSlot } : i));
     return mockInspections.find((i) => i.id === id);
   }

@@ -11,6 +11,7 @@
 // developer portal (a DP-* story, not built in this repo yet).
 
 import { apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 
 export interface ConstructionMilestone {
   id: string;
@@ -56,7 +57,7 @@ const MOCK_PROGRESS: Record<string, ConstructionProgress> = {
 };
 
 export async function fetchConstructionProgress(estateId: string): Promise<ConstructionProgress | undefined> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("construction")) {
     try { return await apiClient.get<ConstructionProgress>(`/api/estates/${estateId}/construction`); } catch { return undefined; }
   }
   return MOCK_PROGRESS[estateId];

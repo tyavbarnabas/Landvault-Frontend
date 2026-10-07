@@ -9,6 +9,7 @@
 // captured at registration (AuthUser.country) — never asked again.
 
 import { apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import type { AuthUser } from "./authService";
 
 export type KycBuyerType = "local" | "diaspora";
@@ -57,7 +58,7 @@ function seedRecord(user: AuthUser): KycRecord {
 }
 
 export async function fetchKycStatus(user: AuthUser): Promise<KycRecord> {
-  if (!apiClient.isMockMode) return apiClient.get<KycRecord>("/api/kyc");
+  if (!isMock("kyc")) return apiClient.get<KycRecord>("/api/kyc");
   if (!mockKycRecords.has(user.email)) mockKycRecords.set(user.email, seedRecord(user));
   return mockKycRecords.get(user.email)!;
 }
@@ -74,8 +75,22 @@ export interface SubmitKycInput {
 // verification backend. Everything else in the mock happy path approves.
 const DEMO_REJECT_NIN = "00000000000";
 
+// KycFileRef: what a real upload would leave behind once storage exists.
+function fileRef(file: File) {
+  return { fileName: file.name, fileSize: file.size, storageKey: null };
+}
+
 export async function submitKyc(user: AuthUser, input: SubmitKycInput): Promise<KycRecord> {
-  if (!apiClient.isMockMode) return apiClient.post<KycRecord>("/api/kyc", input);
+  if (!isMock("kyc")) {
+    // SubmitKycRequest takes file METADATA, not bytes — the backend has no
+    // object storage yet. A File object would serialise as {} and fail.
+    return apiClient.post<KycRecord>("/api/kyc", {
+      ...(input.ninNumber ? { ninNumber: input.ninNumber } : {}),
+      ...(input.ninFile ? { ninFile: fileRef(input.ninFile) } : {}),
+      ...(input.passportFile ? { passportFile: fileRef(input.passportFile) } : {}),
+      ...(input.proofOfAddressFile ? { proofOfAddressFile: fileRef(input.proofOfAddressFile) } : {}),
+    });
+  }
 
   const existing = mockKycRecords.get(user.email) ?? seedRecord(user);
   const buyerType = existing.buyerType;

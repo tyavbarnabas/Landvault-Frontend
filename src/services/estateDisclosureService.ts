@@ -23,6 +23,7 @@
 
 import { ESTATES, type Currency } from "../data/mockData";
 import { apiClient, ApiError } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import { mockCostDisclosureFixture, type FeeDueTrigger, type FeeType, type PublicFee } from "./costDisclosureService";
 
 export type { FeeDueTrigger, FeeType };
@@ -432,12 +433,12 @@ export function buildDefaultRequest(draft: DefaultDraft): BuildResult<DeclareDef
 // ─── Endpoints ───────────────────────────────────────────────────────────────
 
 export async function fetchFeeSchedule(estateId: string): Promise<FeeSchedule> {
-  if (!apiClient.isMockMode) return apiClient.get<FeeSchedule>(`/api/portal/estates/${estateId}/fees`);
+  if (!isMock("estateDisclosure")) return apiClient.get<FeeSchedule>(`/api/portal/estates/${estateId}/fees`);
   return currentFees(estateId);
 }
 
 export async function declareFees(estateId: string, request: DeclareFeesRequest): Promise<FeeSchedule> {
-  if (!apiClient.isMockMode) return apiClient.put<FeeSchedule>(`/api/portal/estates/${estateId}/fees`, request);
+  if (!isMock("estateDisclosure")) return apiClient.put<FeeSchedule>(`/api/portal/estates/${estateId}/fees`, request);
   rejectIfInvalid(validateFeeDeclarations(request.fees));
   const next: FeeSchedule = {
     version: currentFees(estateId).version + 1,
@@ -451,12 +452,12 @@ export async function declareFees(estateId: string, request: DeclareFeesRequest)
 // 404 means nothing has been declared — returned as null, never as an empty
 // policy with zeros in it.
 export async function fetchRefundTerms(estateId: string): Promise<RefundTerms | null> {
-  if (!apiClient.isMockMode) return nullOn404(() => apiClient.get<RefundTerms>(`/api/portal/estates/${estateId}/refund-terms`));
+  if (!isMock("estateDisclosure")) return nullOn404(() => apiClient.get<RefundTerms>(`/api/portal/estates/${estateId}/refund-terms`));
   return latest(mockRefund, estateId);
 }
 
 export async function declareRefundTerms(estateId: string, request: DeclareRefundTermsRequest): Promise<RefundTerms> {
-  if (!apiClient.isMockMode) return apiClient.put<RefundTerms>(`/api/portal/estates/${estateId}/refund-terms`, request);
+  if (!isMock("estateDisclosure")) return apiClient.put<RefundTerms>(`/api/portal/estates/${estateId}/refund-terms`, request);
   rejectIfInvalid(validateRefundTerms(request));
   const next: RefundTerms = {
     ...request,
@@ -468,12 +469,12 @@ export async function declareRefundTerms(estateId: string, request: DeclareRefun
 }
 
 export async function fetchDefaultTerms(estateId: string): Promise<DefaultTerms | null> {
-  if (!apiClient.isMockMode) return nullOn404(() => apiClient.get<DefaultTerms>(`/api/portal/estates/${estateId}/default-terms`));
+  if (!isMock("estateDisclosure")) return nullOn404(() => apiClient.get<DefaultTerms>(`/api/portal/estates/${estateId}/default-terms`));
   return latest(mockDefault, estateId);
 }
 
 export async function declareDefaultTerms(estateId: string, request: DeclareDefaultTermsRequest): Promise<DefaultTerms> {
-  if (!apiClient.isMockMode) return apiClient.put<DefaultTerms>(`/api/portal/estates/${estateId}/default-terms`, request);
+  if (!isMock("estateDisclosure")) return apiClient.put<DefaultTerms>(`/api/portal/estates/${estateId}/default-terms`, request);
   rejectIfInvalid(validateDefaultTerms(request));
   const next: DefaultTerms = {
     ...request,
@@ -603,4 +604,4 @@ function fromPublicFee(fee: PublicFee): EstateFee {
   };
 }
 
-if (apiClient.isMockMode) seedFromBuyerFixtures();
+if (isMock("estateDisclosure")) seedFromBuyerFixtures();

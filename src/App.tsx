@@ -6,6 +6,8 @@ import Layout from "./components/Layout";
 import MarketplaceLayout from "./components/MarketplaceLayout";
 import ErrorBoundary from "./components/ErrorBoundary";
 import PageLoading from "./components/PageLoading";
+import DemoDataBanner from "./components/dev/DemoDataBanner";
+import BackendPanel from "./components/dev/BackendPanel";
 
 // Auth — kept eager: the first thing an unauthenticated visitor hits, so
 // there's nothing to gain by chunking it separately.
@@ -277,7 +279,11 @@ export default function App() {
       <BrowserRouter>
         <AppProvider>
           <SessionProblemBanner />
+          {/* Integration testing: what on this page is demo data, and which
+              services are live. Both stay out of the way in full mock mode. */}
+          <DemoDataBanner />
           <AppRoutes />
+          <BackendPanel />
         </AppProvider>
       </BrowserRouter>
     </ErrorBoundary>

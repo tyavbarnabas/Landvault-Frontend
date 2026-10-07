@@ -12,7 +12,8 @@
 // one plot-status enum (hyphenated: "available-dev"/"available-inv"), not two
 // spellings to keep in sync.
 
-import { apiClient } from "../lib/apiClient";
+import { apiClient, nullIfNotFound } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import { ESTATES, getPlotBlockLabel, type Plot, type PlotStatus } from "../data/mockData";
 import type { PriceTier } from "./marketplaceService";
@@ -29,7 +30,8 @@ export interface ListingPlot {
   tierId: string;
   sizeSqm: number;
   block: string;
-  plotNumber: number;
+  // A real plot number can be "A3" as easily as 12.
+  plotNumber: number | string;
   row: number;
   col: number;
   isCorner: boolean;
@@ -43,6 +45,67 @@ export interface ListingPlot {
   // investment-flagged plots, same as mockData.ts's Plot.
   projectedROI?: number;
   holdingYears?: number;
+  // Live mode: the marketplace's public answer, and all it gives. Reserved and
+  // sold are deliberately indistinguishable to buyers (they would reveal sales
+  // velocity), so an unavailable plot is never labelled one or the other.
+  publicAvailability?: "available" | "unavailable";
+}
+
+// ─── Live: plots come from the estate's public map ───────────────────────────
+//
+// The backend has no marketplace plot list; GET /api/marketplace/estates/{id}/
+// geojson carries every plot that has a surveyed boundary, with its id, number,
+// block, tier, corner flag, sizes and availability. A plot WITHOUT a boundary
+// is omitted there, so it can't be chosen online yet (INTEGRATION_TESTING.md).
+
+interface PlotFeatureProps {
+  kind: "plot" | "estate";
+  id: string;
+  plotNumber: string;
+  blockName: string | null;
+  availability: string;
+  isCorner: boolean;
+  priceTierId: string;
+  nominalSizeSqm: number | null;
+  actualAreaSqm: number | null;
+}
+
+export interface EstateMapGeoJson {
+  type: "FeatureCollection";
+  features: { type: "Feature"; geometry: unknown; properties: PlotFeatureProps }[];
+}
+
+export async function fetchListingMap(listingId: string): Promise<EstateMapGeoJson | null> {
+  return nullIfNotFound(apiClient.get<EstateMapGeoJson>(`/api/marketplace/estates/${listingId}/geojson`));
+}
+
+function fromPlotFeature(listingId: string, p: PlotFeatureProps): ListingPlot {
+  const available = p.availability?.toUpperCase() === "AVAILABLE";
+  return {
+    id: p.id,
+    listingId,
+    tierId: p.priceTierId,
+    sizeSqm: p.nominalSizeSqm ?? 0,
+    block: p.blockName ?? "",
+    plotNumber: p.plotNumber,
+    // No grid position: the live picker uses the map, not the grid canvas.
+    row: 0,
+    col: 0,
+    isCorner: p.isCorner,
+    actualAreaSqm: p.actualAreaSqm ?? 0,
+    orientation: "",
+    // "available-dev" here means only "available" — the marketplace doesn't
+    // expose the development/investment variant; the buyer chooses an intent
+    // at checkout. Unavailable plots carry publicAvailability, and screens
+    // read THAT, never this status, to say why.
+    status: available ? "available-dev" : "reserved",
+    publicAvailability: available ? "available" : "unavailable",
+  };
+}
+
+async function livePlots(listingId: string): Promise<ListingPlot[]> {
+  const map = await fetchListingMap(listingId);
+  return (map?.features ?? []).filter((f) => f.properties.kind === "plot").map((f) => fromPlotFeature(listingId, f.properties));
 }
 
 // Exported (not just used internally) so pages that already hold a full
@@ -74,7 +137,7 @@ export function toListingPlot(estateId: string, plot: Plot): ListingPlot {
 }
 
 export function plotLabel(plot: ListingPlot): string {
-  return `Block ${plot.block}, Plot ${plot.plotNumber}`;
+  return plot.block ? `${/^block\b/i.test(plot.block) ? plot.block : `Block ${plot.block}`}, Plot ${plot.plotNumber}` : `Plot ${plot.plotNumber}`;
 }
 
 // Paginated for API-contract consistency with the other list endpoints (a
@@ -85,16 +148,14 @@ export function plotLabel(plot: ListingPlot): string {
 // rather than paging. A future estate that ever exceeds that would need the
 // canvas itself to become viewport-windowed, not paginated.
 export async function fetchPlotsForListing(listingId: string, params: PageParams = {}): Promise<Page<ListingPlot>> {
-  if (!apiClient.isMockMode) return apiClient.get<Page<ListingPlot>>(`/api/marketplace/listings/${listingId}/plots?${new URLSearchParams(params as Record<string, string>)}`);
+  if (!isMock("marketplacePlots")) return paginateMock(await livePlots(listingId), params);
   const estate = ESTATES.find((e) => e.id === listingId);
   const all = estate ? estate.plots.map((p) => toListingPlot(listingId, p)) : [];
   return paginateMock(all, params);
 }
 
 export async function fetchPlotById(listingId: string, plotId: string): Promise<ListingPlot | undefined> {
-  if (!apiClient.isMockMode) {
-    try { return await apiClient.get<ListingPlot>(`/api/marketplace/listings/${listingId}/plots/${plotId}`); } catch { return undefined; }
-  }
+  if (!isMock("marketplacePlots")) return (await livePlots(listingId)).find((p) => p.id === plotId);
   const estate = ESTATES.find((e) => e.id === listingId);
   const plot = estate?.plots.find((p) => p.id === plotId);
   return plot ? toListingPlot(listingId, plot) : undefined;

@@ -7,18 +7,19 @@
 
 import { REVIEWS, type Review } from "../data/mockData";
 import { apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 
 // In-memory mock store (module-scoped) so posted reviews/likes survive
 // navigating away and back within a session, even without a backend.
 let mockReviews: Review[] = [...REVIEWS];
 
 export async function fetchReviews(estateId: string): Promise<Review[]> {
-  if (apiClient.isMockMode) return mockReviews.filter((r) => r.estateId === estateId);
+  if (isMock("reviews")) return mockReviews.filter((r) => r.estateId === estateId);
   return apiClient.get<Review[]>(`/api/estates/${estateId}/reviews`);
 }
 
 export async function postReview(estateId: string, author: string, rating: number, comment: string): Promise<Review> {
-  if (apiClient.isMockMode) {
+  if (isMock("reviews")) {
     const review: Review = {
       id: `r-${Date.now()}`,
       estateId,
@@ -35,7 +36,7 @@ export async function postReview(estateId: string, author: string, rating: numbe
 }
 
 export async function setReviewLiked(reviewId: string, liked: boolean): Promise<{ likes: number }> {
-  if (apiClient.isMockMode) {
+  if (isMock("reviews")) {
     mockReviews = mockReviews.map((r) => (r.id === reviewId ? { ...r, likes: r.likes + (liked ? 1 : -1) } : r));
     const updated = mockReviews.find((r) => r.id === reviewId);
     return { likes: updated?.likes ?? 0 };

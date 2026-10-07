@@ -8,6 +8,7 @@
 // seen it is not a disclosure.
 
 import { useState } from "react";
+import LoadError from "../../../components/LoadError";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useFetch } from "../../../lib/useFetch";
 import { useApp } from "../../../contexts/AppContext";
@@ -53,6 +54,8 @@ export default function PortalEstateDisclosure() {
   }, [scope?.tenantId, scope?.branchId, estateId]);
 
   if (loaded.loading) return <div className="p-8 text-sm text-[var(--muted-foreground)]">Loading disclosure…</div>;
+
+  if (loaded.error) return <LoadError error={loaded.errorValue} what="this estate's fees and terms" onRetry={loaded.refetch} />;
 
   if (!loaded.data || !estateId) {
     return (

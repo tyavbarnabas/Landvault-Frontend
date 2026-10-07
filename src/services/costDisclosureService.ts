@@ -19,6 +19,8 @@
 
 import type { Currency } from "../data/mockData";
 import { apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
+import { fetchListingDto, type ListingDto } from "./marketplaceService";
 
 // The backend's MoneyRangeDto exactly: min, max, and the backend's OWN
 // determination of whether this is a range. It carries NO currency — currency
@@ -132,7 +134,8 @@ export interface PenaltyStep {
 
 export interface Revocation {
   trigger: string;
-  noticeDays: number;
+  // Null when no notice period was declared — never 0, which reads as "none".
+  noticeDays: number | null;
   // What happens to money already paid — the part buyers never think to ask
   // about, and the reason this field exists separately at all.
   paymentsAlreadyMade: string;
@@ -345,13 +348,65 @@ export function mockCostDisclosureFixture(estateId: string): EstateCostDisclosur
 
 // Null means this estate has declared nothing. Callers render NOTHING for a
 // null — never a zero, never an estimate.
+// The backend embeds the disclosure in each marketplace listing
+// (MarketplaceListingDto.costDisclosure, and each tier's `commitment`) rather
+// than serving it separately, so it is read from the listing already loaded.
 export async function fetchCostDisclosure(estateId: string): Promise<EstateCostDisclosure | null> {
-  if (apiClient.isMockMode) return MOCK_DISCLOSURES[estateId] ?? null;
-  try {
-    return await apiClient.get<EstateCostDisclosure>(`/api/public/estates/${estateId}/cost-disclosure`);
-  } catch {
-    return null;
-  }
+  if (isMock("costDisclosure")) return MOCK_DISCLOSURES[estateId] ?? null;
+  const listing = await fetchListingDto(estateId);
+  return listing ? fromListingDisclosure(listing) : null;
+}
+
+interface CostDisclosureDto {
+  fees: (Omit<PublicFee, "label" | "notes" | "variationBasis"> & { label: string | null; notes: string | null; variationBasis: string | null })[];
+  exitCosts: (Omit<ExitCosts, "revocation"> & {
+    revocation: { trigger: string; noticeDays: number | null; onRevocationRefund: string } | null;
+  }) | null;
+}
+
+interface TierCommitmentDto {
+  landPrice: number;
+  currency: Currency;
+  oneOffFees: MoneyRange;
+  totalCommitment: MoneyRange;
+  totalCommitmentIfCorner: MoneyRange | null;
+  totalExcludesOtherCurrencyFees: boolean;
+}
+
+function fromListingDisclosure(listing: ListingDto): EstateCostDisclosure {
+  const dto = listing.costDisclosure as CostDisclosureDto | null;
+  const fees: PublicFee[] = (dto?.fees ?? []).map((f) => ({
+    ...f,
+    label: f.label ?? "",
+    notes: f.notes ?? undefined,
+    variationBasis: f.variationBasis ?? undefined,
+  }));
+  // The backend gives recurring and optional fees as TOTALS on each tier; the
+  // screens list the fees themselves, so they are SELECTED from the declared
+  // fees by the same rule the fee breakdown already uses — never summed here.
+  const recurringFees = fees.filter((f) => f.isMandatory && f.dueTrigger === "annual");
+  const optionalFees = fees.filter((f) => !f.isMandatory);
+  const exit = dto?.exitCosts ?? null;
+  return {
+    estateId: listing.id,
+    fees,
+    exitCosts: exit ? {
+      ...exit,
+      revocation: exit.revocation
+        ? { trigger: exit.revocation.trigger, noticeDays: exit.revocation.noticeDays, paymentsAlreadyMade: exit.revocation.onRevocationRefund }
+        : null,
+    } : null,
+    tiers: listing.priceTiers
+      .filter((t) => t.commitment)
+      .map((t) => {
+        const c = t.commitment as TierCommitmentDto;
+        return {
+          tierId: t.id, sizeSqm: t.sizeSqm ?? 0, landPrice: c.landPrice, currency: c.currency,
+          oneOffFees: c.oneOffFees, totalCommitment: c.totalCommitment, totalCommitmentIfCorner: c.totalCommitmentIfCorner,
+          recurringFees, optionalFees, totalExcludesOtherCurrencyFees: c.totalExcludesOtherCurrencyFees,
+        };
+      }),
+  };
 }
 
 // Selection, not arithmetic: finds the commitment the backend already

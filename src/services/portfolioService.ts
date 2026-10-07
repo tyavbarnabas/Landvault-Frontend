@@ -3,6 +3,7 @@
 
 import { OWNED_PLOTS, type Currency, type OwnedPlot, type PaymentRecord } from "../data/mockData";
 import { apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 
 export type { PaymentRecord };
@@ -32,7 +33,7 @@ export interface FetchOwnedPlotsParams extends PageParams {
 }
 
 export async function fetchOwnedPlots(params: FetchOwnedPlotsParams = {}): Promise<Page<OwnedPlot>> {
-  if (apiClient.isMockMode) {
+  if (isMock("portfolio")) {
     const source = params.sort === "urgency" ? [...mockOwnedPlots].sort((a, b) => urgencyRank(a) - urgencyRank(b)) : mockOwnedPlots;
     return paginateMock(source, params);
   }
@@ -40,7 +41,7 @@ export async function fetchOwnedPlots(params: FetchOwnedPlotsParams = {}): Promi
 }
 
 export async function fetchOwnedPlotById(id: string): Promise<OwnedPlot | undefined> {
-  if (apiClient.isMockMode) return mockOwnedPlots.find((p) => p.id === id);
+  if (isMock("portfolio")) return mockOwnedPlots.find((p) => p.id === id);
   try {
     return await apiClient.get<OwnedPlot>(`/api/portfolio/plots/${id}`);
   } catch {
@@ -51,7 +52,7 @@ export async function fetchOwnedPlotById(id: string): Promise<OwnedPlot | undefi
 // Used when a checkout completes — turns a fresh purchase into a real owned-plot
 // record in the mock store, rather than just a cosmetic "success" screen.
 export async function addOwnedPlot(plot: OwnedPlot): Promise<OwnedPlot> {
-  if (apiClient.isMockMode) {
+  if (isMock("portfolio")) {
     mockOwnedPlots = [plot, ...mockOwnedPlots];
     return plot;
   }
@@ -62,7 +63,7 @@ export async function addOwnedPlot(plot: OwnedPlot): Promise<OwnedPlot> {
 // — flips a pending-verification record to its final status without
 // replacing the whole record. See marketplaceCheckoutService.ts.
 export async function updateOwnedPlotStatus(id: string, status: OwnedPlot["status"], patch: Partial<OwnedPlot> = {}): Promise<OwnedPlot | undefined> {
-  if (apiClient.isMockMode) {
+  if (isMock("portfolio")) {
     mockOwnedPlots = mockOwnedPlots.map((p) => (p.id === id ? { ...p, ...patch, status } : p));
     return mockOwnedPlots.find((p) => p.id === id);
   }
@@ -159,7 +160,7 @@ function generateSchedule(plot: OwnedPlot): InstallmentSchedule | undefined {
 const scheduleCache = new Map<string, InstallmentSchedule>();
 
 export async function fetchInstallmentSchedule(plotId: string): Promise<InstallmentSchedule | undefined> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("portfolio")) {
     try { return await apiClient.get<InstallmentSchedule>(`/api/portfolio/plots/${plotId}/schedule`); } catch { return undefined; }
   }
   if (scheduleCache.has(plotId)) return scheduleCache.get(plotId);
@@ -190,7 +191,7 @@ export interface SubmitInstallmentPaymentInput {
 const DEMO_REJECT_AMOUNT = 1;
 
 export async function submitInstallmentPayment(input: SubmitInstallmentPaymentInput): Promise<PaymentRecord> {
-  if (!apiClient.isMockMode) return apiClient.post<PaymentRecord>(`/api/portfolio/plots/${input.plotId}/payments`, input);
+  if (!isMock("portfolio")) return apiClient.post<PaymentRecord>(`/api/portfolio/plots/${input.plotId}/payments`, input);
 
   await new Promise((resolve) => setTimeout(resolve, 1000)); // gateway webhook
 
@@ -219,7 +220,7 @@ export interface VerifyInstallmentPaymentResult {
 }
 
 export async function verifyInstallmentPayment(plotId: string, paymentId: string): Promise<VerifyInstallmentPaymentResult> {
-  if (!apiClient.isMockMode) return apiClient.post<VerifyInstallmentPaymentResult>(`/api/portfolio/plots/${plotId}/payments/${paymentId}/verify`);
+  if (!isMock("portfolio")) return apiClient.post<VerifyInstallmentPaymentResult>(`/api/portfolio/plots/${plotId}/payments/${paymentId}/verify`);
 
   await new Promise((resolve) => setTimeout(resolve, 2000)); // Finance Officer review
 
@@ -270,7 +271,7 @@ export async function verifyInstallmentPayment(plotId: string, paymentId: string
 // Request restructuring (extend term / adjust amounts) — approval logic
 // lives in the developer portal, not built in this repo yet.
 export async function requestRestructure(plotId: string, note: string): Promise<OwnedPlot | undefined> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("portfolio")) {
     // TODO (backend): POST to the developer portal's restructuring queue
     // (DP-* story, not yet built) once it exists.
     return apiClient.post<OwnedPlot>(`/api/portfolio/plots/${plotId}/restructure-requests`, { note });

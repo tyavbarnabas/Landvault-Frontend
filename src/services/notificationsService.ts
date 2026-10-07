@@ -1,6 +1,7 @@
 // Backend integration seam for in-app notifications. See INTEGRATION.md.
 
 import { apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 
 export interface Notification {
@@ -29,7 +30,7 @@ let mockNotifications: Notification[] = [...MOCK_NOTIFICATIONS];
 // list page, so it just requests one generously-sized page rather than
 // wiring up "Load more" for a notification bell.
 export async function fetchNotifications(params: PageParams = {}): Promise<Page<Notification>> {
-  if (apiClient.isMockMode) return paginateMock(mockNotifications, params);
+  if (isMock("notifications")) return paginateMock(mockNotifications, params);
   return apiClient.get<Page<Notification>>(`/api/notifications?${new URLSearchParams(params as Record<string, string>)}`);
 }
 
@@ -39,7 +40,7 @@ export async function fetchNotifications(params: PageParams = {}): Promise<Page<
 // is the notification Part 7 asks for). TODO (backend): also send email/SMS.
 export async function addNotification(input: Omit<Notification, "id" | "read">): Promise<Notification> {
   const notification: Notification = { ...input, id: `n-${Date.now()}`, read: false };
-  if (apiClient.isMockMode) {
+  if (isMock("notifications")) {
     mockNotifications = [notification, ...mockNotifications];
     return notification;
   }
@@ -47,7 +48,7 @@ export async function addNotification(input: Omit<Notification, "id" | "read">):
 }
 
 export async function markNotificationRead(id: string): Promise<void> {
-  if (apiClient.isMockMode) {
+  if (isMock("notifications")) {
     mockNotifications = mockNotifications.map((n) => (n.id === id ? { ...n, read: true } : n));
     return;
   }

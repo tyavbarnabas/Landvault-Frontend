@@ -26,6 +26,7 @@ import type { Currency, PlotStatus } from "../data/mockData";
 // The backend's PlotOrientation @JsonValue strings — uppercase compass points.
 export type PlotOrientation = "N" | "S" | "E" | "W" | "NE" | "NW" | "SE" | "SW";
 import { ApiError, apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import { conflictChangesBetween, type ConflictChanges, type ConflictItem } from "./conflictChanges";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import { polygonAreaSqm, polygonOverlap } from "../lib/geometry";
@@ -394,13 +395,13 @@ function fromPriceTierDto(dto: PriceTierDto, plotCount: number): PortalPriceTier
 // ─── Blocks API ──────────────────────────────────────────────────────────────
 
 export async function fetchBlocks(estateId: string, scope: PortalScope): Promise<PortalBlock[]> {
-  if (!apiClient.isMockMode) return ((await fetchInventoryDetail(estateId)).blocks ?? []).map(fromBlockDto);
+  if (!isMock("portalInventory")) return ((await fetchInventoryDetail(estateId)).blocks ?? []).map(fromBlockDto);
   if (!(await assertInScope(estateId, scope))) return [];
   return mockBlocks.filter((b) => b.estateId === estateId);
 }
 
 export async function createBlock(estateId: string, input: CreateBlockInput, scope: PortalScope): Promise<PortalBlock> {
-  if (!apiClient.isMockMode) return apiClient.post<PortalBlock>(`/api/portal/estates/${estateId}/blocks`, input);
+  if (!isMock("portalInventory")) return apiClient.post<PortalBlock>(`/api/portal/estates/${estateId}/blocks`, input);
   if (!(await assertInScope(estateId, scope))) throw new Error("Estate not found.");
   if (mockBlocks.some((b) => b.estateId === estateId && b.name.toLowerCase() === input.name.trim().toLowerCase())) {
     throw new Error(`This estate already has a block called "${input.name.trim()}".`);
@@ -419,7 +420,7 @@ export async function updateBlock(estateId: string, blockId: string, input: Upda
     throw new InventoryEditError("name", "INVALID_REQUEST", "A block name can't be blank.");
   }
 
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalInventory")) {
     try {
       return fromBlockDto(await apiClient.put<BlockDto>(`/api/portal/estates/${estateId}/blocks/${blockId}`, input));
     } catch (err) {
@@ -470,7 +471,7 @@ function firstFieldError(fieldErrors: Record<string, string> | undefined): { fie
 // ─── Price tiers API ─────────────────────────────────────────────────────────
 
 export async function fetchPriceTiers(estateId: string, scope: PortalScope): Promise<PortalPriceTier[]> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalInventory")) {
     const tiers = (await fetchInventoryDetail(estateId)).priceTiers ?? [];
     // One impact read per tier — an estate has a handful of tiers, not
     // hundreds — so the count shown is the server's, never a recount of a plot
@@ -488,7 +489,7 @@ function withLivePlotCount(tier: PortalPriceTier): PortalPriceTier {
 
 // Same grouped shape the backend returns: only statuses that occur.
 export async function fetchPlotCounts(estateId: string, scope: PortalScope): Promise<PlotCounts> {
-  if (!apiClient.isMockMode) return (await fetchInventoryDetail(estateId)).plotCounts ?? { total: 0, byStatus: {} };
+  if (!isMock("portalInventory")) return (await fetchInventoryDetail(estateId)).plotCounts ?? { total: 0, byStatus: {} };
   if (!(await assertInScope(estateId, scope))) return { total: 0, byStatus: {} };
   const plots = mockPlots.filter((p) => p.estateId === estateId);
   const byStatus: Partial<Record<PlotStatus, number>> = {};
@@ -500,7 +501,7 @@ export async function createPriceTier(estateId: string, input: CreatePriceTierIn
   const invalid = validatePriceTier(input);
   if (invalid) throw new Error(invalid.message);
 
-  if (!apiClient.isMockMode) return apiClient.post<PortalPriceTier>(`/api/portal/estates/${estateId}/price-tiers`, input);
+  if (!isMock("portalInventory")) return apiClient.post<PortalPriceTier>(`/api/portal/estates/${estateId}/price-tiers`, input);
   if (!(await assertInScope(estateId, scope))) throw new Error("Estate not found.");
 
   const sizeSqm = input.tierType === "land_size" ? input.sizeSqm! : null;
@@ -531,7 +532,7 @@ function countByStatus(plots: PortalPlot[]): PlotCounts {
 const isAvailable = (status: PlotStatus) => status === "available-dev" || status === "available-inv";
 
 export async function fetchPriceTierImpact(estateId: string, tierId: string, scope: PortalScope): Promise<PriceTierImpact> {
-  if (!apiClient.isMockMode) return apiClient.get<PriceTierImpact>(`/api/portal/estates/${estateId}/price-tiers/${tierId}/impact`);
+  if (!isMock("portalInventory")) return apiClient.get<PriceTierImpact>(`/api/portal/estates/${estateId}/price-tiers/${tierId}/impact`);
   if (!(await assertInScope(estateId, scope))) throw new Error("Estate not found.");
   if (!mockTiers.some((t) => t.id === tierId && t.estateId === estateId)) throw new Error("This tier no longer exists on this estate.");
   return { tierId, plots: countByStatus(mockPlots.filter((p) => p.priceTierId === tierId)) };
@@ -554,7 +555,7 @@ export async function updatePriceTier(
   if (input.price !== undefined && !(input.price > 0)) throw new InventoryEditError("price", "VALIDATION", "Enter a price above zero.");
   if (input.sizeSqm !== undefined && !(input.sizeSqm > 0)) throw new InventoryEditError("sizeSqm", "VALIDATION", "Enter a size above zero.");
 
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalInventory")) {
     try {
       return await apiClient.put<PriceTierUpdate>(`/api/portal/estates/${estateId}/price-tiers/${tierId}`, input);
     } catch (err) {
@@ -655,7 +656,7 @@ export async function fetchPlots(
   filters: PlotFilters = {},
   params: PageParams = {},
 ): Promise<Page<PortalPlot>> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalInventory")) {
     const qp = new URLSearchParams({ ...(filters as Record<string, string>), ...(params as Record<string, string>) });
     return apiClient.get<Page<PortalPlot>>(`/api/portal/estates/${estateId}/plots?${qp}`);
   }
@@ -675,7 +676,7 @@ export async function createPlotBatch(estateId: string, plots: CreatePlotInput[]
   if (plots.length > PLOT_BATCH_LIMIT) {
     throw new Error(`A single request accepts at most ${PLOT_BATCH_LIMIT} plots. Use createPlotsInBatches for more.`);
   }
-  if (!apiClient.isMockMode) return apiClient.post<PortalPlot[]>(`/api/portal/estates/${estateId}/plots`, { plots });
+  if (!isMock("portalInventory")) return apiClient.post<PortalPlot[]>(`/api/portal/estates/${estateId}/plots`, { plots });
   if (!(await assertInScope(estateId, scope))) throw new Error("Estate not found.");
 
   // The estate's own corner premium is what turns a tier's base price into a
@@ -819,7 +820,7 @@ export const BULK_STATUS_LIMIT = 500;
 export async function changePlotStatus(
   estateId: string, plotId: string, input: { status: PlotStatusTarget; reason?: string }, scope: PortalScope,
 ): Promise<PlotStatusChange> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalInventory")) {
     try {
       return await apiClient.put<PlotStatusChange>(`/api/portal/estates/${estateId}/plots/${plotId}/status`, input);
     } catch (err) {
@@ -844,7 +845,7 @@ export async function changePlotStatuses(
   if (input.plotIds.length > BULK_STATUS_LIMIT) {
     throw new InventoryEditError("form", "VALIDATION", `At most ${BULK_STATUS_LIMIT} plots can be changed at once.`);
   }
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalInventory")) {
     try {
       return await apiClient.post<PlotStatusChange>(`/api/portal/estates/${estateId}/plots/status`, input);
     } catch (err) {
@@ -1036,7 +1037,7 @@ function countPlotOverlaps(estateId: string): number {
 }
 
 export async function correctPlotBoundary(estateId: string, plotId: string, footprint: GeoJsonPolygon, scope: PortalScope): Promise<PlotBoundaryCorrection> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalInventory")) {
     try {
       return await apiClient.put<PlotBoundaryCorrection>(`/api/portal/estates/${estateId}/plots/${plotId}/boundary`, { footprint });
     } catch (err) {
@@ -1065,7 +1066,7 @@ export async function correctPlotBoundary(estateId: string, plotId: string, foot
 export async function movePlotToTier(
   estateId: string, plotId: string, input: { tierId: string; nominalSizeSqmOverride?: number }, scope: PortalScope,
 ): Promise<PlotTierChange> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalInventory")) {
     try {
       return await apiClient.put<PlotTierChange>(`/api/portal/estates/${estateId}/plots/${plotId}/tier`, input);
     } catch (err) {
@@ -1109,7 +1110,7 @@ export async function movePlotToTier(
 // else is PLOT_HAS_HISTORY, and withholding is the way to take it off sale.
 // The plot number can then be reused.
 export async function withdrawPlot(estateId: string, plotId: string, scope: PortalScope): Promise<void> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalInventory")) {
     try {
       await apiClient.del(`/api/portal/estates/${estateId}/plots/${plotId}`);
       return;
@@ -1138,7 +1139,7 @@ export async function withdrawPlot(estateId: string, plotId: string, scope: Port
 // on it keep it and stay on sale at its price — withholding is how to take
 // those off the market. Reinstating undoes it.
 export async function setTierRetired(estateId: string, tierId: string, retired: boolean, scope: PortalScope): Promise<PriceTierDto> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalInventory")) {
     return apiClient.post<PriceTierDto>(`/api/portal/estates/${estateId}/price-tiers/${tierId}/${retired ? "retire" : "reinstate"}`);
   }
   if (!(await assertInScope(estateId, scope))) throw new Error("Estate not found.");
@@ -1220,7 +1221,7 @@ function importForm(file: File, options: PlotImportOptions): FormData {
 // real boundary, and the property names the import reads. A string, ready to
 // save as a .geojson file.
 export async function fetchPlotImportTemplate(estateId: string, scope: PortalScope): Promise<string> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalInventory")) {
     return JSON.stringify(await apiClient.get<unknown>(`/api/portal/estates/${estateId}/plots/import/template`), null, 2);
   }
   const estate = await fetchPortalEstateById(estateId, scope);
@@ -1247,7 +1248,7 @@ export async function fetchPlotImportTemplate(estateId: string, scope: PortalSco
 }
 
 export async function previewPlotImport(estateId: string, file: File, options: PlotImportOptions, scope: PortalScope): Promise<PlotImportReport> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalInventory")) {
     return apiClient.postForm<PlotImportReport>(`/api/portal/estates/${estateId}/plots/import/preview`, importForm(file, options));
   }
   return mockAnalyseImport(estateId, await file.text(), options, scope);
@@ -1256,7 +1257,7 @@ export async function previewPlotImport(estateId: string, file: File, options: P
 // All or nothing. A file with errors is NOT thrown as a failure: the 422's
 // body is the full report, which is exactly what the screen needs to show.
 export async function importPlots(estateId: string, file: File, options: PlotImportOptions, scope: PortalScope): Promise<PlotImportReport> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("portalInventory")) {
     try {
       return await apiClient.postForm<PlotImportReport>(`/api/portal/estates/${estateId}/plots/import`, importForm(file, options));
     } catch (err) {

@@ -3,11 +3,11 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
 import { completePendingWishlistIntent } from "../../lib/pendingWishlist";
 import { consumePendingIntent } from "../../lib/pendingIntent";
+import { isLive } from "../../lib/backends";
 import {
   MOCK_DEMO_CODES, errorCodeOf, landingRouteFor,
   type AuthUser, type TwoFactorChallenge,
 } from "../../services/authService";
-import { apiClient } from "../../lib/apiClient";
 
 // The old second step accepted ANY six digits and always succeeded, sitting in
 // front of a real TwoFactorController. A check that verifies nothing teaches
@@ -188,7 +188,7 @@ export default function Login() {
               ← Start again
             </button>
 
-            {apiClient.isMockMode && (
+            {!isLive("auth") && (
               <p className="text-xs text-[var(--muted-foreground)] text-center">
                 Demo mode: the authenticator code is {MOCK_DEMO_CODES.totp}.
               </p>

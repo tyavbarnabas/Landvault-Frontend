@@ -5,6 +5,7 @@
 // the actual detection (real polygon-intersection math over each estate's
 // real footprint) and src/lib/geometry.ts for the algorithm itself.
 import { useState, useEffect } from "react";
+import LoadError from "../../../components/LoadError";
 import { Link } from "react-router-dom";
 import { useApp } from "../../../contexts/AppContext";
 import {
@@ -157,7 +158,7 @@ function ConflictCard({ conflict, actor, onUpdated }: { conflict: ListingConflic
         </div>
 
         <div className="flex flex-col items-center gap-1 shrink-0">
-          <FootprintOverlay a={conflict.estateAFootprint} b={conflict.estateBFootprint} />
+          {conflict.estateAFootprint && conflict.estateBFootprint && <FootprintOverlay a={conflict.estateAFootprint} b={conflict.estateBFootprint} />}
           <div className="flex items-center gap-3 text-[10px] text-[var(--muted-foreground)]">
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-blue-500/40 border border-blue-600 inline-block" /> A</span>
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-500/40 border border-red-600 inline-block" /> B</span>
@@ -176,6 +177,7 @@ export default function ListingConflicts() {
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [statusFilter, setStatusFilter] = useState<ConflictStatus | "all">("all");
 
@@ -184,8 +186,9 @@ export default function ListingConflicts() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchConflicts(filters).then((page) => {
-      if (cancelled) return;
+    setLoadError(null);
+    fetchConflicts(filters).catch((err) => { if (!cancelled) { setLoadError(err); setLoading(false); } return null; }).then((page) => {
+      if (cancelled || !page) return;
       setConflicts(page.items);
       setCursor(page.cursor);
       setHasMore(page.hasMore);
@@ -209,6 +212,7 @@ export default function ListingConflicts() {
   };
 
   if (loading) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Scanning estate footprints…</div>;
+  if (loadError) return <LoadError error={loadError} what="listing conflicts" onRetry={() => window.location.reload()} />;
 
   return (
     <div className="p-6 max-w-4xl mx-auto">

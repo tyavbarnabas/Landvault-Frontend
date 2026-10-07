@@ -15,6 +15,7 @@
 // the id the portal shows them, and support enters it here.
 
 import { ApiError, apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import { STATE_ISO_CODES, type NigerianState } from "../data/nigerianStates";
 import { findMockEstateForAdmin } from "./portalEstatesService";
 
@@ -67,7 +68,7 @@ export async function setStateOverride(estateId: string, reason: string): Promis
   const id = estateId.trim();
   if (!id) throw new StateOverrideError("VALIDATION", "Enter the estate's id.");
   if (!reason.trim()) throw new StateOverrideError("VALIDATION", "Give the reason — it's kept with the override.");
-  if (!apiClient.isMockMode) {
+  if (!isMock("stateOverride")) {
     try {
       return await apiClient.post<EstateStateOverride>(`/api/admin/estates/${encodeURIComponent(id)}/state-override`, { reason: reason.trim() });
     } catch (err) {
@@ -82,7 +83,7 @@ export async function setStateOverride(estateId: string, reason: string): Promis
 export async function clearStateOverride(estateId: string): Promise<EstateStateOverride> {
   const id = estateId.trim();
   if (!id) throw new StateOverrideError("VALIDATION", "Enter the estate's id.");
-  if (!apiClient.isMockMode) {
+  if (!isMock("stateOverride")) {
     try {
       return await apiClient.del<EstateStateOverride>(`/api/admin/estates/${encodeURIComponent(id)}/state-override`);
     } catch (err) {

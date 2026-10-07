@@ -17,8 +17,8 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
 import { MOCK_DEMO_CODES, changePassword, errorCodeOf, landingRouteFor } from "../../services/authService";
-import { apiClient } from "../../lib/apiClient";
 import { AuthShell } from "./Login";
+import { isLive } from "../../lib/backends";
 
 type FieldKey = "currentPassword" | "newPassword" | "confirm";
 
@@ -89,7 +89,7 @@ export default function ChangePassword() {
                 {loading ? "Updating…" : "Change password"}
               </button>
             </form>
-            {apiClient.isMockMode && (
+            {!isLive("auth") && (
               <p className="text-xs text-[var(--muted-foreground)] mt-3">Demo mode: the current password is {MOCK_DEMO_CODES.currentPassword}.</p>
             )}
             <p className="text-xs text-[var(--muted-foreground)] mt-6">

@@ -5,6 +5,12 @@ import type { Currency } from "../../data/mockData";
 import { AuthShell } from "./Login";
 import { completePendingWishlistIntent } from "../../lib/pendingWishlist";
 import { consumePendingIntent } from "../../lib/pendingIntent";
+import { isLive } from "../../lib/backends";
+import { ApiError } from "../../lib/apiClient";
+
+// The backend has no sign-up code step: an account is created straight from
+// the details, and phone is required. The emailed-code step is the mock's.
+const LIVE = isLive("auth");
 
 type Step = "details" | "country" | "otp";
 
@@ -23,7 +29,7 @@ export default function Register() {
 
   const handleDetails = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.firstName || !form.lastName || !form.email || !form.password) { setError("Please fill in all required fields."); return; }
+    if (!form.firstName || !form.lastName || !form.email || !form.password || (LIVE && !form.phone.trim())) { setError("Please fill in all required fields."); return; }
     if (form.password.length < 8) { setError("Password must be at least 8 characters."); return; }
     setError("");
     setStep("country");
@@ -31,6 +37,8 @@ export default function Register() {
 
   const handleCountry = (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
+    if (LIVE) { void createAccount(); return; }
     setLoading(true);
     setTimeout(() => { setLoading(false); setStep("otp"); }, 600);
   };
@@ -39,10 +47,16 @@ export default function Register() {
     e.preventDefault();
     if (otp.length < 6) { setError("Enter the 6-digit code."); return; }
     setLoading(true);
-    setTimeout(async () => {
+    setTimeout(() => void createAccount(), 700);
+  };
+
+  const createAccount = async () => {
+      setLoading(true);
       try {
-        const fullName = `${form.firstName.trim()} ${form.lastName.trim()}`.trim();
-        await register({ name: fullName, email: form.email, phone: form.phone, country: form.country, currency: form.currency as Currency });
+        await register({
+          firstName: form.firstName.trim(), lastName: form.lastName.trim(), email: form.email.trim(), phone: form.phone.trim(),
+          password: form.password, country: form.country, currency: form.currency as Currency,
+        });
 
         // Complete a pending wishlist intent (see WishlistButton.tsx) before
         // returning the user to wherever they were. KYC belongs at purchase,
@@ -70,11 +84,12 @@ export default function Register() {
 
         const returnUrl = searchParams.get("returnUrl");
         navigate(returnUrl || "/marketplace?welcome=1");
-      } catch {
+      } catch (err) {
         setLoading(false);
-        setError("Registration failed. Please try again.");
+        // The backend's reason (e.g. the email is already registered) beats a
+        // generic retry message.
+        setError(err instanceof ApiError && err.message ? err.message : "Registration failed. Please try again.");
       }
-    }, 700);
   };
 
   return (
@@ -108,7 +123,7 @@ export default function Register() {
             <input type="email" value={form.email} onChange={set("email")} placeholder="emeka@example.com" className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Phone (optional)</label>
+            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">{LIVE ? "Phone" : "Phone (optional)"}</label>
             <input value={form.phone} onChange={set("phone")} placeholder="+44 7700 900123" className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm" />
           </div>
           <div>
@@ -134,7 +149,8 @@ export default function Register() {
               <option value="DE">Germany</option>
               <option value="CA">Canada</option>
               <option value="ZA">South Africa</option>
-              <option value="OTHER">Other</option>
+              {/* The backend takes a two-letter country code only. */}
+              {!LIVE && <option value="OTHER">Other</option>}
             </select>
           </div>
           <div>
@@ -152,8 +168,9 @@ export default function Register() {
             </div>
           )}
           <button type="submit" disabled={loading} className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium disabled:opacity-60 hover:opacity-90 transition-opacity">
-            {loading ? "Sending code…" : "Send verification code"}
+            {LIVE ? (loading ? "Creating account…" : "Create account") : (loading ? "Sending code…" : "Send verification code")}
           </button>
+          {LIVE && error && <p className="text-red-600 text-sm">{error}</p>}
           <button type="button" onClick={() => setStep("details")} className="w-full py-2 text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]">← Back</button>
         </form>
       )}

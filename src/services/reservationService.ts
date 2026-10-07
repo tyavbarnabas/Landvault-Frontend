@@ -13,6 +13,8 @@
 // in-memory plot-status store below.
 
 import { apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
+import { PaymentsUnavailableError } from "./paymentsUnavailable";
 import { fetchPlotById, setPlotStatusMock, type PlotStatus } from "./marketplacePlotsService";
 
 export const RESERVATION_SECONDS = 45 * 60;
@@ -32,8 +34,25 @@ interface MockReservation extends Reservation {
 
 const mockReservations = new Map<string, MockReservation>();
 
+// ReservationDto. The hold is the backend's — a closed laptop still returns
+// the plot when it lapses; the browser's countdown only displays expiresAt.
+interface ReservationDto {
+  id: string;
+  estateId: string;
+  plotId: string;
+  priceTierId: string;
+  status: Reservation["status"];
+  expiresAt: string;
+  secondsRemaining: number;
+}
+
+function fromReservationDto(dto: ReservationDto): Reservation {
+  return { id: dto.id, listingId: dto.estateId, plotId: dto.plotId, tierId: dto.priceTierId, expiresAt: dto.expiresAt, status: dto.status };
+}
+
 export async function startReservation(listingId: string, plotId: string): Promise<Reservation> {
-  if (!apiClient.isMockMode) return apiClient.post<Reservation>("/api/reservations", { listingId, plotId });
+  // CreateReservationRequest is { plotId } alone: the estate follows from it.
+  if (!isMock("reservation")) return fromReservationDto(await apiClient.post<ReservationDto>("/api/reservations", { plotId }));
 
   const plot = await fetchPlotById(listingId, plotId);
   const previousStatus: PlotStatus = plot?.status ?? "available-dev";
@@ -55,7 +74,8 @@ export async function startReservation(listingId: string, plotId: string): Promi
 // Plot returns to the pool — used on explicit cancel or on the 45-minute
 // timer expiring client-side (a real backend expires the Redis TTL itself).
 export async function releaseReservation(id: string): Promise<void> {
-  if (!apiClient.isMockMode) { await apiClient.post(`/api/reservations/${id}/release`); return; }
+  // Releasing a hold is DELETE /api/reservations/{id}.
+  if (!isMock("reservation")) { await apiClient.del(`/api/reservations/${id}`); return; }
   const r = mockReservations.get(id);
   if (!r || r.status !== "active") return;
   setPlotStatusMock(r.listingId, r.plotId, r.previousStatus);
@@ -69,9 +89,17 @@ export async function releaseReservation(id: string): Promise<void> {
 // TODO (backend): this, the finance decision, and document issuance must be
 // one atomic transaction — see the note in marketplaceCheckoutService.ts.
 export async function convertReservation(id: string): Promise<void> {
-  if (!apiClient.isMockMode) { await apiClient.post(`/api/reservations/${id}/convert`); return; }
+  // No such route: on the backend a reservation becomes a purchase only through
+  // a finance-verified payment, which isn't built. Never faked as done.
+  if (!isMock("reservation")) throw new PaymentsUnavailableError();
   const r = mockReservations.get(id);
   if (!r) return;
   setPlotStatusMock(r.listingId, r.plotId, "sold");
   r.status = "converted";
+}
+
+// The buyer's own active holds — GET /api/reservations/mine.
+export async function fetchMyReservations(): Promise<Reservation[]> {
+  if (!isMock("reservation")) return (await apiClient.get<ReservationDto[]>("/api/reservations/mine")).map(fromReservationDto);
+  return [...mockReservations.values()].filter((r) => r.status === "active");
 }

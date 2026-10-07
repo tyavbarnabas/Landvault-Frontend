@@ -6,6 +6,7 @@
 // condition), and the branch (an estate can't move across the branch wall).
 
 import { useState } from "react";
+import LoadError from "../../../components/LoadError";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useFetch } from "../../../lib/useFetch";
 import { NIGERIAN_STATES, type NigerianState } from "../../../data/nigerianStates";
@@ -24,6 +25,8 @@ export default function EditPortalEstate() {
   const loaded = useFetch(async () => (scope && estateId ? fetchPortalEstateById(estateId, scope) : null), [scope?.tenantId, scope?.branchId, estateId]);
 
   if (loaded.loading) return <div className="p-8 text-sm text-[var(--muted-foreground)]">Loading estate…</div>;
+
+  if (loaded.error) return <LoadError error={loaded.errorValue} what="this estate" onRetry={loaded.refetch} />;
   const estate = loaded.data;
   if (!estate || !scope) {
     return (

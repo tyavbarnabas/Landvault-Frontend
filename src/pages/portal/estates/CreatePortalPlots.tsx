@@ -1,4 +1,5 @@
 import { useState } from "react";
+import LoadError from "../../../components/LoadError";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useFetch } from "../../../lib/useFetch";
 import {
@@ -112,6 +113,8 @@ export default function CreatePortalPlots() {
   };
 
   if (loaded.loading) return <div className="p-8 text-sm text-[var(--muted-foreground)]">Loading…</div>;
+
+  if (loaded.error) return <LoadError error={loaded.errorValue} what="this estate" onRetry={loaded.refetch} />;
   if (!loaded.data?.estate || !estateId) {
     return (
       <div className="p-8">

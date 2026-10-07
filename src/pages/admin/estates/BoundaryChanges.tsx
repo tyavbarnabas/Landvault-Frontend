@@ -11,6 +11,7 @@
 // the developer will see; the current boundary stays.
 
 import { useState } from "react";
+import LoadError from "../../../components/LoadError";
 import { useFetch } from "../../../lib/useFetch";
 import {
   EstateEditError, decideBoundaryChange, fetchBoundaryChangesForReview,
@@ -47,11 +48,7 @@ export default function BoundaryChanges() {
       </div>
 
       {list.loading && !list.data && <p className="text-sm text-[var(--muted-foreground)]">Loading…</p>}
-      {list.error && (
-        <p className="text-sm text-[var(--foreground)]">
-          Couldn't load them. <button onClick={list.refetch} className="text-[var(--accent)] hover:underline">Try again</button>
-        </p>
-      )}
+      {!list.loading && list.error && <LoadError error={list.errorValue} what="boundary changes" onRetry={list.refetch} />}
       {list.data && list.data.length === 0 && (
         <EmptyState title={status === "pending" ? "Nothing waiting" : "None"} description={status === "pending" ? "Corrections needing a decision appear here." : "Nothing with this status yet."} />
       )}

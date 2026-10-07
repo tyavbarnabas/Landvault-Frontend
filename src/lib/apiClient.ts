@@ -14,7 +14,10 @@
 //
 // See INTEGRATION.md for the full picture of what's wired up vs. still mocked.
 
+import { serviceForPath, serviceLabel } from "./backends";
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL as string | undefined;
+
 
 export const IS_MOCK_MODE = !API_BASE_URL;
 
@@ -40,16 +43,71 @@ export interface ApiErrorBody {
   fieldErrors?: Record<string, string>;
 }
 
+// What failed, so a failure names itself: which service, which request.
+export interface RequestInfo {
+  method: string;
+  path: string;
+  service: string;
+}
+
+/** The BACKEND answered, with an error: a contract mismatch, a refusal, a
+ * missing record. `body.code` is the backend's own stable code. */
 export class ApiError extends Error {
   status: number;
   /** Parsed JSON error body, when the server returned one — lets a form
    * surface field-level errors instead of a raw string. */
   body?: ApiErrorBody;
-  constructor(status: number, message: string, body?: ApiErrorBody) {
+  request?: RequestInfo;
+  constructor(status: number, message: string, body?: ApiErrorBody, request?: RequestInfo) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.body = body;
+    this.request = request;
+  }
+}
+
+/** The request never got a readable answer: the backend is down, the port
+ * is wrong, or — most often in development — CORS refused this page's
+ * origin before the backend could reply. A completely different fix from an
+ * ApiError, so it is a different error. */
+export class ApiTransportError extends Error {
+  request: RequestInfo;
+  /** The browser's own error ("TypeError: Failed to fetch"). */
+  underlying: unknown;
+  constructor(request: RequestInfo, cause: unknown) {
+    const origin = typeof window !== "undefined" ? window.location.origin : "this page";
+    super(
+      `Couldn't reach the backend for ${request.method} ${request.path} (${request.service}). ` +
+      `The backend at ${API_BASE_URL} may be down, or it refused this page's origin (${origin}) — ` +
+      "check it's running and that the origin is in its CORS_ALLOWED_ORIGINS.");
+    this.name = "ApiTransportError";
+    this.request = request;
+    this.underlying = cause;
+  }
+}
+
+/** Only a 404 means "not found". Anything else — a 401, a 500, a CORS
+ * failure — is rethrown, so a broken request never masquerades as an empty
+ * result. */
+export async function nullIfNotFound<T>(request: Promise<T>): Promise<T | null> {
+  try {
+    return await request;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+// Dev only: every failure on one line a person can act on.
+function logFailure(err: ApiError | ApiTransportError | ApiTimeoutError, request: RequestInfo): void {
+  if (!import.meta.env.DEV) return;
+  if (err instanceof ApiError) {
+    console.error(`[api] ${request.service} · ${request.method} ${request.path} → ${err.status}${err.body?.code ? ` ${err.body.code}` : ""}: ${err.message}`);
+  } else if (err instanceof ApiTransportError) {
+    console.error(`[api] ${request.service} · ${request.method} ${request.path} → TRANSPORT FAILURE (CORS, wrong port, or backend down). ${err.message}`);
+  } else {
+    console.error(`[api] ${request.service} · ${request.method} ${request.path} → timed out.`);
   }
 }
 
@@ -266,6 +324,7 @@ async function request<T>(path: string, options: RequestOptions = {}, attempt = 
 
   const { timeoutMs = DEFAULT_TIMEOUT_MS, idempotencyKey, skipAuthRefresh, _retriedAfterRefresh, signal: callerSignal, ...init } = options;
   const method = (init.method ?? "GET").toUpperCase();
+  const info: RequestInfo = { method, path: path.split("?")[0], service: serviceLabel(serviceForPath(path)) };
 
   const timeoutController = new AbortController();
   const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs);
@@ -298,7 +357,9 @@ async function request<T>(path: string, options: RequestOptions = {}, attempt = 
         await sleep(backoffDelay(attempt));
         return request<T>(path, options, attempt + 1);
       }
-      throw new ApiTimeoutError(path);
+      const timeout = new ApiTimeoutError(path);
+      logFailure(timeout, info);
+      throw timeout;
     }
     // Network error (offline, DNS, connection reset, ...) — retry the same
     // way a 5xx is retried below.
@@ -306,7 +367,9 @@ async function request<T>(path: string, options: RequestOptions = {}, attempt = 
       await sleep(backoffDelay(attempt));
       return request<T>(path, options, attempt + 1);
     }
-    throw err;
+    const transport = new ApiTransportError(info, err);
+    logFailure(transport, info);
+    throw transport;
   }
   clearTimeout(timeoutId);
   callerSignal?.removeEventListener("abort", onCallerAbort);
@@ -340,7 +403,9 @@ async function request<T>(path: string, options: RequestOptions = {}, attempt = 
       return request<T>(path, options, attempt + 1);
     }
     const { message, body } = await parseErrorBody(res);
-    throw new ApiError(res.status, message, body);
+    const error = new ApiError(res.status, message, body, info);
+    logFailure(error, info);
+    throw error;
   }
 
   if (res.status === 204) return undefined as T;

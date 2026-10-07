@@ -5,6 +5,7 @@
 
 import { DOCUMENTS, type Document } from "../data/mockData";
 import { apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 
 // In-memory mock store so documents issued during a session (e.g. by the
@@ -15,7 +16,7 @@ let mockDocuments: Document[] = [...DOCUMENTS];
 // Sorted newest-first before paginating — a stable order pagination can
 // actually page through, rather than trusting insertion order.
 export async function fetchDocuments(params: PageParams = {}): Promise<Page<Document>> {
-  if (apiClient.isMockMode) {
+  if (isMock("documents")) {
     const sorted = [...mockDocuments].sort((a, b) => (a.date < b.date ? 1 : -1));
     return paginateMock(sorted, params);
   }
@@ -23,7 +24,7 @@ export async function fetchDocuments(params: PageParams = {}): Promise<Page<Docu
 }
 
 export async function fetchDocumentsByPlotId(plotId: string): Promise<Document[]> {
-  if (apiClient.isMockMode) return mockDocuments.filter((d) => d.plotId === plotId);
+  if (isMock("documents")) return mockDocuments.filter((d) => d.plotId === plotId);
   return apiClient.get<Document[]>(`/api/portfolio/plots/${plotId}/documents`);
 }
 
@@ -32,7 +33,7 @@ export async function fetchDocumentsByPlotId(plotId: string): Promise<Document[]
 // while the new deed issued to the buyer carries `supersedes` pointing back
 // to it. See resaleService.ts's executeTitleTransfer.
 export async function voidDocument(id: string): Promise<void> {
-  if (apiClient.isMockMode) {
+  if (isMock("documents")) {
     mockDocuments = mockDocuments.map((d) => (d.id === id ? { ...d, status: "void" } : d));
     return;
   }
@@ -43,7 +44,7 @@ export async function voidDocument(id: string): Promise<void> {
 // document set atomically alongside allocation (see the atomicity TODO in
 // marketplaceCheckoutService.ts).
 export async function addDocuments(docs: Document[]): Promise<Document[]> {
-  if (apiClient.isMockMode) {
+  if (isMock("documents")) {
     mockDocuments = [...docs, ...mockDocuments];
     return docs;
   }

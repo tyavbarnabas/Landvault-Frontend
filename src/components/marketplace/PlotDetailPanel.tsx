@@ -77,7 +77,11 @@ export default function PlotDetailPanel({ plot, listing, onClose, onOpenEnquiry 
       <div className="p-5 space-y-4">
         {!isAvailable && (
           <div className="text-xs font-medium px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">
-            This plot is {plot.status === "sold" ? "already sold / allocated" : "currently reserved by another buyer"}. Browse similar available plots on the map.
+            {/* Live, the marketplace says only "unavailable" — reserved and sold
+                are deliberately indistinguishable, so neither is claimed. */}
+            {plot.publicAvailability === "unavailable"
+              ? "This plot isn't available right now. Browse the available plots on the map."
+              : `This plot is ${plot.status === "sold" ? "already sold / allocated" : "currently reserved by another buyer"}. Browse similar available plots on the map.`}
           </div>
         )}
 
@@ -86,7 +90,8 @@ export default function PlotDetailPanel({ plot, listing, onClose, onOpenEnquiry 
             { label: "Nominal size", value: `${plot.sizeSqm} sqm` },
             { label: "Actual surveyed area", value: `${plot.actualAreaSqm} sqm` },
             { label: "Type", value: plot.isCorner ? "Corner piece ★" : "Standard" },
-            { label: "Orientation", value: plot.orientation },
+            // Live plots carry no orientation; an empty cell says nothing false.
+            { label: "Orientation", value: plot.orientation || "—" },
             { label: "Block reference", value: plotLabel(plot) },
             { label: "Title type", value: listing.titleType },
           ].map((d) => (

@@ -16,7 +16,8 @@
 // newly-published one), not an O(n²) full re-scan on every read. Fine for
 // this repo's fixture set; would not scale past a few thousand estates.
 
-import { apiClient } from "../lib/apiClient";
+import { apiClient, nullIfNotFound } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import { polygonOverlap, type GeoPoint } from "../lib/geometry";
 import { conflictChangesBetween, type ConflictChanges, type ConflictItem } from "./conflictChanges";
@@ -40,12 +41,13 @@ export interface ListingConflict {
   id: string;
   estateAId: string;
   estateAName: string;
-  estateAFootprint: GeoPoint[]; // denormalized at detection time, purely for rendering — the actual overlap numbers below are already computed
+  // Mock only: the backend list carries no geometry, so no diagram there.
+  estateAFootprint?: GeoPoint[]; // denormalized at detection time, purely for rendering — the actual overlap numbers below are already computed
   tenantAId: string;
   tenantAName: string;
   estateBId: string;
   estateBName: string;
-  estateBFootprint: GeoPoint[];
+  estateBFootprint?: GeoPoint[];
   tenantBId: string;
   tenantBName: string;
   crossTenant: boolean;
@@ -191,8 +193,14 @@ export interface ConflictFilters {
 }
 
 export async function fetchConflicts(filters: ConflictFilters = {}, params: PageParams = {}): Promise<Page<ListingConflict>> {
-  if (!apiClient.isMockMode) {
-    const qp = new URLSearchParams({ ...(filters as Record<string, string>), ...(params as Record<string, string>) });
+  if (!isMock("listingConflicts")) {
+    // Only filters actually set; arrays as repeated params. `status=undefined`
+    // is a 400 (unknown ConflictStatus) on the backend.
+    const qp = new URLSearchParams();
+    for (const [k, v] of Object.entries({ ...filters, ...params })) {
+      if (v === undefined || v === null || v === "") continue;
+      for (const one of Array.isArray(v) ? v : [v]) qp.append(k, String(one));
+    }
     return apiClient.get<Page<ListingConflict>>(`/api/admin/listing-conflicts?${qp}`);
   }
   let results = store();
@@ -206,8 +214,8 @@ export async function fetchConflicts(filters: ConflictFilters = {}, params: Page
 }
 
 export async function fetchConflictById(id: string): Promise<ListingConflict | undefined> {
-  if (!apiClient.isMockMode) {
-    try { return await apiClient.get<ListingConflict>(`/api/admin/listing-conflicts/${id}`); } catch { return undefined; }
+  if (!isMock("listingConflicts")) {
+    return (await nullIfNotFound(apiClient.get<ListingConflict>(`/api/admin/listing-conflicts/${id}`))) ?? undefined;
   }
   return store().find((c) => c.id === id);
 }
@@ -217,8 +225,9 @@ export async function fetchConflictById(id: string): Promise<ListingConflict | u
 // always get an audit entry against BOTH tenants involved — a conflict spans
 // two companies, so both need it on their record, not just one.
 export async function reviewConflict(id: string, decision: ConflictStatus, actor: string, note?: string): Promise<ListingConflict | undefined> {
-  if (!apiClient.isMockMode) {
-    return apiClient.post<ListingConflict>(`/api/admin/listing-conflicts/${id}/review`, { decision, note });
+  if (!isMock("listingConflicts")) {
+    // ConflictStatusRequest: { status, reason } on POST .../{id}/status.
+    return apiClient.post<ListingConflict>(`/api/admin/listing-conflicts/${id}/status`, { status: decision, ...(note ? { reason: note } : {}) });
   }
   const conflicts = store();
   const conflict = conflicts.find((c) => c.id === id);

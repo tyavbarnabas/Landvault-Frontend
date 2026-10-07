@@ -275,9 +275,16 @@ describe("calls that set the cookie, and 401s that are answers", () => {
     });
     const { register, changePassword } = await import("../services/authService");
 
-    await register({ name: "Ada", email: "a@b.c", phone: "1", country: "NG", currency: "NGN" });
+    await register({ firstName: "Ada", lastName: "Obi", email: "a@b.c", phone: "1", password: "pw-12345678", country: "NG", currency: "NGN" });
     await changePassword({ currentPassword: "a", newPassword: "b" }, "a@b.c");
     expect(calls.map((c) => c.credentials)).toEqual(["include", "include"]);
+  });
+
+  it("register sends exactly RegisterRequest's fields — the backend rejects unknown ones", async () => {
+    respond({ "POST /api/auth/register": { status: 201, body: { user: USER, token: "access-2" } } });
+    const { register } = await import("../services/authService");
+    await register({ firstName: "Ada", lastName: "Obi", email: "a@b.c", phone: "1", password: "pw-12345678", country: "NG", currency: "NGN" });
+    expect(Object.keys(calls[0].body as object).sort()).toEqual(["country", "currency", "email", "firstName", "lastName", "password", "phone"]);
   });
 });
 

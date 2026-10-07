@@ -15,6 +15,7 @@
 // role/branch pair can't be submitted, and reports the backend's verdict.
 
 import { ApiError, apiClient, setAuthToken } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import {
   mockAccountExists, mockPermissionsForRole, registerMockAccount, type AuthUser,
 } from "./authService";
@@ -87,7 +88,7 @@ function holdsAll(held: string[] | undefined, needed: string[]): boolean {
 }
 
 export async function fetchAssignableRoles(caller: StaffCaller): Promise<AssignableRole[]> {
-  if (!apiClient.isMockMode) return apiClient.get<AssignableRole[]>("/api/portal/roles");
+  if (!isMock("staff")) return apiClient.get<AssignableRole[]>("/api/portal/roles");
   return MOCK_ROLES.map((r) => ({ ...r, permissions: [...r.permissions], canGrant: holdsAll(caller.permissions, r.permissions) }));
 }
 
@@ -327,7 +328,7 @@ export function mockInvitationLink(invitationId: string): string | null {
 
 export async function inviteStaff(input: InviteInput, caller: StaffCaller): Promise<StaffInvitation> {
   validateInvite(input);
-  if (!apiClient.isMockMode) {
+  if (!isMock("staff")) {
     try {
       return await apiClient.post<StaffInvitation>("/api/portal/staff/invitations", inviteBody(input));
     } catch (err) {
@@ -347,7 +348,7 @@ export async function requestStaff(input: Omit<InviteInput, "branchId">, caller:
     throw new StaffError("roleCode", "ROLE_SCOPE_MISMATCH", "A company-wide role can't be requested for a branch.");
   }
   validateInvite(full);
-  if (!apiClient.isMockMode) {
+  if (!isMock("staff")) {
     try {
       // The backend fills in the requester's own branch.
       const { branchId: _ignored, ...body } = inviteBody(full);
@@ -390,7 +391,7 @@ function mockCreate(input: InviteInput, caller: StaffCaller, request: boolean): 
 // Company-wide callers see everything; a branch-scoped caller sees only
 // invitations into their own branch.
 export async function fetchInvitations(caller: StaffCaller): Promise<StaffInvitation[]> {
-  if (!apiClient.isMockMode) return apiClient.get<StaffInvitation[]>("/api/portal/staff/invitations");
+  if (!isMock("staff")) return apiClient.get<StaffInvitation[]>("/api/portal/staff/invitations");
   return mockInvitations
     .filter((i) => i.tenantId === caller.tenantId && (!caller.branchId || i.branchId === caller.branchId))
     .map(publicView)
@@ -400,7 +401,7 @@ export async function fetchInvitations(caller: StaffCaller): Promise<StaffInvita
 type InvitationAction = "approve" | "cancel" | "revoke" | "resend";
 
 export async function actOnInvitation(id: string, action: InvitationAction, caller: StaffCaller): Promise<StaffInvitation> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("staff")) {
     try {
       return await apiClient.post<StaffInvitation>(`/api/portal/staff/invitations/${id}/${action}`);
     } catch (err) {
@@ -450,7 +451,7 @@ export async function actOnInvitation(id: string, action: InvitationAction, call
 // A rejection needs a reason, which the branch manager who asked will see.
 export async function rejectInvitation(id: string, reason: string, caller: StaffCaller): Promise<StaffInvitation> {
   if (!reason.trim()) throw new StaffError("reason", "VALIDATION", "Give a reason — the branch manager who asked will see it.");
-  if (!apiClient.isMockMode) {
+  if (!isMock("staff")) {
     try {
       return await apiClient.post<StaffInvitation>(`/api/portal/staff/invitations/${id}/reject`, { reason: reason.trim() });
     } catch (err) {
@@ -505,7 +506,7 @@ function mockByToken(token: string): MockInvitation {
 }
 
 export async function previewInvitation(token: string): Promise<InvitationPreview> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("staff")) {
     try {
       return await apiClient.post<InvitationPreview>("/api/auth/invitations/preview", { token }, { skipAuthRefresh: true });
     } catch (err) {
@@ -526,7 +527,7 @@ export async function previewInvitation(token: string): Promise<InvitationPrevie
 // credentials: "include"). The password carries registration's rule only.
 export async function acceptInvitation(token: string, password: string): Promise<AuthUser> {
   if (!password) throw new StaffError("password", "VALIDATION", "Choose a password.");
-  if (!apiClient.isMockMode) {
+  if (!isMock("staff")) {
     try {
       const body = await apiClient.post<{ user: AuthUser; token: string }>(
         "/api/auth/invitations/accept", { token, password }, { credentials: "include", skipAuthRefresh: true });
@@ -559,7 +560,7 @@ export async function acceptInvitation(token: string, password: string): Promise
 
 // A branch-scoped caller sees only their branch's staff.
 export async function fetchStaff(caller: StaffCaller): Promise<StaffMember[]> {
-  if (!apiClient.isMockMode) return apiClient.get<StaffMember[]>("/api/portal/staff");
+  if (!isMock("staff")) return apiClient.get<StaffMember[]>("/api/portal/staff");
   return mockStaffFor(caller.tenantId)
     .filter((s) => !caller.branchId || s.roles.some((r) => r.branchId === caller.branchId))
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -591,7 +592,7 @@ export async function changeStaffRole(userId: string, input: { roleCode: string;
   const rule = input.scope ? branchRuleForScope(input.scope) : branchRuleFor(input.roleCode);
   if (rule === "required" && !input.branchId) throw new StaffError("branchId", "VALIDATION", `A ${roleName(input.roleCode)} runs a branch — choose which one.`);
   const body = { roleCode: input.roleCode, ...(input.branchId && rule !== "forbidden" ? { branchId: input.branchId } : {}) };
-  if (!apiClient.isMockMode) {
+  if (!isMock("staff")) {
     try {
       return await apiClient.put<StaffMember>(`/api/portal/staff/${userId}/role`, body);
     } catch (err) {
@@ -612,7 +613,7 @@ export async function changeStaffRole(userId: string, input: { roleCode: string;
 // reactivation restores it with its role untouched.
 export async function setStaffActive(userId: string, active: boolean, reason: string, caller: StaffCaller): Promise<StaffMember> {
   if (!active && !reason.trim()) throw new StaffError("reason", "VALIDATION", "Give a reason — it's kept in the audit log.");
-  if (!apiClient.isMockMode) {
+  if (!isMock("staff")) {
     try {
       return active
         ? await apiClient.post<StaffMember>(`/api/portal/staff/${userId}/reactivate`)

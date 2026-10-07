@@ -203,11 +203,21 @@ export default function OnboardingWizard() {
       plan: "starter",
     });
 
-    await submitForVerification(tenant.id, { documents, regulatory, directors, directorsAttestation: v.attestation, financial });
+    // The tenant now EXISTS (and its first Executive Director has been
+    // invited). If the submission step is refused, say exactly that on the
+    // tenant's page — never "nothing was submitted", which would be untrue.
+    let submitProblem: string | null = null;
+    try {
+      await submitForVerification(tenant.id, { documents, regulatory, directors, directorsAttestation: v.attestation, financial });
+    } catch (err) {
+      const body = (err as { body?: { code?: string; message?: string } }).body;
+      submitProblem = body?.message ?? (err instanceof Error ? err.message : "The submission was refused.");
+      if (body?.code) submitProblem += ` (${body.code})`;
+    }
 
     clearDraft();
     setSubmitting(false);
-    navigate(`/admin/tenants/${tenant.id}`);
+    navigate(`/admin/tenants/${tenant.id}`, { state: submitProblem ? { submitProblem } : undefined });
   };
 
   const isLastStep = currentIndex === STEP_LABELS.length - 1;

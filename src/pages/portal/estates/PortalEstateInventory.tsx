@@ -1,4 +1,5 @@
 import { useState } from "react";
+import LoadError from "../../../components/LoadError";
 import { useParams, useSearchParams, Link } from "react-router-dom";
 import { useFetch } from "../../../lib/useFetch";
 import { formatAmount, type Currency } from "../../../data/mockData";
@@ -54,6 +55,7 @@ export default function PortalEstateInventory() {
   // Only the FIRST load blanks the page. A refetch after an edit keeps what is
   // on screen — including the result of the edit that triggered it.
   if (loaded.loading && !loaded.data) return <div className="p-8 text-sm text-[var(--muted-foreground)]">Loading inventory…</div>;
+  if (loaded.error) return <LoadError error={loaded.errorValue} what="this estate's inventory" onRetry={loaded.refetch} />;
 
   const estate = loaded.data?.estate;
   if (!estate || !estateId || !scope) {

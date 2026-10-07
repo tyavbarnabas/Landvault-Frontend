@@ -19,7 +19,7 @@ import { fetchPlotById, plotLabel, priceForPlot, type ListingPlot } from "../../
 import { fetchKycStatus, type KycRecord } from "../../services/kycService";
 import { startReservation, releaseReservation, RESERVATION_SECONDS, type Reservation } from "../../services/reservationService";
 import {
-  initiateTransaction, initiatePayment, confirmPayment, runFinanceVerification,
+  initiateTransaction, initiatePayment, confirmPayment, runFinanceVerification, paymentsAvailable,
   paymentMethodsForCountry, type Transaction, type MarketplacePaymentMethod, type VirtualAccountDetails,
 } from "../../services/marketplaceCheckoutService";
 import CountdownTimer from "../../components/checkout/CountdownTimer";
@@ -27,6 +27,8 @@ import KycFlow from "../../components/checkout/KycFlow";
 import PaymentPlanSelector, { depositFor } from "../../components/checkout/PaymentPlanSelector";
 import PaymentMethodSelector from "../../components/checkout/PaymentMethodSelector";
 import VerificationProgress from "../../components/checkout/VerificationProgress";
+import { ApiError } from "../../lib/apiClient";
+import { describeLoadError } from "../../components/LoadError";
 
 type Step = "confirm" | "kyc" | "intent" | "plan" | "payment" | "verifying" | "allocated" | "expired";
 
@@ -46,6 +48,10 @@ export default function MarketplaceCheckout() {
   const [virtualAccount, setVirtualAccount] = useState<VirtualAccountDetails | null>(null);
   const [paymentError, setPaymentError] = useState("");
   const [loading, setLoading] = useState(false);
+  // A reserve/transaction call the backend refused (plot just taken, KYC
+  // needed, …): shown in place, never a spinner that never ends.
+  const [stepError, setStepError] = useState("");
+  const [released, setReleased] = useState(false);
 
   const { data: listingAndPlot, loading: pageLoading } = useFetch(async () => {
     if (!listingId || !plotId) return { listing: null, plot: null, disclosure: null };
@@ -69,10 +75,17 @@ export default function MarketplaceCheckout() {
 
   const startLock = async () => {
     setLoading(true);
-    const res = await startReservation(listing.id, plot.id);
-    setReservation(res);
-    setLoading(false);
-    setStep("intent");
+    setStepError("");
+    try {
+      const res = await startReservation(listing.id, plot.id);
+      setReservation(res);
+      setStep("intent");
+    } catch (err) {
+      setStepError(refusal(err, "We couldn't hold this plot."));
+      setStep("confirm");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleConfirmReserve = () => {
@@ -99,8 +112,11 @@ export default function MarketplaceCheckout() {
   const goToPayment = async () => {
     if (!reservation) return;
     setLoading(true);
+    setStepError("");
     const deposit = depositFor(plan, totalPrice);
-    const txn = await initiateTransaction({
+    let txn: Transaction;
+    try {
+      txn = await initiateTransaction({
       listingId: listing.id,
       listingName: listing.name,
       plotId: plot.id,
@@ -121,6 +137,11 @@ export default function MarketplaceCheckout() {
       amountDue: deposit,
       totalPrice,
     });
+    } catch (err) {
+      setStepError(refusal(err, "We couldn't start your purchase."));
+      setLoading(false);
+      return;
+    }
     setTransaction(txn);
     setLoading(false);
     setStep("payment");
@@ -157,8 +178,20 @@ export default function MarketplaceCheckout() {
     }
   };
 
+  const releasePlot = async () => {
+    if (!reservation) return;
+    try {
+      await releaseReservation(reservation.id);
+      setReleased(true);
+    } catch (err) {
+      setStepError(refusal(err, "We couldn't release the plot."));
+    }
+  };
+
   const deposit = depositFor(plan, totalPrice);
-  const showCountdown = reservation && !["verifying", "allocated", "expired", "confirm", "kyc"].includes(step);
+  // A recorded purchase stops the hold's clock on the backend (the plot stays
+  // held while payment is pending), so there's no countdown to show then.
+  const showCountdown = reservation && !(transaction && !paymentsAvailable()) && !["verifying", "allocated", "expired", "confirm", "kyc"].includes(step);
 
   return (
     <div className="min-h-full bg-[var(--background)] py-8 px-4">
@@ -254,14 +287,47 @@ export default function MarketplaceCheckout() {
               installmentMonths={installmentMonths}
               onInstallmentMonthsChange={setInstallmentMonths}
             />
+            {!paymentsAvailable() && (
+              // Said BEFORE committing: the backend can't take payment yet, and
+              // a recorded purchase holds the plot with no way to cancel online.
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900">
+                Online payment isn't available yet. Continuing records your purchase as <strong>pending payment</strong> and keeps this plot held for you — it can't be cancelled online once recorded. To let the plot go instead, release it now.
+                {released ? (
+                  <div className="mt-2 font-medium" role="status">Released. <Link to="/marketplace" className="underline">Back to marketplace</Link></div>
+                ) : (
+                  <button onClick={releasePlot} className="block mt-2 underline">Release this plot</button>
+                )}
+              </div>
+            )}
             <div className="flex gap-2 mt-4">
               <button onClick={() => setStep("intent")} className="flex-1 py-2.5 border border-[var(--border)] rounded-md text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]">← Back</button>
-              <button onClick={goToPayment} disabled={loading} className="flex-[2] py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-60">Choose payment method →</button>
+              <button onClick={goToPayment} disabled={loading || released} className="flex-[2] py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-60">{paymentsAvailable() ? "Choose payment method →" : "Record purchase (pending payment) →"}</button>
             </div>
           </div>
         )}
 
-        {step === "payment" && transaction && (
+        {stepError && step !== "payment" && (
+          <div className="mb-5 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700" role="alert">{stepError}</div>
+        )}
+
+        {step === "payment" && transaction && !paymentsAvailable() && (
+          // The backend records the purchase but has no payment step yet. Say
+          // so plainly instead of offering payment methods that can't work.
+          <div className="space-y-4">
+            <h2 className="font-semibold">Purchase recorded — payment not available yet</h2>
+            <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-4 text-sm space-y-1">
+              <div><span className="text-[var(--muted-foreground)]">Reference:</span> <span className="font-mono-data">{transaction.reference}</span></div>
+              <div><span className="text-[var(--muted-foreground)]">Status:</span> Pending payment</div>
+              <div><span className="text-[var(--muted-foreground)]">Amount due now:</span> {formatAmount(transaction.amountDue, currency)}</div>
+            </div>
+            <p className="text-sm text-[var(--muted-foreground)]">
+              Online payment isn't switched on yet. Your purchase is saved as pending payment, and the plot stays held for you while it is. Keep your reference — you'll pay against it once payment opens.
+            </p>
+            <button onClick={() => navigate("/marketplace")} className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90">Back to marketplace</button>
+          </div>
+        )}
+
+        {step === "payment" && transaction && paymentsAvailable() && (
           <div>
             <h2 className="font-semibold mb-2">Payment</h2>
             <p className="text-sm text-[var(--muted-foreground)] mb-5">Complete your {plan === "outright" ? "full payment" : "deposit"} to secure this plot.</p>
@@ -359,4 +425,11 @@ function Row({ label, value, mono, bold }: { label: string; value: string; mono?
       <span className={`${mono ? "font-mono-data" : ""} ${bold ? "font-semibold" : ""}`}>{value}</span>
     </div>
   );
+}
+
+// The backend's own reason when it gave one (e.g. "Plot is no longer
+// available"), otherwise what went wrong in transport terms.
+function refusal(err: unknown, lead: string): string {
+  if (err instanceof ApiError) return `${lead} ${err.message}`;
+  return `${lead} ${describeLoadError(err).summary}`;
 }

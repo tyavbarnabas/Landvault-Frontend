@@ -9,6 +9,7 @@
 
 import type { Currency, KYCStatus } from "../data/mockData";
 import { apiClient, logoutSession, refreshSession, setAuthToken } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 
 // The backend emits exactly two role strings — see AuthService's
 // `ctx.superAdmin() ? "super_admin" : "client"`. There is NO "developer"
@@ -324,7 +325,7 @@ function isChallenge(body: AuthResponseBody | TwoFactorChallenge): body is TwoFa
 }
 
 export async function login(email: string, password?: string): Promise<LoginOutcome> {
-  if (apiClient.isMockMode) {
+  if (isMock("auth")) {
     const user = MOCK_ACCOUNTS_BY_EMAIL[email.trim().toLowerCase()] ?? MOCK_CLIENT_USER;
     // Mock mode mirrors the real branch: an account with 2FA on gets a
     // challenge, not a session. Nothing is signed in until a code verifies.
@@ -345,7 +346,7 @@ export async function login(email: string, password?: string): Promise<LoginOutc
 // The challenge token identifies a PENDING login and nothing else: it cannot
 // call a protected endpoint, and it is never stored as a session token.
 export async function verifyTwoFactor(challengeToken: string, code: string): Promise<AuthUser> {
-  if (apiClient.isMockMode) return verifyMockChallenge(challengeToken, code);
+  if (isMock("auth")) return verifyMockChallenge(challengeToken, code);
   const body = await apiClient.post<AuthResponseBody>(
     "/api/auth/2fa/verify", { challengeToken, code }, { ...SETS_SESSION_COOKIE, ...ANSWERS_WITH_401 });
   setAuthToken(body.token);
@@ -365,14 +366,14 @@ export interface TwoFactorSetup {
 }
 
 export async function setupTwoFactor(): Promise<TwoFactorSetup> {
-  if (apiClient.isMockMode) return mockSetupTwoFactor();
+  if (isMock("auth")) return mockSetupTwoFactor();
   return apiClient.post<TwoFactorSetup>("/api/auth/2fa/setup", {});
 }
 
 // Returns the recovery codes, in plaintext, EXACTLY ONCE. They are stored
 // hashed and can never be retrieved again.
 export async function confirmTwoFactor(code: string): Promise<string[]> {
-  if (apiClient.isMockMode) return mockConfirmTwoFactor(code);
+  if (isMock("auth")) return mockConfirmTwoFactor(code);
   const { recoveryCodes } = await apiClient.post<{ recoveryCodes: string[] }>("/api/auth/2fa/confirm", { code });
   return recoveryCodes;
 }
@@ -381,13 +382,13 @@ export async function confirmTwoFactor(code: string): Promise<string[]> {
 // to strip the protection 2FA exists to provide. Platform staff cannot disable
 // it at all (TWO_FACTOR_MANDATORY).
 export async function disableTwoFactor(code: string): Promise<void> {
-  if (apiClient.isMockMode) return mockDisableTwoFactor(code);
+  if (isMock("auth")) return mockDisableTwoFactor(code);
   await apiClient.post("/api/auth/2fa/disable", { code });
 }
 
 // Requires a current TOTP code, and invalidates every previous code.
 export async function regenerateRecoveryCodes(code: string): Promise<string[]> {
-  if (apiClient.isMockMode) return mockRegenerateRecoveryCodes(code);
+  if (isMock("auth")) return mockRegenerateRecoveryCodes(code);
   const { recoveryCodes } = await apiClient.post<{ recoveryCodes: string[] }>("/api/auth/2fa/recovery-codes/regenerate", { code });
   return recoveryCodes;
 }
@@ -398,7 +399,7 @@ export async function regenerateRecoveryCodes(code: string): Promise<string[]> {
 // goes to real trouble to keep the timing equal too. Nothing here may reveal
 // which it was — no "no account found", ever.
 export async function forgotPassword(email: string): Promise<void> {
-  if (apiClient.isMockMode) {
+  if (isMock("auth")) {
     mockResetCodes.set(email.trim().toLowerCase(), MOCK_RESET_CODE);
     return;
   }
@@ -412,7 +413,7 @@ export interface ResetPasswordInput {
 }
 
 export async function resetPassword(input: ResetPasswordInput): Promise<void> {
-  if (apiClient.isMockMode) return mockResetPassword(input);
+  if (isMock("auth")) return mockResetPassword(input);
   await apiClient.post("/api/auth/reset-password", input);
 }
 
@@ -443,14 +444,19 @@ export interface ChangePasswordInput {
 }
 
 export async function changePassword(input: ChangePasswordInput, email: string): Promise<void> {
-  if (apiClient.isMockMode) return mockChangePassword(input, email);
+  if (isMock("auth")) return mockChangePassword(input, email);
   await apiClient.post("/api/auth/change-password", input, { ...SETS_SESSION_COOKIE, ...ANSWERS_WITH_401 });
 }
 
+// Matches RegisterRequest exactly — the backend rejects unknown fields, so
+// nothing extra (no combined `name`) may be sent.
 export interface RegisterInput {
-  name: string;
+  firstName: string;
+  lastName: string;
   email: string;
   phone: string;
+  password: string;
+  // Two-letter ISO code.
   country: string;
   currency: Currency;
 }
@@ -463,9 +469,9 @@ export interface RegisterInput {
 // buyer type (kycService's local/diaspora split) is driven by the country
 // entered here, not chosen again later.
 export async function register(input: RegisterInput): Promise<AuthUser> {
-  if (apiClient.isMockMode) {
+  if (isMock("auth")) {
     return {
-      name: input.name || "New Buyer",
+      name: `${input.firstName} ${input.lastName}`.trim() || "New Buyer",
       email: input.email,
       phone: input.phone,
       country: input.country,
@@ -501,7 +507,7 @@ export type RestoreOutcome =
   | { kind: "config_problem"; problem: "origin_not_allowed" | "unreachable" };
 
 export async function restoreSession(): Promise<RestoreOutcome> {
-  if (apiClient.isMockMode) return { kind: "mock" };
+  if (isMock("auth")) return { kind: "mock" };
   const outcome = await refreshSession(null);
   switch (outcome.kind) {
     // A refresh with no user (a backend older than cf8983e returns only

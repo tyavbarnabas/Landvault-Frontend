@@ -4,6 +4,9 @@ export interface UseFetchResult<T> {
   data: T | null;
   loading: boolean;
   error: boolean;
+  /** The error itself, so a screen can say WHAT failed — which request, which
+   * status, which backend code — instead of a generic message. */
+  errorValue: unknown;
   refetch: () => void;
   /** Escape hatch for a mutation that already knows the new server-confirmed
    * state (e.g. a payment verification response) and wants to reflect it
@@ -31,6 +34,7 @@ export function useFetch<T>(fetcher: (signal: AbortSignal) => Promise<T>, deps: 
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [errorValue, setErrorValue] = useState<unknown>(null);
   const [reloadToken, setReloadToken] = useState(0);
   // Ref so a fetcher recreated every render (an inline arrow function, the
   // overwhelmingly common case at call sites) doesn't retrigger the effect —
@@ -43,9 +47,10 @@ export function useFetch<T>(fetcher: (signal: AbortSignal) => Promise<T>, deps: 
     const controller = new AbortController();
     setLoading(true);
     setError(false);
+    setErrorValue(null);
     fetcherRef.current(controller.signal)
       .then((d) => { if (!cancelled) setData(d); })
-      .catch((err) => { if (!cancelled && !isAbortError(err)) setError(true); })
+      .catch((err) => { if (!cancelled && !isAbortError(err)) { setError(true); setErrorValue(err); } })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; controller.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -53,7 +58,7 @@ export function useFetch<T>(fetcher: (signal: AbortSignal) => Promise<T>, deps: 
 
   const refetch = useCallback(() => setReloadToken((t) => t + 1), []);
 
-  return { data, loading, error, refetch, setData };
+  return { data, loading, error, errorValue, refetch, setData };
 }
 
 // The polling counterpart — ResaleTransferDetail / UpgradeRequestDetail's

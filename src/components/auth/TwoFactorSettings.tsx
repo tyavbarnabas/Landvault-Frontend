@@ -11,10 +11,10 @@
 
 import { useState } from "react";
 import { useApp } from "../../contexts/AppContext";
+import { isLive } from "../../lib/backends";
 import {
   MOCK_DEMO_CODES, disableTwoFactor, errorCodeOf, isPlatformStaff, regenerateRecoveryCodes,
 } from "../../services/authService";
-import { apiClient } from "../../lib/apiClient";
 import TwoFactorSetup from "./TwoFactorSetup";
 import RecoveryCodes from "./RecoveryCodes";
 
@@ -162,7 +162,7 @@ export default function TwoFactorSettings() {
               Cancel
             </button>
           </div>
-          {apiClient.isMockMode && (
+          {!isLive("auth") && (
             <p className="text-xs text-[var(--muted-foreground)]">Demo mode: the authenticator code is {MOCK_DEMO_CODES.totp}.</p>
           )}
         </form>

@@ -14,11 +14,11 @@
 // open, and goes away with it.
 
 import { useEffect, useState } from "react";
+import { isLive } from "../../lib/backends";
 import {
   MOCK_DEMO_CODES, confirmTwoFactor, errorCodeOf, setupTwoFactor,
   type TwoFactorSetup as Enrolment,
 } from "../../services/authService";
-import { apiClient } from "../../lib/apiClient";
 import RecoveryCodes from "./RecoveryCodes";
 
 type Stage = "loading" | "scan" | "confirm" | "codes" | "failed";
@@ -145,7 +145,7 @@ export default function TwoFactorSetup({ onEnabled, onCancel }: { onEnabled: () 
             </button>
           )}
         </div>
-        {apiClient.isMockMode && (
+        {!isLive("auth") && (
           <p className="text-xs text-[var(--muted-foreground)]">Demo mode: enter {MOCK_DEMO_CODES.totp}.</p>
         )}
       </form>

@@ -1,7 +1,8 @@
 // SA-1.5 — tenant directory with health signals, searchable and filterable.
 import { useState, useEffect } from "react";
+import LoadError from "../../../components/LoadError";
 import { Link, useSearchParams } from "react-router-dom";
-import { fetchTenants, tenantDisplayName, type Tenant, type VerificationState, type TenantPlan } from "../../../services/tenantsService";
+import { fetchTenants, type TenantSummary, type VerificationState, type TenantPlan } from "../../../services/tenantsService";
 import StatusBadge, { verificationStateBadge } from "../../../components/StatusBadge";
 import type { NigerianState } from "../../../data/nigerianStates";
 
@@ -12,10 +13,11 @@ export default function TenantDirectory() {
   const statusParam = searchParams.get("status");
   const initialVerificationFilter: VerificationState | "all" = VALID_VERIFICATION_STATES.includes(statusParam as VerificationState) ? (statusParam as VerificationState) : "all";
 
-  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [tenants, setTenants] = useState<TenantSummary[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [query, setQuery] = useState("");
   const [verificationFilter, setVerificationFilter] = useState<VerificationState | "all">(initialVerificationFilter);
@@ -33,8 +35,10 @@ export default function TenantDirectory() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchTenants(filters).then((page) => {
-      if (cancelled) return;
+    setLoadError(null);
+    // A failure says what failed, instead of leaving "Loading…" up forever.
+    fetchTenants(filters).catch((err) => { if (!cancelled) { setLoadError(err); setLoading(false); } return null; }).then((page) => {
+      if (cancelled || !page) return;
       setTenants(page.items);
       setCursor(page.cursor);
       setHasMore(page.hasMore);
@@ -48,7 +52,7 @@ export default function TenantDirectory() {
     let cancelled = false;
     fetchTenants({}, { limit: 10_000 }).then((page) => {
       if (cancelled) return;
-      setAllStates(Array.from(new Set(page.items.flatMap((t) => t.identity.statesOfOperation))).sort());
+      setAllStates(Array.from(new Set(page.items.flatMap((t) => t.statesOfOperation))).sort());
     });
     return () => { cancelled = true; };
   }, []);
@@ -63,6 +67,7 @@ export default function TenantDirectory() {
   };
 
   if (loading) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Loading tenants…</div>;
+  if (loadError) return <LoadError error={loadError} what="the tenant directory" onRetry={() => window.location.reload()} />;
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -113,7 +118,6 @@ export default function TenantDirectory() {
 
       <div className="space-y-3">
         {tenants.map((t) => {
-          const estateCount = t.branches.reduce((s, b) => s + b.estateCount, 0);
           const verBadge = verificationStateBadge(t.verificationState);
           return (
             <Link
@@ -123,8 +127,8 @@ export default function TenantDirectory() {
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <div className="font-semibold text-[var(--foreground)] mb-1">{tenantDisplayName(t)}</div>
-                  <div className="text-xs text-[var(--muted-foreground)]">{t.primaryContact.fullName} · {t.primaryContact.workEmail}</div>
+                  <div className="font-semibold text-[var(--foreground)] mb-1">{t.displayName}</div>
+                  <div className="text-xs text-[var(--muted-foreground)]">{[t.primaryContactName, t.primaryContactEmail].filter(Boolean).join(" · ")}</div>
                 </div>
                 <StatusBadge label={verBadge.label} variant={verBadge.variant} />
               </div>
@@ -132,11 +136,9 @@ export default function TenantDirectory() {
               <div className="flex flex-wrap gap-4 mt-4 text-xs text-[var(--muted-foreground)]">
                 <span className="capitalize font-medium text-[var(--foreground)]">{t.plan} plan</span>
                 <span>·</span>
-                <span>{t.identity.statesOfOperation.join(", ") || "No states listed"}</span>
+                <span>{t.statesOfOperation.join(", ") || "No states listed"}</span>
                 <span>·</span>
-                <span>{t.branches.length} {t.branches.length === 1 ? "branch" : "branches"}</span>
-                <span>·</span>
-                <span>{estateCount} {estateCount === 1 ? "estate" : "estates"}</span>
+                <span>{t.branchCount} {t.branchCount === 1 ? "branch" : "branches"}</span>
                 <span>·</span>
                 <span className="font-mono-data">Submitted {t.createdDate}</span>
                 {t.status === "suspended" && (

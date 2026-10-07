@@ -30,6 +30,7 @@
 
 import { formatAmount, type OwnedPlot } from "../data/mockData";
 import { apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import { fetchOwnedPlots, urgencyRank } from "./portfolioService";
 import { fetchMyUpgradeRequests } from "./upgradeService";
 import { fetchDocuments } from "./documentsService";
@@ -102,7 +103,7 @@ export interface FetchAttentionParams {
 export async function fetchAttentionItems(params: FetchAttentionParams): Promise<AttentionItem[]> {
   const { wishlist, documentsSince, dueWithinDays = PAYMENT_DUE_WINDOW_DAYS } = params;
 
-  if (!apiClient.isMockMode) {
+  if (!isMock("attention")) {
     const query = new URLSearchParams({ dueWithinDays: String(dueWithinDays) });
     if (documentsSince) query.set("since", documentsSince);
     return apiClient.get<AttentionItem[]>(`/api/me/attention?${query}`);

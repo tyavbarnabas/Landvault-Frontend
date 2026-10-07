@@ -9,6 +9,9 @@ import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom"
 import { fetchListingById, type Listing } from "../../services/marketplaceService";
 import { fetchPlotsForListing, CANVAS_PLOT_FETCH_LIMIT, type ListingPlot } from "../../services/marketplacePlotsService";
 import PlotCanvas from "../../components/PlotCanvas";
+import LivePlotPicker from "../../components/marketplace/LivePlotPicker";
+import LoadError from "../../components/LoadError";
+import { isLive } from "../../lib/backends";
 import PlotDetailPanel from "../../components/marketplace/PlotDetailPanel";
 import EnquiryPanel from "../../components/marketplace/EnquiryPanel";
 
@@ -20,6 +23,7 @@ export default function MarketplacePlotSelection() {
   const [listing, setListing] = useState<Listing | undefined>();
   const [plots, setPlots] = useState<ListingPlot[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [enquiryOpen, setEnquiryOpen] = useState(false);
 
   const sizeParam = searchParams.get("size");
@@ -30,7 +34,14 @@ export default function MarketplacePlotSelection() {
   useEffect(() => {
     if (!estateId) return;
     setLoading(true);
-    Promise.all([fetchListingById(estateId), fetchPlotsForListing(estateId, { limit: CANVAS_PLOT_FETCH_LIMIT })]).then(([l, plotsPage]) => {
+    setLoadError(null);
+    Promise.all([fetchListingById(estateId), fetchPlotsForListing(estateId, { limit: CANVAS_PLOT_FETCH_LIMIT })]).catch((err) => {
+      setLoadError(err);
+      setLoading(false);
+      return null;
+    }).then((result) => {
+      if (!result) return;
+      const [l, plotsPage] = result;
       setListing(l);
       setPlots(plotsPage.items);
       setLoading(false);
@@ -49,6 +60,7 @@ export default function MarketplacePlotSelection() {
   }, [searchParams, selectedPlotId]);
 
   if (loading) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Loading plots…</div>;
+  if (loadError) return <LoadError error={loadError} what="this estate's plots" />;
   if (!listing) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Estate not found.</div>;
 
   const setSize = (sqm: number) => setSearchParams((prev) => { prev.set("size", String(sqm)); prev.delete("plot"); return prev; });
@@ -72,6 +84,17 @@ export default function MarketplacePlotSelection() {
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
+          {isLive("marketplacePlots") ? (
+            // The backend has a map, not a grid: choose from the map's plots.
+            <LivePlotPicker
+              listing={listing}
+              plots={plots}
+              selectedSizeSqm={selectedSize}
+              onSelectSizeSqm={setSize}
+              selectedPlotId={selectedPlotId ?? undefined}
+              onSelectPlot={setPlot}
+            />
+          ) : (
           <PlotCanvas
             estateId={listing.id}
             plots={plots}
@@ -83,6 +106,7 @@ export default function MarketplacePlotSelection() {
             onSelectPlot={setPlot}
             mode="select"
           />
+          )}
         </div>
 
         <div>

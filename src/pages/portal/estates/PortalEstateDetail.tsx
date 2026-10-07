@@ -1,4 +1,5 @@
 import { useState } from "react";
+import LoadError from "../../../components/LoadError";
 import { useParams, Link } from "react-router-dom";
 import { useFetch } from "../../../lib/useFetch";
 import { formatAmount } from "../../../data/mockData";
@@ -40,6 +41,7 @@ export default function PortalEstateDetail() {
   // Only the first load blanks the page — a refetch after adding a boundary
   // keeps its result on screen.
   if (loaded.loading && !loaded.data) return <div className="p-8 text-sm text-[var(--muted-foreground)]">Loading estate…</div>;
+  if (loaded.error) return <LoadError error={loaded.errorValue} what="this estate" onRetry={loaded.refetch} />;
 
   const estate = loaded.data?.estate;
   if (!estate) {

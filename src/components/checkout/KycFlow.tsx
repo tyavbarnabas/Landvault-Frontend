@@ -6,7 +6,8 @@
 
 import { useState } from "react";
 import { useApp } from "../../contexts/AppContext";
-import { submitKyc, type KycRecord, type SubmitKycInput } from "../../services/kycService";
+import { fetchKycStatus, submitKyc, type KycRecord, type SubmitKycInput } from "../../services/kycService";
+import { ApiError } from "../../lib/apiClient";
 import FileUpload from "../onboarding/FileUpload";
 
 interface KycFlowProps {
@@ -14,11 +15,18 @@ interface KycFlowProps {
   onApproved: (record: KycRecord) => void;
 }
 
-type Step = "form" | "reviewing" | "rejected";
+// "waiting": submitted and in a person's queue. The real backend reviews
+// manually, so a submission comes back `submitted`, not approved — that is
+// not a rejection and must not read like one.
+type Step = "form" | "reviewing" | "waiting" | "rejected";
+
+const IN_REVIEW = ["submitted", "under_review"];
 
 export default function KycFlow({ record, onApproved }: KycFlowProps) {
   const { user } = useApp();
-  const [step, setStep] = useState<Step>("form");
+  const [step, setStep] = useState<Step>(IN_REVIEW.includes(record.status) ? "waiting" : record.status === "rejected" ? "rejected" : "form");
+  const [error, setError] = useState("");
+  const [checking, setChecking] = useState(false);
   const [ninNumber, setNinNumber] = useState("");
   const [ninFile, setNinFile] = useState<File | null>(null);
   const [passportFile, setPassportFile] = useState<File | null>(null);
@@ -34,12 +42,44 @@ export default function KycFlow({ record, onApproved }: KycFlowProps) {
     e.preventDefault();
     if (!canSubmit) return;
     setStep("reviewing");
+    setError("");
     const input: SubmitKycInput = { ninNumber, ninFile, passportFile, proofOfAddressFile: addressFile };
-    const result = await submitKyc(user, input);
-    setLatest(result);
-    if (result.status === "approved") onApproved(result);
-    else setStep("rejected");
+    try {
+      const result = await submitKyc(user, input);
+      setLatest(result);
+      if (result.status === "approved") onApproved(result);
+      else setStep(IN_REVIEW.includes(result.status) ? "waiting" : "rejected");
+    } catch (err) {
+      setError(err instanceof ApiError && err.message ? err.message : "Your documents couldn't be submitted. Please try again.");
+      setStep("form");
+    }
   };
+
+  const checkAgain = async () => {
+    setChecking(true);
+    try {
+      const result = await fetchKycStatus(user);
+      setLatest(result);
+      if (result.status === "approved") onApproved(result);
+      else if (result.status === "rejected") setStep("rejected");
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  if (step === "waiting") {
+    return (
+      <div className="text-center py-8" role="status">
+        <div className="font-medium text-sm mb-1">Your documents are with our verification team</div>
+        <p className="text-xs text-[var(--muted-foreground)] mb-5">
+          You can reserve a plot as soon as they're approved. Your plot hold hasn't started — nothing is held while you wait.
+        </p>
+        <button onClick={checkAgain} disabled={checking} className="px-4 py-2 border border-[var(--border)] rounded-md text-sm text-[var(--foreground)] hover:bg-[var(--muted)] disabled:opacity-60">
+          {checking ? "Checking…" : "Check again"}
+        </button>
+      </div>
+    );
+  }
 
   if (step === "reviewing") {
     return (
@@ -98,6 +138,7 @@ export default function KycFlow({ record, onApproved }: KycFlowProps) {
           </>
         )}
 
+        {error && <p className="text-sm text-red-700" role="alert">{error}</p>}
         <button type="submit" disabled={!canSubmit} className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium disabled:opacity-40 hover:opacity-90 transition-opacity">
           Submit &amp; continue
         </button>

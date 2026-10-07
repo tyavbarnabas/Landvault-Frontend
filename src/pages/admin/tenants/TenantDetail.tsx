@@ -1,7 +1,8 @@
 // SA-1.2 verify (full verification-state machine + audit trail), SA-1.3 plan
 // & entitlements, SA-1.4 suspend/reactivate, SA-1.6 guarded support access.
 import { useState, useEffect, useRef } from "react";
-import { useParams, Link } from "react-router-dom";
+import LoadError from "../../../components/LoadError";
+import { useParams, Link, useLocation } from "react-router-dom";
 import { useApp } from "../../../contexts/AppContext";
 import {
   fetchTenantById, updateTenantPlan, setTenantStatus,
@@ -28,10 +29,14 @@ const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
 
 export default function TenantDetail() {
   const { id } = useParams<{ id: string }>();
+  // Set by the onboarding wizard when the tenant was created but its
+  // submission was refused.
+  const submitProblem = (useLocation().state as { submitProblem?: string } | null)?.submitProblem;
   const { user } = useApp();
   const [tenant, setTenant] = useState<Tenant | undefined>();
   const [grants, setGrants] = useState<SupportAccessGrant[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
 
   const [plan, setPlan] = useState<TenantPlan>("starter");
@@ -47,18 +52,24 @@ export default function TenantDetail() {
 
   const load = async () => {
     if (!id) return;
-    let t = await fetchTenantById(id);
-    if (t?.verificationState === "documents_submitted") t = await beginReview(id);
-    const g = await fetchSupportAccessGrants(id);
-    setTenant(t);
-    setGrants(g);
-    if (t) { setPlan(t.plan); setEntitlements(t.entitlements); }
-    setLoading(false);
+    try {
+      let t = await fetchTenantById(id);
+      if (t?.verificationState === "documents_submitted") t = await beginReview(id);
+      const g = await fetchSupportAccessGrants(id);
+      setTenant(t);
+      setGrants(g);
+      if (t) { setPlan(t.plan); setEntitlements(t.entitlements); }
+    } catch (err) {
+      setLoadError(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
 
   if (loading) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Loading tenant…</div>;
+  if (loadError) return <LoadError error={loadError} what="this tenant" onRetry={() => window.location.reload()} />;
   if (!tenant || !id) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Tenant not found.</div>;
 
   const estateCount = tenant.branches.reduce((s, b) => s + b.estateCount, 0);
@@ -107,11 +118,19 @@ export default function TenantDetail() {
     <div className="p-6 max-w-4xl mx-auto">
       <Link to="/admin/tenants" className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]">← Tenants</Link>
 
+      {submitProblem && (
+        <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900" role="status">
+          The tenant was created and its Executive Director invited, but its documents weren't submitted for verification: {submitProblem}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mt-2 mb-6">
         <div>
           <h1 className="font-display text-3xl text-[var(--foreground)] mb-1">{tenantDisplayName(tenant)}</h1>
-          <p className="text-sm text-[var(--muted-foreground)]">{tenant.primaryContact.fullName} ({tenant.primaryContact.roleTitle}) · {tenant.primaryContact.workEmail}</p>
+          <p className="text-sm text-[var(--muted-foreground)]">{tenant.primaryContact
+            ? `${tenant.primaryContact.fullName} (${tenant.primaryContact.roleTitle}) · ${tenant.primaryContact.workEmail}`
+            : "No primary contact on record"}</p>
         </div>
         <div className="flex flex-col items-end gap-1.5">
           <StatusBadge label={verBadge.label} variant={verBadge.variant} />

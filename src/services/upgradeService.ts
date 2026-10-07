@@ -15,6 +15,7 @@
 // Finance-verification steps are simulated delays, not a second account.
 
 import { apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import type { Currency, Document, OwnedPlot, PlotAccountStatus } from "../data/mockData";
 import { addDocuments, voidDocument, fetchDocumentsByPlotId } from "./documentsService";
 import { fetchOwnedPlotById, updateOwnedPlotStatus, addOwnedPlot } from "./portfolioService";
@@ -185,7 +186,7 @@ export async function requestUpgrade(input: RequestUpgradeInput): Promise<Upgrad
   const eligibility = getUpgradeEligibility(ownedPlot);
   if (!eligibility.eligible) throw new Error(eligibility.reason ?? "This plot isn't eligible for an upgrade.");
 
-  if (!apiClient.isMockMode) {
+  if (!isMock("upgrades")) {
     return apiClient.post<UpgradeRequest>("/api/upgrades", input);
   }
 
@@ -452,7 +453,7 @@ function addMonths(dateStr: string, months: number): string {
 // ─── Reads ────────────────────────────────────────────────────────────────────
 
 export async function fetchUpgradeRequest(id: string): Promise<UpgradeRequest | undefined> {
-  if (!apiClient.isMockMode) {
+  if (!isMock("upgrades")) {
     try { return await apiClient.get<UpgradeRequest>(`/api/upgrades/${id}`); } catch { return undefined; }
   }
   return mockRequests.find((r) => r.id === id);
@@ -462,7 +463,7 @@ export async function fetchUpgradeRequest(id: string): Promise<UpgradeRequest | 
 // and PlotView.tsx can surface an in-flight request on the plot it started
 // from without needing the request id in the URL.
 export async function fetchMyUpgradeRequests(): Promise<UpgradeRequest[]> {
-  if (!apiClient.isMockMode) return apiClient.get<UpgradeRequest[]>("/api/upgrades");
+  if (!isMock("upgrades")) return apiClient.get<UpgradeRequest[]>("/api/upgrades");
   return mockRequests;
 }
 

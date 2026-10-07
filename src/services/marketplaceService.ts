@@ -27,7 +27,8 @@
 // canonical truth — not the same thing wearing different names, and not two
 // unrelated things either.
 
-import { apiClient } from "../lib/apiClient";
+import { apiClient, nullIfNotFound } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import type { NigerianState } from "../data/nigerianStates";
 import { ESTATES, type Estate as MockEstate } from "../data/mockData";
@@ -208,10 +209,118 @@ function publishedListings(): Listing[] {
 
 // ─── Service functions ───────────────────────────────────────────────────────
 
+// ─── The live backend: GET /api/marketplace/estates ─────────────────────────
+//
+// MarketplaceListingDto, mapped onto this app's Listing. Field by field — a
+// cast would compile and read `undefined` for anything the two don't share.
+
+interface ListingTierDto {
+  id: string;
+  sizeSqm: number | null;
+  actualAreaSqm: number | null;
+  label: string | null;
+  price: number;
+  currency: string;
+  pricePerSqm: number | null;
+  availability: TierAvailability;
+  plotsRemaining: number;
+  commitment: unknown;
+}
+
+export interface ListingDto {
+  id: string;
+  name: string;
+  area: string | null;
+  city: string | null;
+  state: string;
+  description: string | null;
+  amenities: string[] | null;
+  imageUrl: string | null;
+  titleType: string | null;
+  lastVerifiedDate: string | null;
+  priceTiers: ListingTierDto[];
+  cornerPremiumPct: number | null;
+  intent: string | null;
+  publishedDate: string | null;
+  seller: { branchName: string | null; companyName: string; office: BranchOffice | null };
+  verified: boolean;
+  fromPrice: number | null;
+  fromPriceCurrency: string | null;
+  plotsRemaining: number;
+  hasMap: boolean;
+  verificationChecks: unknown[] | null;
+  costDisclosure: unknown;
+}
+
+// The raw responses, by estate id — so the cost disclosure (embedded in every
+// listing) is read from what's already loaded instead of fetching per card.
+const listingDtoCache = new Map<string, ListingDto>();
+
+// The backend accepts every plan for every estate (CreateTransactionRequest
+// validates the plan, not per-estate availability), so a live listing offers
+// all three — what the backend actually allows, not an invented restriction.
+const ALL_PLANS: PaymentPlanType[] = ["outright", "installment", "milestone"];
+
+function fromListingDto(dto: ListingDto): Listing {
+  listingDtoCache.set(dto.id, dto);
+  return {
+    id: dto.id,
+    name: dto.name,
+    area: dto.area ?? "",
+    city: dto.city ?? "",
+    state: dto.state as NigerianState,
+    description: dto.description ?? "",
+    amenities: dto.amenities ?? [],
+    imageUrl: dto.imageUrl ?? undefined,
+    titleType: (dto.titleType ?? "Gazette") as TitleType,
+    lastVerifiedDate: dto.lastVerifiedDate ?? "",
+    // A unit-type tier has no size of its own; 0 here is "no size", never a
+    // figure to compute with (see INTEGRATION_TESTING.md, known limits).
+    priceTiers: dto.priceTiers.map((t) => ({
+      id: t.id, sizeSqm: t.sizeSqm ?? 0, actualAreaSqm: t.actualAreaSqm ?? t.sizeSqm ?? 0, price: t.price,
+      availability: t.availability, plotsRemaining: t.plotsRemaining, currency: t.currency,
+    })),
+    cornerPremiumPct: dto.cornerPremiumPct ?? 0,
+    paymentPlans: ALL_PLANS,
+    intent: (dto.intent === "investment" ? "investment" : dto.intent === "both" ? "both" : "development"),
+    publishedDate: dto.publishedDate ?? "",
+    seller: { branchName: dto.seller.branchName, companyName: dto.seller.companyName, office: dto.seller.office },
+    verified: true,
+  };
+}
+
+/** The raw listing — for the cost disclosure, which the backend embeds in it. */
+export async function fetchListingDto(id: string): Promise<ListingDto | null> {
+  const cached = listingDtoCache.get(id);
+  if (cached) return cached;
+  const dto = await nullIfNotFound(apiClient.get<ListingDto>(`/api/marketplace/estates/${id}`));
+  if (dto) listingDtoCache.set(id, dto);
+  return dto;
+}
+
+function liveQuery(filters: ListingFilters, params: PageParams): string {
+  const qp = new URLSearchParams();
+  // The backend's parameter names. `paymentPlan` and `verifiedOnly` have no
+  // backend filter: every listing is verified and accepts every plan.
+  if (filters.query) qp.set("q", filters.query);
+  if (filters.state) qp.set("state", filters.state);
+  if (filters.minPrice !== undefined) qp.set("minPrice", String(filters.minPrice));
+  if (filters.maxPrice !== undefined) qp.set("maxPrice", String(filters.maxPrice));
+  if (filters.minSize !== undefined) qp.set("minSize", String(filters.minSize));
+  if (filters.maxSize !== undefined) qp.set("maxSize", String(filters.maxSize));
+  if (filters.titleType) qp.set("titleType", filters.titleType);
+  if (filters.intent) qp.set("intent", filters.intent);
+  if (filters.sort) qp.set("sort", filters.sort);
+  if (params.limit) qp.set("limit", String(params.limit));
+  if (params.cursor) qp.set("cursor", params.cursor);
+  return qp.toString();
+}
+
 export async function fetchListings(filters: ListingFilters = {}, params: PageParams = {}): Promise<Page<Listing>> {
-  if (!apiClient.isMockMode) {
-    const qp = new URLSearchParams({ ...(filters as Record<string, string>), ...(params as Record<string, string>) });
-    return apiClient.get<Page<Listing>>(`/api/marketplace/listings?${qp}`);
+  if (!isMock("marketplace")) {
+    const page = await apiClient.get<{ items: ListingDto[]; total: number; cursor: string | null; hasMore: boolean }>(
+      `/api/marketplace/estates?${liveQuery(filters, params)}`);
+    return { items: page.items.map(fromListingDto), total: page.total, cursor: page.cursor ?? undefined, hasMore: page.hasMore };
   }
 
   let results = publishedListings();
@@ -241,8 +350,10 @@ export async function fetchListings(filters: ListingFilters = {}, params: PagePa
 }
 
 export async function fetchListingById(id: string): Promise<Listing | undefined> {
-  if (!apiClient.isMockMode) {
-    try { return await apiClient.get<Listing>(`/api/marketplace/listings/${id}`); } catch { return undefined; }
+  if (!isMock("marketplace")) {
+    // Always fresh for a detail view; only a 404 means "not listed".
+    const dto = await nullIfNotFound(apiClient.get<ListingDto>(`/api/marketplace/estates/${id}`));
+    return dto ? fromListingDto(dto) : undefined;
   }
   const estate = ESTATES.find((e) => e.id === id);
   return estate ? (projectListing(estate) ?? undefined) : undefined;
@@ -251,7 +362,14 @@ export async function fetchListingById(id: string): Promise<Listing | undefined>
 // TODO (backend): this should be a PostGIS radius query against the estate's
 // coordinates, not a text match on state — see landvault-public-marketplace.
 export async function fetchSimilarListings(id: string, limit = 3): Promise<Listing[]> {
-  if (!apiClient.isMockMode) return apiClient.get<Listing[]>(`/api/marketplace/listings/${id}/similar`);
+  if (!isMock("marketplace")) {
+    // No /similar on the backend: other listings in the same state, from the
+    // feed itself — a selection, nothing computed.
+    const current = await fetchListingById(id);
+    if (!current) return [];
+    const page = await fetchListings({ state: current.state }, { limit: limit + 1 });
+    return page.items.filter((l) => l.id !== id).slice(0, limit);
+  }
   const current = ESTATES.find((e) => e.id === id);
   if (!current) return [];
   return publishedListings().filter((l) => l.id !== id && l.state === current.state).slice(0, limit);

@@ -917,6 +917,13 @@ export function getPlotBlockLabel(estate: Estate, plot: Plot): { block: string; 
   return { block, plotNumber, label: `Block ${block}, Plot ${plotNumber}` };
 }
 
+// An amount already IN `currency` (e.g. a tier priced in USD by the
+// developer) — no conversion, unlike formatAmount which converts from NGN.
+export function formatInCurrency(amount: number, currency: string = "NGN"): string {
+  const symbols: Record<string, string> = { NGN: "₦", USD: "$", GBP: "£", EUR: "€" };
+  return `${symbols[currency] ?? `${currency} `}${amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+}
+
 export function formatAmount(amount: number, currency: Currency = "NGN"): string {
   const converted = amount * FX_RATES[currency];
   const symbols: Record<Currency, string> = { NGN: "₦", USD: "$", GBP: "£", EUR: "€" };

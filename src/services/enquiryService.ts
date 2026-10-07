@@ -3,6 +3,7 @@
 // full inspection booking. See INTEGRATION.md conventions used elsewhere.
 
 import { apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 
 export type EnquiryContactMethod = "in_app" | "whatsapp" | "phone";
@@ -38,7 +39,7 @@ export interface CreateEnquiryInput {
 let mockEnquiries: Enquiry[] = [];
 
 export async function createEnquiry(input: CreateEnquiryInput): Promise<Enquiry> {
-  if (!apiClient.isMockMode) return apiClient.post<Enquiry>("/api/marketplace/enquiries", input);
+  if (!isMock("enquiries")) return apiClient.post<Enquiry>("/api/marketplace/enquiries", input);
 
   const enquiry: Enquiry = {
     id: `enq-${Date.now()}`,
@@ -55,7 +56,7 @@ export async function createEnquiry(input: CreateEnquiryInput): Promise<Enquiry>
 }
 
 export async function fetchMyEnquiries(params: PageParams = {}): Promise<Page<Enquiry>> {
-  if (apiClient.isMockMode) return paginateMock(mockEnquiries, params);
+  if (isMock("enquiries")) return paginateMock(mockEnquiries, params);
   return apiClient.get<Page<Enquiry>>(`/api/marketplace/enquiries?${new URLSearchParams(params as Record<string, string>)}`);
 }
 

@@ -14,6 +14,7 @@
 // so a hierarchy would promise visibility that doesn't exist.
 
 import { ApiError, apiClient } from "../lib/apiClient";
+import { isMock } from "../lib/backends";
 import type { NigerianState } from "../data/nigerianStates";
 import { fetchTenantByIdSync } from "./tenantsService";
 import type { PortalScope } from "./portalEstatesService";
@@ -118,14 +119,14 @@ function mockRequireCompanyWide(scope: PortalScope): void {
 // Company-wide staff see every branch; branch-scoped staff see only their own.
 // A company with no branches gets an empty list — never an invented "Head Office".
 export async function fetchBranches(scope: PortalScope): Promise<PortalBranch[]> {
-  if (!apiClient.isMockMode) return apiClient.get<PortalBranch[]>("/api/portal/branches");
+  if (!isMock("branches")) return apiClient.get<PortalBranch[]>("/api/portal/branches");
   const all = mockBranchesFor(scope.tenantId);
   return scope.branchId ? all.filter((b) => b.id === scope.branchId) : [...all];
 }
 
 export async function createBranch(input: BranchInput, scope: PortalScope): Promise<PortalBranch> {
   validate(input, true);
-  if (!apiClient.isMockMode) {
+  if (!isMock("branches")) {
     try {
       return await apiClient.post<PortalBranch>("/api/portal/branches", cleaned(input, true));
     } catch (err) {
@@ -150,7 +151,7 @@ export async function createBranch(input: BranchInput, scope: PortalScope): Prom
 
 export async function updateBranch(id: string, input: Partial<BranchInput>, scope: PortalScope): Promise<PortalBranch> {
   validate(input, false);
-  if (!apiClient.isMockMode) {
+  if (!isMock("branches")) {
     try {
       return await apiClient.put<PortalBranch>(`/api/portal/branches/${id}`, cleaned(input, false));
     } catch (err) {
