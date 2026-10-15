@@ -41,6 +41,7 @@ export const SERVICES = {
   auth: { label: "Sign-in & account", status: "live", paths: ["/api/auth"] },
   kyc: { label: "KYC", status: "live", paths: ["/api/kyc", "/api/admin/kyc"] },
   tenants: { label: "Tenants (Super Admin)", status: "live", paths: ["/api/admin/tenants"] },
+  onboardingRequests: { label: "Onboarding requests (public form & queue)", status: "live", paths: ["/api/onboarding-requests", "/api/admin/onboarding-requests"] },
   listingConflicts: { label: "Listing conflicts", status: "live", paths: ["/api/admin/listing-conflicts"] },
   stateOverride: { label: "State overrides", status: "live", paths: ["/api/admin/estates"] },
   portalEstates: { label: "Portal estates & boundary changes", status: "live", paths: ["/api/portal/estates", "/api/admin/boundary-changes"] },

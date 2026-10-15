@@ -28,6 +28,7 @@ export default function Landing() {
           <span className="font-display text-2xl sm:text-3xl text-[var(--foreground)] tracking-tight">HomeTrue</span>
           <div className="flex-1" />
           <Link to="/marketplace" className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors hidden sm:block">Marketplace</Link>
+          <Link to="/list-your-company" className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors hidden sm:block">For developers</Link>
           <Link to="/login" className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">Sign in</Link>
           <Link to="/register" className="text-sm px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:opacity-90 transition-opacity">
             Get started
@@ -212,6 +213,7 @@ export default function Landing() {
       <footer className="border-t border-[var(--border)] py-8">
         <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <span className="font-display text-xl text-[var(--foreground)]">HomeTrue</span>
+          <Link to="/list-your-company" className="text-sm text-[var(--accent)] hover:underline">Are you a developer? List your estates</Link>
           <p className="text-xs text-[var(--muted-foreground)] text-center">
             © 2026 HomeTrue. All plots sold subject to title verification and availability. Prices in NGN; FX conversions are indicative.
           </p>

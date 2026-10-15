@@ -5,6 +5,7 @@ import type { TenantStatus, VerificationState } from "../services/tenantsService
 import type { ConflictStatus } from "../services/listingConflictsService";
 import type { PortalEstateStatus } from "../services/portalEstatesService";
 import type { InvitationStatus, StaffStatus } from "../services/staffService";
+import type { OnboardingRequestStatus } from "../services/onboardingRequestsService";
 import type { BoundaryChangeStatus } from "../services/portalEstatesService";
 import Badge, { type BadgeVariant } from "./ui/Badge";
 import type { PayoutStatus, RefundStatus, SettlementAccountStatus } from "../services/paymentTypes";
@@ -130,4 +131,13 @@ export function refundStatusBadge(status: RefundStatus): { label: string; varian
 // A role the company made itself, or one of HomeTrue's standard roles.
 export function roleKindBadge(custom: boolean): { label: string; variant: BadgeVariant } {
   return custom ? { label: "Your company's", variant: "info" } : { label: "HomeTrue standard", variant: "neutral" };
+}
+
+export function onboardingRequestStatusBadge(status: OnboardingRequestStatus): { label: string; variant: BadgeVariant } {
+  switch (status) {
+    case "new": return { label: "New", variant: "info" };
+    case "contacted": return { label: "Contacted", variant: "warning" };
+    case "converted": return { label: "Converted", variant: "success" };
+    case "declined": return { label: "Declined", variant: "neutral" };
+  }
 }

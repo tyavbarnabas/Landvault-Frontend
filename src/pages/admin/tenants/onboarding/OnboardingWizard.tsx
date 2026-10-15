@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { FormProvider, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { tenantOnboardingSchema, type TenantOnboardingValues, isBeneficialOwner } from "../../../../lib/onboarding/schema";
 import { getOnboardingDefaultValues, STEP_FIELDS, STEP_LABELS } from "./defaultValues";
 import StepProgress from "../../../../components/onboarding/StepProgress";
 import { StepActions } from "./FormField";
-import { createTenantDraft, submitForVerification, type Director, type Regulatory, type TenantDocument, type FinancialSettlement } from "../../../../services/tenantsService";
+import { createTenantDraft, submitForVerification, type CreateTenantDraftInput, type Director, type Regulatory, type TenantDocument, type FinancialSettlement } from "../../../../services/tenantsService";
+import { convertRequest, fetchOnboardingRequest, wizardPrefill } from "../../../../services/onboardingRequestsService";
+import { useApp } from "../../../../contexts/AppContext";
 
 import Step1CompanyIdentity from "./Step1CompanyIdentity";
 import Step2PrimaryContact from "./Step2PrimaryContact";
@@ -27,26 +29,30 @@ function stripFiles(_key: string, value: unknown) {
   return value;
 }
 
-function saveDraft(values: TenantOnboardingValues) {
+// Converting an onboarding request keeps its own draft, so it never
+// overwrites (or resumes) a blank onboarding's.
+const draftKeyFor = (fromRequest: string | null) => (fromRequest ? `${DRAFT_KEY}:${fromRequest}` : DRAFT_KEY);
+
+function saveDraft(values: TenantOnboardingValues, key: string) {
   try {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(values, stripFiles));
+    localStorage.setItem(key, JSON.stringify(values, stripFiles));
   } catch {
     // Best-effort only — private browsing / full storage shouldn't block onboarding.
   }
 }
 
-function loadDraft(): Partial<TenantOnboardingValues> | null {
+function loadDraft(key: string): Partial<TenantOnboardingValues> | null {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY);
+    const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
-function clearDraft() {
+function clearDraft(key: string) {
   try {
-    localStorage.removeItem(DRAFT_KEY);
+    localStorage.removeItem(key);
   } catch {
     // ignore
   }
@@ -56,6 +62,11 @@ const STEPS = [Step1CompanyIdentity, Step2PrimaryContact, Step3ContactPresence, 
 
 export default function OnboardingWizard() {
   const navigate = useNavigate();
+  const { user } = useApp();
+  // Set when converting an onboarding request: /admin/tenants/new?fromRequest=…
+  const fromRequest = useSearchParams()[0].get("fromRequest");
+  const draftKey = draftKeyFor(fromRequest);
+  const [requestCompany, setRequestCompany] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState("");
   const form = useForm<TenantOnboardingValues>({
     resolver: zodResolver(tenantOnboardingSchema),
@@ -71,16 +82,30 @@ export default function OnboardingWizard() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    const draft = loadDraft();
+    const draft = loadDraft(draftKey);
     if (draft) {
       reset({ ...getOnboardingDefaultValues(), ...draft });
       setDraftNotice(true);
     }
+    if (!fromRequest) return;
+    // Only what a first-contact form asks; the rest is the admin's to fill.
+    fetchOnboardingRequest(fromRequest).then((request) => {
+      setRequestCompany(request.companyName);
+      if (draft) return;
+      const p = wizardPrefill(request);
+      const defaults = getOnboardingDefaultValues();
+      reset({
+        ...defaults,
+        registeredName: p.registeredName, rcNumber: p.rcNumber, statesOfOperation: p.statesOfOperation,
+        registeredAddress: { ...defaults.registeredAddress, street: p.registeredAddressStreet },
+        firstName: p.firstName, lastName: p.lastName, roleTitle: p.roleTitle, workEmail: p.workEmail, phone: p.phone,
+      });
+    }).catch((err) => setSubmitError(err instanceof Error ? err.message : "Couldn't load the onboarding request."));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSaveForLater = () => {
-    saveDraft(getValues());
+    saveDraft(getValues(), draftKey);
     setSavedNotice(true);
     setTimeout(() => setSavedNotice(false), 2500);
   };
@@ -114,7 +139,8 @@ export default function OnboardingWizard() {
       await submitForVerificationUnsafe();
     } catch (err) {
       setSubmitting(false);
-      const code = (err as { body?: { code?: string } }).body?.code;
+      // A converted request reports the same codes on OnboardingError.code.
+      const code = (err as { body?: { code?: string } }).body?.code ?? (err as { code?: string }).code;
       if (code === "EMAIL_ALREADY_REGISTERED") {
         // The primary contact becomes the first Executive Director by
         // invitation — which needs an email with no LandVault account yet.
@@ -123,6 +149,8 @@ export default function OnboardingWizard() {
       } else if (code === "RC_NUMBER_ALREADY_REGISTERED") {
         goToStep(0);
         form.setError("rcNumber", { message: "A company with this RC number is already registered on HomeTrue." });
+      } else if (code === "ONBOARDING_REQUEST_CLOSED" || code === "ONBOARDING_REQUEST_NOT_FOUND") {
+        setSubmitError(err instanceof Error ? err.message : "This onboarding request is no longer open.");
       } else {
         setSubmitError("Couldn't create the tenant. Nothing was submitted — please try again.");
       }
@@ -187,7 +215,7 @@ export default function OnboardingWizard() {
     // Plan/entitlements aren't part of this onboarding spec — every new
     // tenant starts on "starter" and the Super Admin adjusts it afterward
     // from the tenant detail page's existing Plan & entitlements section.
-    const tenant = await createTenantDraft({
+    const draftInput: CreateTenantDraftInput = {
       identity: {
         registeredName: v.registeredName,
         tradingName: v.tradingName || undefined,
@@ -201,7 +229,13 @@ export default function OnboardingWizard() {
       primaryContact: { fullName: `${v.firstName} ${v.lastName}`.trim(), roleTitle: v.roleTitle, workEmail: v.workEmail, phone: v.phone, govIdType: v.govIdType, govIdNumber: v.govIdNumber },
       presence: { companyEmail: v.companyEmail, companyPhone: v.companyPhone, website: v.website || undefined, socials: v.socials },
       plan: "starter",
-    });
+    };
+    // From a request, the backend creates the tenant AND closes the request,
+    // all or nothing; otherwise the ordinary create.
+    const tenantId = fromRequest
+      ? (await convertRequest(fromRequest, draftInput, user?.email ?? "")).organizationId!
+      : (await createTenantDraft(draftInput)).id;
+    const tenant = { id: tenantId };
 
     // The tenant now EXISTS (and its first Executive Director has been
     // invited). If the submission step is refused, say exactly that on the
@@ -215,7 +249,7 @@ export default function OnboardingWizard() {
       if (body?.code) submitProblem += ` (${body.code})`;
     }
 
-    clearDraft();
+    clearDraft(draftKey);
     setSubmitting(false);
     navigate(`/admin/tenants/${tenant.id}`, { state: submitProblem ? { submitProblem } : undefined });
   };
@@ -225,6 +259,11 @@ export default function OnboardingWizard() {
 
   return (
     <div className="p-6 max-w-3xl mx-auto pb-16">
+      {fromRequest && (
+        <div className="mb-4 rounded-lg bg-[var(--muted)] p-3 text-xs text-[var(--foreground)]" role="status">
+          Converting {requestCompany ? `${requestCompany}'s` : "an"} onboarding request. What they told us is filled in; check it and complete the rest. Submitting creates the company, invites its first Executive Director and closes the request.
+        </div>
+      )}
       {draftNotice && (
         <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800 flex items-center justify-between">
           <span>Resumed from a saved draft. Files aren't stored in drafts — please re-attach any documents you'd uploaded before.</span>

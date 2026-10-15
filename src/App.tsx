@@ -74,6 +74,9 @@ const ImportPortalPlots = lazy(() => import("./pages/portal/estates/ImportPortal
 const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
 const TenantDirectory = lazy(() => import("./pages/admin/tenants/TenantDirectory"));
 const CreateTenant = lazy(() => import("./pages/admin/tenants/CreateTenant"));
+const OnboardingRequests = lazy(() => import("./pages/admin/onboarding/OnboardingRequests"));
+const OnboardingRequestDetail = lazy(() => import("./pages/admin/onboarding/OnboardingRequests").then((m) => ({ default: m.OnboardingRequestDetail })));
+const ListYourCompany = lazy(() => import("./pages/developers/ListYourCompany"));
 const TenantDetail = lazy(() => import("./pages/admin/tenants/TenantDetail"));
 const ListingConflicts = lazy(() => import("./pages/admin/marketplace/ListingConflicts"));
 
@@ -195,6 +198,7 @@ function AppRoutes() {
       {/* Public */}
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/list-your-company" element={<Suspense fallback={<PageLoading />}><ListYourCompany /></Suspense>} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       {/* Public: the invited person has no account yet. The token rides in
@@ -288,6 +292,8 @@ function AppRoutes() {
       {import.meta.env.DEV && <Route path="/admin/dev/storage" element={<AdminPage><StorageTest /></AdminPage>} />}
       <Route path="/admin/tenants" element={<AdminPage><TenantDirectory /></AdminPage>} />
       <Route path="/admin/tenants/new" element={<AdminPage><CreateTenant /></AdminPage>} />
+      <Route path="/admin/onboarding-requests" element={<AdminPage><PermissionGate anyOf={["admin.tenants.view"]} to="/admin/dashboard"><OnboardingRequests /></PermissionGate></AdminPage>} />
+      <Route path="/admin/onboarding-requests/:id" element={<AdminPage><PermissionGate anyOf={["admin.tenants.view"]} to="/admin/dashboard"><OnboardingRequestDetail /></PermissionGate></AdminPage>} />
       <Route path="/admin/tenants/:id" element={<AdminPage><TenantDetail /></AdminPage>} />
       <Route path="/admin/listing-conflicts" element={<AdminPage><ListingConflicts /></AdminPage>} />
       <Route path="/admin/estate-state-override" element={<AdminPage><StateOverride /></AdminPage>} />
