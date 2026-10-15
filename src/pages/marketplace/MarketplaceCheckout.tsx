@@ -19,7 +19,7 @@ import { fetchPlotById, plotLabel, priceForPlot, type ListingPlot } from "../../
 import { fetchKycStatus, type KycRecord } from "../../services/kycService";
 import { startReservation, releaseReservation, RESERVATION_SECONDS, type Reservation } from "../../services/reservationService";
 import {
-  initiateTransaction, initiatePayment, confirmPayment, runFinanceVerification, paymentsAvailable,
+  initiateTransaction, initiatePayment, confirmPayment, runFinanceVerification,
   paymentMethodsForCountry, type Transaction, type MarketplacePaymentMethod, type VirtualAccountDetails,
 } from "../../services/marketplaceCheckoutService";
 import CountdownTimer from "../../components/checkout/CountdownTimer";
@@ -29,6 +29,9 @@ import PaymentMethodSelector from "../../components/checkout/PaymentMethodSelect
 import VerificationProgress from "../../components/checkout/VerificationProgress";
 import { ApiError } from "../../lib/apiClient";
 import { describeLoadError } from "../../components/LoadError";
+import { isLive } from "../../lib/backends";
+import { formatInCurrency } from "../../data/mockData";
+import PayButton from "../../components/purchases/PayButton";
 
 type Step = "confirm" | "kyc" | "intent" | "plan" | "payment" | "verifying" | "allocated" | "expired";
 
@@ -51,7 +54,9 @@ export default function MarketplaceCheckout() {
   // A reserve/transaction call the backend refused (plot just taken, KYC
   // needed, …): shown in place, never a spinner that never ends.
   const [stepError, setStepError] = useState("");
-  const [released, setReleased] = useState(false);
+  // Live: paying happens on Paystack's page (PayButton), and only outright
+  // purchases in naira can be paid online for now.
+  const live = isLive("checkout");
 
   const { data: listingAndPlot, loading: pageLoading } = useFetch(async () => {
     if (!listingId || !plotId) return { listing: null, plot: null, disclosure: null };
@@ -100,7 +105,9 @@ export default function MarketplaceCheckout() {
   };
 
   const handleExpire = async () => {
-    if (reservation) await releaseReservation(reservation.id);
+    // Once a purchase is recorded the backend ends it itself when the hold
+    // runs out (it becomes `abandoned`); there's nothing to release.
+    if (reservation && !transaction) await releaseReservation(reservation.id).catch(() => {});
     setStep("expired");
   };
 
@@ -178,20 +185,12 @@ export default function MarketplaceCheckout() {
     }
   };
 
-  const releasePlot = async () => {
-    if (!reservation) return;
-    try {
-      await releaseReservation(reservation.id);
-      setReleased(true);
-    } catch (err) {
-      setStepError(refusal(err, "We couldn't release the plot."));
-    }
-  };
 
   const deposit = depositFor(plan, totalPrice);
   // A recorded purchase stops the hold's clock on the backend (the plot stays
   // held while payment is pending), so there's no countdown to show then.
-  const showCountdown = reservation && !(transaction && !paymentsAvailable()) && !["verifying", "allocated", "expired", "confirm", "kyc"].includes(step);
+  // The hold keeps running after the purchase is recorded: pay before it ends.
+  const showCountdown = reservation && !["verifying", "allocated", "expired", "confirm", "kyc"].includes(step);
 
   return (
     <div className="min-h-full bg-[var(--background)] py-8 px-4">
@@ -279,7 +278,7 @@ export default function MarketplaceCheckout() {
             <h2 className="font-semibold mb-2">Payment plan</h2>
             <p className="text-sm text-[var(--muted-foreground)] mb-5">Choose how you'd like to pay for this plot.</p>
             <PaymentPlanSelector
-              availablePlans={listing.paymentPlans}
+              availablePlans={live ? ["outright"] : listing.paymentPlans}
               totalPrice={totalPrice}
               currency={currency}
               plan={plan}
@@ -287,21 +286,12 @@ export default function MarketplaceCheckout() {
               installmentMonths={installmentMonths}
               onInstallmentMonthsChange={setInstallmentMonths}
             />
-            {!paymentsAvailable() && (
-              // Said BEFORE committing: the backend can't take payment yet, and
-              // a recorded purchase holds the plot with no way to cancel online.
-              <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900">
-                Online payment isn't available yet. Continuing records your purchase as <strong>pending payment</strong> and keeps this plot held for you — it can't be cancelled online once recorded. To let the plot go instead, release it now.
-                {released ? (
-                  <div className="mt-2 font-medium" role="status">Released. <Link to="/marketplace" className="underline">Back to marketplace</Link></div>
-                ) : (
-                  <button onClick={releasePlot} className="block mt-2 underline">Release this plot</button>
-                )}
-              </div>
+            {live && (
+              <p className="mt-3 text-xs text-[var(--muted-foreground)]">Online payment is for outright purchases only for now.</p>
             )}
             <div className="flex gap-2 mt-4">
               <button onClick={() => setStep("intent")} className="flex-1 py-2.5 border border-[var(--border)] rounded-md text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]">← Back</button>
-              <button onClick={goToPayment} disabled={loading || released} className="flex-[2] py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-60">{paymentsAvailable() ? "Choose payment method →" : "Record purchase (pending payment) →"}</button>
+              <button onClick={goToPayment} disabled={loading} className="flex-[2] py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-60">{live ? "Continue to payment →" : "Choose payment method →"}</button>
             </div>
           </div>
         )}
@@ -310,24 +300,24 @@ export default function MarketplaceCheckout() {
           <div className="mb-5 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700" role="alert">{stepError}</div>
         )}
 
-        {step === "payment" && transaction && !paymentsAvailable() && (
-          // The backend records the purchase but has no payment step yet. Say
-          // so plainly instead of offering payment methods that can't work.
+        {step === "payment" && transaction && live && (
+          // Paystack's own page takes the money; it sends the buyer back to
+          // /payments/return, which asks the backend what really happened.
           <div className="space-y-4">
-            <h2 className="font-semibold">Purchase recorded — payment not available yet</h2>
+            <h2 className="font-semibold">Pay for your plot</h2>
             <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-4 text-sm space-y-1">
               <div><span className="text-[var(--muted-foreground)]">Reference:</span> <span className="font-mono-data">{transaction.reference}</span></div>
-              <div><span className="text-[var(--muted-foreground)]">Status:</span> Pending payment</div>
-              <div><span className="text-[var(--muted-foreground)]">Amount due now:</span> {formatAmount(transaction.amountDue, currency)}</div>
+              <div><span className="text-[var(--muted-foreground)]">Amount:</span> <span className="font-mono-data">{formatInCurrency(transaction.totalPrice, "NGN")}</span></div>
             </div>
             <p className="text-sm text-[var(--muted-foreground)]">
-              Online payment isn't switched on yet. Your purchase is saved as pending payment, and the plot stays held for you while it is. Keep your reference — you'll pay against it once payment opens.
+              Pay before your hold runs out. Once Paystack confirms your payment, the developer verifies it before allocating the plot to you.
             </p>
-            <button onClick={() => navigate("/marketplace")} className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90">Back to marketplace</button>
+            <PayButton transactionId={transaction.id} label={`Pay ${formatInCurrency(transaction.totalPrice, "NGN")} with Paystack`} />
+            <Link to={`/purchases/${transaction.id}`} className="block text-center text-sm text-[var(--accent)] hover:underline">View this purchase</Link>
           </div>
         )}
 
-        {step === "payment" && transaction && paymentsAvailable() && (
+        {step === "payment" && transaction && !live && (
           <div>
             <h2 className="font-semibold mb-2">Payment</h2>
             <p className="text-sm text-[var(--muted-foreground)] mb-5">Complete your {plan === "outright" ? "full payment" : "deposit"} to secure this plot.</p>
@@ -374,7 +364,7 @@ export default function MarketplaceCheckout() {
           </div>
         )}
 
-        {step === "verifying" && transaction && (
+        {step === "verifying" && transaction && transaction.status !== "abandoned" && (
           <VerificationProgress status={transaction.status} reference={transaction.reference} amountDue={deposit} currency={currency} rejectionReason={transaction.rejectionReason} />
         )}
 

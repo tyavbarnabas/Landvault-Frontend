@@ -25,6 +25,26 @@ body,
   --color-accent-foreground: var(--accent-foreground);
   --color-border: var(--border);
   --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-surface: var(--success-surface);
+  --color-success-border: var(--success-border);
+  --color-success-text: var(--success-text);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-surface: var(--warning-surface);
+  --color-warning-border: var(--warning-border);
+  --color-warning-text: var(--warning-text);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-surface: var(--info-surface);
+  --color-info-border: var(--info-border);
+  --color-info-text: var(--info-text);
+  --color-error: var(--error);
+  --color-error-foreground: var(--error-foreground);
+  --color-error-surface: var(--error-surface);
+  --color-error-border: var(--error-border);
+  --color-error-text: var(--error-text);
   --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 4px);
@@ -47,6 +67,30 @@ body,
   --ring: #0D2B1E;
   --radius: 6px;
 
+  /* Status colours. Per tone: a solid colour + the text that sits on it
+     (dots, the danger button), and a tinted set for messages and pills
+     (surface background, border, text). Used through components/ui/tones.ts. */
+  --success: #059669;
+  --success-foreground: #FFFFFF;
+  --success-surface: #ECFDF5;
+  --success-border: #A7F3D0;
+  --success-text: #065F46;
+  --warning: #D97706;
+  --warning-foreground: #FFFFFF;
+  --warning-surface: #FFFBEB;
+  --warning-border: #FDE68A;
+  --warning-text: #92400E;
+  --info: #2563EB;
+  --info-foreground: #FFFFFF;
+  --info-surface: #EFF6FF;
+  --info-border: #BFDBFE;
+  --info-text: #1E40AF;
+  --error: #B91C1C;
+  --error-foreground: #FFFFFF;
+  --error-surface: #FEF2F2;
+  --error-border: #FCA5A5;
+  --error-text: #B91C1C;
+
   --font-display: "DM Serif Display", Georgia, serif;
   --font-body: "Outfit", system-ui, sans-serif;
   --font-mono: "DM Mono", "Courier New", monospace;
@@ -67,6 +111,27 @@ body,
   --accent-foreground: #0A1A10;
   --border: #1F3527;
   --ring: #4ADE80;
+
+  --success: #34D399;
+  --success-foreground: #0A1A10;
+  --success-surface: #0F2A1E;
+  --success-border: #1F5135;
+  --success-text: #86EFAC;
+  --warning: #F59E0B;
+  --warning-foreground: #0A1A10;
+  --warning-surface: #2A1F0A;
+  --warning-border: #5C4310;
+  --warning-text: #FCD34D;
+  --info: #60A5FA;
+  --info-foreground: #0A1A10;
+  --info-surface: #0F1D33;
+  --info-border: #1E3A66;
+  --info-text: #93C5FD;
+  --error: #EF4444;
+  --error-foreground: #FFFFFF;
+  --error-surface: #2D1214;
+  --error-border: #7F1D1D;
+  --error-text: #FCA5A5;
 }
 
 body {

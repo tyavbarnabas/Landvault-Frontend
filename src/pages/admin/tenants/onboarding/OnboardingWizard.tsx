@@ -119,10 +119,10 @@ export default function OnboardingWizard() {
         // The primary contact becomes the first Executive Director by
         // invitation — which needs an email with no LandVault account yet.
         goToStep(1);
-        form.setError("workEmail", { message: "This email already has a LandVault account. Use the contact's work email — the first Executive Director is invited, and needs an address with no account yet." });
+        form.setError("workEmail", { message: "This email already has a HomeTrue account. Use the contact's work email — the first Executive Director is invited, and needs an address with no account yet." });
       } else if (code === "RC_NUMBER_ALREADY_REGISTERED") {
         goToStep(0);
-        form.setError("rcNumber", { message: "A company with this RC number is already registered on LandVault." });
+        form.setError("rcNumber", { message: "A company with this RC number is already registered on HomeTrue." });
       } else {
         setSubmitError("Couldn't create the tenant. Nothing was submitted — please try again.");
       }

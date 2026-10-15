@@ -13,6 +13,7 @@ import {
   type ListingConflict, type ConflictStatus, type GeoPoint,
 } from "../../../services/listingConflictsService";
 import StatusBadge, { conflictStatusBadge } from "../../../components/StatusBadge";
+import { ListCard } from "../../../components/ui/Card";
 
 const STATUS_OPTIONS: { value: ConflictStatus | "all"; label: string }[] = [
   { value: "all", label: "All statuses" },
@@ -69,7 +70,7 @@ function ConflictCard({ conflict, actor, onUpdated }: { conflict: ListingConflic
   };
 
   return (
-    <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+    <ListCard>
       <div className="flex items-start justify-between gap-4 mb-4">
         <div className="flex items-center gap-2 flex-wrap">
           <StatusBadge label={badge.label} variant={badge.variant} />
@@ -165,7 +166,7 @@ function ConflictCard({ conflict, actor, onUpdated }: { conflict: ListingConflic
           </div>
         </div>
       </div>
-    </div>
+    </ListCard>
   );
 }
 
@@ -215,7 +216,7 @@ export default function ListingConflicts() {
   if (loadError) return <LoadError error={loadError} what="listing conflicts" onRetry={() => window.location.reload()} />;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-6 max-w-5xl mx-auto">
       <div className="mb-6">
         <h1 className="font-display text-3xl text-[var(--foreground)] mb-1">Listing conflicts</h1>
         <p className="text-sm text-[var(--muted-foreground)]">
@@ -239,9 +240,9 @@ export default function ListingConflicts() {
           </span>
         </div>
       ) : (
-        <div className="space-y-4">
+        <ul className="space-y-3">
           {conflicts.map((c) => <ConflictCard key={c.id} conflict={c} actor={actor} onUpdated={handleUpdated} />)}
-        </div>
+        </ul>
       )}
 
       {hasMore && (

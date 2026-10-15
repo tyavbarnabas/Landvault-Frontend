@@ -25,6 +25,8 @@ const NAV_SECTIONS = [
   {
     label: "My account",
     items: [
+      // Real with a backend: what the buyer has reserved and paid for.
+      { path: "/purchases", label: "My purchases", icon: TagIcon, permission: "client.checkout.reserve" },
       { path: "/portfolio", label: "Portfolio", icon: BriefcaseIcon, permission: "client.portfolio.view" },
       { path: "/documents", label: "Vault", icon: FolderIcon, permission: "client.documents.view" },
       { path: "/inspections", label: "Inspections", icon: CalendarIcon, permission: "client.inspections.view" },
@@ -53,6 +55,8 @@ const NAV_SECTIONS = [
       { path: "/portal/estates", label: "Estates", icon: MapIcon, permission: "portal.estates.view" },
       { path: "/portal/staff", label: "Staff", icon: UsersIcon, permission: ["portal.staff.invite", "portal.staff.request"] },
       { path: "/portal/branches", label: "Branches", icon: BriefcaseIcon, permission: "portal.branches.manage" },
+      { path: "/portal/finance", label: "Finance", icon: TagIcon, permission: "portal.payments.verify" },
+      { path: "/portal/payout-account", label: "Payout account", icon: FolderIcon, permission: "portal.settlement.manage" },
     ],
   },
   {
@@ -63,6 +67,9 @@ const NAV_SECTIONS = [
       { path: "/admin/listing-conflicts", label: "Listing conflicts", icon: AlertTriangleIcon, permission: "admin.marketplace.conflicts" },
       { path: "/admin/boundary-changes", label: "Boundary changes", icon: MapIcon, permission: "admin.marketplace.conflicts" },
       { path: "/admin/estate-state-override", label: "State overrides", icon: MapIcon, permission: "admin.marketplace.conflicts" },
+      { path: "/admin/payout-accounts", label: "Payout accounts", icon: FolderIcon, permission: "admin.payouts.manage" },
+      { path: "/admin/payouts", label: "Payouts", icon: TagIcon, permission: "admin.payouts.manage" },
+      { path: "/admin/refunds", label: "Refunds", icon: TagIcon, permission: "admin.payouts.manage" },
     ],
   },
 ]
@@ -309,7 +316,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* Logo */}
         <div className="px-5 py-5 border-b border-white/10">
           <span className="font-display text-xl text-white tracking-tight">
-            LandVault
+            HomeTrue
           </span>
           <span className="block text-[10px] text-white/40 mt-0.5 font-mono-data uppercase tracking-wider">
             {platformStaff ? "Platform Console" : portalStaff ? "Developer Portal" : "Real Estate Platform"}

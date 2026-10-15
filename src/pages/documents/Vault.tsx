@@ -63,11 +63,11 @@ export default function Vault() {
       </div>
 
       {/* Document list */}
-      <div className="space-y-3">
+      <ul className="space-y-3">
         {filtered.map((doc) => (
           <DocumentCard key={doc.id} doc={doc} onVerify={() => setVerifying(doc.id)} />
         ))}
-      </div>
+      </ul>
 
       {hasMore && (
         <button onClick={loadMore} disabled={loadingMore} className="mt-4 w-full py-2.5 border border-[var(--border)] rounded-md text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors disabled:opacity-60">

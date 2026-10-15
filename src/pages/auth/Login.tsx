@@ -244,7 +244,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
       <div className="flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           <Link to="/" className="flex items-center gap-2 mb-10">
-            <span className="font-display text-xl text-[var(--foreground)]">LandVault</span>
+            <span className="font-display text-xl text-[var(--foreground)]">HomeTrue</span>
           </Link>
           {children}
         </div>

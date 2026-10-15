@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { formatAmount, FX_RATES, type OwnedPlot, type Document } from "../../data/mockData";
-import TabBar from "../../components/TabBar";
+import TabBar from "../../components/ui/Tabs";
 import {
   fetchOwnedPlotById, fetchInstallmentSchedule, submitInstallmentPayment, verifyInstallmentPayment, requestRestructure,
   type InstallmentSchedule, type PaymentRecord,
@@ -459,7 +459,7 @@ export default function PlotView() {
               No documents yet. They'll appear here as they're issued.
             </div>
           ) : (
-            docs.map((doc) => <DocumentCard key={doc.id} doc={doc} onVerify={() => setVerifyingDoc(doc)} />)
+            <ul className="space-y-3">{docs.map((doc) => <DocumentCard key={doc.id} doc={doc} onVerify={() => setVerifyingDoc(doc)} />)}</ul>
           )}
         </div>
       )}

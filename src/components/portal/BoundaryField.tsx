@@ -17,7 +17,7 @@ import {
 import EstateBoundaryMap from "../map/EstateBoundaryMap";
 
 
-const TEMPLATE_FILENAME = "landvault-estate-boundary-template.geojson";
+const TEMPLATE_FILENAME = "hometrue-estate-boundary-template.geojson";
 
 export interface BoundaryFieldState {
   polygon: GeoJsonPolygon | null;

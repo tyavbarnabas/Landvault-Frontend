@@ -14,12 +14,12 @@
 
 import { apiClient, nullIfNotFound } from "../lib/apiClient";
 import { isMock } from "../lib/backends";
-import { PaymentsUnavailableError } from "./paymentsUnavailable";
 
-// Live mode: true while the backend has no payment step. Screens read this to
-// stop at "pending payment" rather than offer a payment that can't happen.
-export function paymentsAvailable(): boolean {
-  return isMock("checkout");
+// The three steps below are DEMO MODE's simulation of paying and verifying.
+// Live, paying is Paystack's page (paymentsService.startPayment) and the
+// developer's finance team verifies in the portal — none of these is called.
+function demoOnly(): never {
+  throw new Error("Demo mode only: live payments go through Paystack (paymentsService).");
 }
 import type { Currency, Document, OwnedPlot } from "../data/mockData";
 import { FX_RATES } from "../data/mockData";
@@ -46,7 +46,10 @@ export function paymentMethodsForCountry(country: string): MarketplacePaymentMet
   return country === "NG" ? ["paystack", "monnify", "opay", "titan"] : ["virtual_account", "wire"];
 }
 
-export type TransactionStatus = "pending_payment" | "payment_received" | "awaiting_finance" | "verified" | "rejected";
+// The backend never writes `payment_received`: a paid purchase goes straight
+// from pending_payment to awaiting_finance. Kept because the enum has it; never
+// relied on. `abandoned`: the reservation ended before payment arrived.
+export type TransactionStatus = "pending_payment" | "payment_received" | "awaiting_finance" | "verified" | "rejected" | "abandoned";
 
 export interface Transaction {
   id: string;
@@ -103,6 +106,11 @@ export interface InitiateTransactionInput {
 }
 
 const mockTransactions = new Map<string, Transaction>();
+
+// For paymentsService's mock mode, which walks the same purchases.
+export function mockTransactionStore(): Map<string, Transaction> {
+  return mockTransactions;
+}
 
 // TransactionDto. The backend recomputes the price from the plot as it was
 // held — a price sent by the client is ignored — so basePrice, the corner
@@ -178,13 +186,12 @@ export interface VirtualAccountDetails {
 // Selecting a method — for a transfer-based method (diaspora), returns the
 // account/wire details to show while we wait for the transfer to land.
 export async function initiatePayment(transactionId: string, method: MarketplacePaymentMethod): Promise<{ requiresTransfer: boolean; account?: VirtualAccountDetails }> {
-  // No payment route on the backend — said, never simulated.
-  if (!isMock("checkout")) throw new PaymentsUnavailableError();
+  if (!isMock("checkout")) demoOnly();
 
   const txn = mockTransactions.get(transactionId);
   if (txn) txn.paymentMethod = method;
   if (method === "virtual_account" || method === "wire") {
-    return { requiresTransfer: true, account: { bankName: "Providus Bank", accountNumber: "5901 2847 3301", accountName: `LandVault — ${transactionId} Escrow` } };
+    return { requiresTransfer: true, account: { bankName: "Providus Bank", accountNumber: "5901 2847 3301", accountName: `HomeTrue — ${transactionId} Escrow` } };
   }
   return { requiresTransfer: false };
 }
@@ -194,7 +201,7 @@ export async function initiatePayment(transactionId: string, method: Marketplace
 // portfolio record so the buyer can close the tab and find it again, then
 // waits for runFinanceVerification below.
 export async function confirmPayment(transactionId: string): Promise<Transaction> {
-  if (!isMock("checkout")) throw new PaymentsUnavailableError();
+  if (!isMock("checkout")) demoOnly();
 
   const txn = mockTransactions.get(transactionId);
   if (!txn) throw new Error("Transaction not found.");
@@ -272,7 +279,7 @@ function buildDocumentsForTransaction(txn: Transaction): Document[] {
 // confirmPayment) — the "rejected" status and its UI exist and are typed for
 // a real backend, exercised the way KYC's reject path is (see kycService.ts).
 export async function runFinanceVerification(transactionId: string): Promise<Transaction> {
-  if (!isMock("checkout")) throw new PaymentsUnavailableError();
+  if (!isMock("checkout")) demoOnly();
 
   const txn = mockTransactions.get(transactionId);
   if (!txn) throw new Error("Transaction not found.");

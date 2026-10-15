@@ -29,6 +29,8 @@ import { Link } from "react-router-dom";
 import { useApp } from "../contexts/AppContext";
 import { formatAmount } from "../data/mockData";
 import { useFetch } from "../lib/useFetch";
+import { BACKEND_CONFIGURED, isLive, type ServiceKey } from "../lib/backends";
+import PurchaseList from "../components/purchases/PurchaseList";
 import { fetchOwnedPlots } from "../services/portfolioService";
 import { fetchDocuments } from "../services/documentsService";
 import { fetchAttentionItems } from "../services/attentionService";
@@ -70,12 +72,22 @@ export default function Dashboard() {
     };
   }, []);
 
-  const attention = useFetch(() => fetchAttentionItems({ wishlist, documentsSince: lastVisitAt }), [wishlist, lastVisitAt]);
+  // With a backend, a section shows only if ITS backend exists. Demo items
+  // beside real purchases ("₦3.2M overdue", receipts for plots never bought)
+  // would read as the buyer's own. Demo mode shows everything, as before.
+  const show = (key: ServiceKey) => !BACKEND_CONFIGURED || isLive(key);
+  const showAttention = show("attention");
+  const showDocuments = show("documents");
+  const showPortfolio = show("portfolio");
+
+  const attention = useFetch(
+    () => (showAttention ? fetchAttentionItems({ wishlist, documentsSince: lastVisitAt }) : Promise.resolve([])),
+    [wishlist, lastVisitAt, showAttention]);
 
   const overview = useFetch(async () => {
     const [plotsPage, documentsPage] = await Promise.all([
-      fetchOwnedPlots({ limit: PORTFOLIO_SCAN_LIMIT }),
-      fetchDocuments({ limit: 3 }), // already newest-first
+      showPortfolio ? fetchOwnedPlots({ limit: PORTFOLIO_SCAN_LIMIT }) : Promise.resolve({ items: [] }),
+      showDocuments ? fetchDocuments({ limit: 3 }) : Promise.resolve({ items: [] }), // already newest-first
     ]);
     return { plots: plotsPage.items, documents: documentsPage.items };
   });
@@ -89,6 +101,7 @@ export default function Dashboard() {
     .sort((a, b) => urgencyRank(a) - urgencyRank(b))
     .slice(0, 3);
 
+  const live = isLive("checkout");
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <div className="mb-8">
@@ -100,36 +113,51 @@ export default function Dashboard() {
         </p>
       </div>
 
-      <AttentionStrip items={attention.data ?? []} loading={attention.loading} error={attention.error} />
+      {showAttention && <AttentionStrip items={attention.data ?? []} loading={attention.loading} error={attention.error} />}
 
-      {/* One thin line, not a stat grid — the numbers themselves belong to
-          the portfolio, which owns the record. Grouped per currency actually
-          held; never summed across currencies. */}
-      <div className="mb-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-y border-[var(--border)] py-3">
-        {overview.loading ? (
-          <span className="text-sm text-[var(--muted-foreground)]">Loading your portfolio…</span>
-        ) : byCurrency.size === 0 ? (
-          <>
-            <span className="text-sm text-[var(--muted-foreground)]">You don't own any plots yet.</span>
-            <Link to="/marketplace" className="text-xs font-semibold text-[var(--accent)] hover:underline">Browse the marketplace →</Link>
-          </>
-        ) : (
-          <>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-              {Array.from(byCurrency.entries()).map(([cur, g]) => (
-                <span key={cur} className="text-sm text-[var(--foreground)]">
-                  {g.count} plot{g.count === 1 ? "" : "s"} · <span className="font-mono-data">{formatAmount(g.totalPaid, cur)}</span> paid of <span className="font-mono-data">{formatAmount(g.totalValue, cur)}</span>
-                </span>
-              ))}
-            </div>
-            <Link to="/portfolio" className="text-xs font-semibold text-[var(--accent)] hover:underline">View your portfolio →</Link>
-          </>
-        )}
-      </div>
+      {live ? (
+        // With a backend: the buyer's REAL purchases. The portfolio and its
+        // payment schedule have no backend yet, and demo plots beside real
+        // purchases would read as plots the buyer owns.
+        <section className="mb-8" aria-labelledby="purchases-heading">
+          <div className="flex items-center justify-between mb-3">
+            <h2 id="purchases-heading" className="font-semibold text-sm">Your purchases</h2>
+            <Link to="/purchases" className="text-xs text-[var(--accent)] hover:underline">All purchases</Link>
+          </div>
+          <PurchaseList pageSize={5} showMore="link" density="compact" />
+        </section>
+      ) : (
+        // One thin line, not a stat grid — the numbers themselves belong to
+        // the portfolio, which owns the record. Grouped per currency actually
+        // held; never summed across currencies.
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-y border-[var(--border)] py-3">
+          {overview.loading ? (
+            <span className="text-sm text-[var(--muted-foreground)]">Loading your portfolio…</span>
+          ) : byCurrency.size === 0 ? (
+            <>
+              <span className="text-sm text-[var(--muted-foreground)]">You don't own any plots yet.</span>
+              <Link to="/marketplace" className="text-xs font-semibold text-[var(--accent)] hover:underline">Browse the marketplace →</Link>
+            </>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                {Array.from(byCurrency.entries()).map(([cur, g]) => (
+                  <span key={cur} className="text-sm text-[var(--foreground)]">
+                    {g.count} plot{g.count === 1 ? "" : "s"} · <span className="font-mono-data">{formatAmount(g.totalPaid, cur)}</span> paid of <span className="font-mono-data">{formatAmount(g.totalValue, cur)}</span>
+                  </span>
+                ))}
+              </div>
+              <Link to="/portfolio" className="text-xs font-semibold text-[var(--accent)] hover:underline">View your portfolio →</Link>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-2 gap-6">
         {/* Upcoming payments — real plots with a real next due date, ordered
-            by the same urgency rank Portfolio.tsx uses. */}
+            by the same urgency rank Portfolio.tsx uses. Demo mode only: live,
+            payment schedules have no backend yet. */}
+        {!live && (
         <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
           <h3 className="font-semibold text-sm mb-4">Upcoming payments</h3>
           {overview.loading ? (
@@ -153,8 +181,10 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+        )}
 
-        {/* Recent documents */}
+        {/* Recent documents — only when the vault has a backend (or in demo mode). */}
+        {showDocuments && (
         <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-sm">Recent documents</h3>
@@ -178,6 +208,7 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );

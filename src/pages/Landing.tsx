@@ -25,7 +25,7 @@ export default function Landing() {
       {/* Nav */}
       <nav className="sticky top-0 z-30 bg-[var(--background)]/95 backdrop-blur border-b border-[var(--border)]">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center gap-6">
-          <span className="font-display text-xl text-[var(--foreground)]">LandVault</span>
+          <span className="font-display text-2xl sm:text-3xl text-[var(--foreground)] tracking-tight">HomeTrue</span>
           <div className="flex-1" />
           <Link to="/marketplace" className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors hidden sm:block">Marketplace</Link>
           <Link to="/login" className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">Sign in</Link>
@@ -44,7 +44,7 @@ export default function Landing() {
               Verified Titles — Nationwide
             </div>
             <h1 className="font-display text-5xl lg:text-6xl leading-[1.1] text-[var(--foreground)] mb-6">
-              Own land in<br />
+              Buy land, own a home, or rent in<br />
               <span className="italic text-[var(--accent)]">Nigeria</span>
               <br />from anywhere.
             </h1>
@@ -211,9 +211,9 @@ export default function Landing() {
       {/* Footer */}
       <footer className="border-t border-[var(--border)] py-8">
         <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <span className="font-display text-lg text-[var(--foreground)]">LandVault</span>
+          <span className="font-display text-xl text-[var(--foreground)]">HomeTrue</span>
           <p className="text-xs text-[var(--muted-foreground)] text-center">
-            © 2026 LandVault Ltd. All plots sold subject to title verification and availability. Prices in NGN; FX conversions are indicative.
+            © 2026 HomeTrue. All plots sold subject to title verification and availability. Prices in NGN; FX conversions are indicative.
           </p>
         </div>
       </footer>

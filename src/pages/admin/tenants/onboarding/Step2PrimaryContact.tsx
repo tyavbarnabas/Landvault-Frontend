@@ -11,7 +11,7 @@ export default function Step2PrimaryContact() {
     <div className="space-y-6">
       <div className="bg-[var(--secondary)] rounded-lg p-4 text-sm text-[var(--muted-foreground)]">
         This person becomes the tenant's Executive Director. They'll receive an invitation email to set their own password — the link
-        works once, for 72 hours. Use an email that has no LandVault account yet (a work address, not a personal buyer account), or
+        works once, for 72 hours. Use an email that has no HomeTrue account yet (a work address, not a personal buyer account), or
         creating the tenant is refused.
       </div>
 

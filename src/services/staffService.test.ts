@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
-  INVALID_INVITATION_MESSAGE, StaffError, acceptInvitation, actOnInvitation, branchRuleFor, changeStaffRole, fetchInvitations,
-  fetchStaff, inviteStaff, mockInvitationLink, previewInvitation, rejectInvitation, requestStaff, setStaffActive, tokenFromHash,
+  INVALID_INVITATION_MESSAGE, StaffError, acceptInvitation, actOnInvitation, branchRuleFor, changeStaffRole, companyOnlyPermissions,
+  createRole, deleteRole, fetchAssignableRoles, groupPermissions, fetchInvitations, fetchPortalPermissions, fetchStaff, inviteStaff, mockInvitationLink,
+  previewInvitation, rejectInvitation, requestStaff, setStaffActive, tokenFromHash, updateRole,
   type StaffCaller,
 } from "./staffService";
 import { createBranch, fetchBranches, updateBranch } from "./branchesService";
-import { login } from "./authService";
+import { login, mockPermissionsForRole } from "./authService";
 
 const DIRECTOR: StaffCaller = { tenantId: "estintin-group", branchId: null, email: "director@estintin.com" };
 const HERITAGE: StaffCaller = { tenantId: "estintin-group", branchId: "heritage", email: "heritage@estintin.com" };
@@ -180,5 +181,96 @@ describe("creating a tenant invites its first Executive Director", () => {
       primaryContact: { fullName: "Emeka O", roleTitle: "MD", workEmail: "emeka.okonkwo@gmail.com", phone: "", govIdType: "NIN", govIdNumber: "" },
     }).catch((e) => e);
     expect(err).toMatchObject({ status: 409, body: { code: "EMAIL_ALREADY_REGISTERED" } });
+  });
+});
+
+describe("company-made roles", () => {
+  // With permissions, so "never grant what you don't hold" is checked.
+  const ED: StaffCaller = { ...DIRECTOR, permissions: mockPermissionsForRole("executive_director") };
+  const FINANCE: StaffCaller = { ...DIRECTOR, email: "finance@estintin.com", permissions: mockPermissionsForRole("finance_officer") };
+  let r = 0;
+  const name = () => `Accounts Clerk ${++r}`;
+
+  it("lists the 8 portal permissions, marking those you hold and the company-wide-only ones", async () => {
+    const all = await fetchPortalPermissions(FINANCE);
+    expect(all).toHaveLength(8);
+    expect(all.filter((p) => p.held).map((p) => p.code).sort()).toEqual(["portal.estates.view", "portal.payments.verify"]);
+    expect(all.filter((p) => p.requiresCompanyWide).map((p) => p.code).sort())
+      .toEqual(["portal.branches.manage", "portal.roles.manage", "portal.settlement.manage", "portal.staff.invite"]);
+    expect(companyOnlyPermissions("either", ["portal.estates.view", "portal.staff.invite"], all)).toEqual(["portal.staff.invite"]);
+    expect(companyOnlyPermissions("company", ["portal.staff.invite"], all)).toEqual([]);
+  });
+
+  it("groups the catalogue under the backend's headings, in the backend's order", async () => {
+    const groups = groupPermissions(await fetchPortalPermissions(ED));
+    expect(groups.map((g) => g.label)).toEqual(["Estates", "Money", "Branches", "Staff and roles"]);
+    expect(groups[3].permissions.map((p) => p.code)).toEqual(["portal.staff.invite", "portal.staff.request", "portal.roles.manage"]);
+    // Never re-sorted: a group's first appearance decides its place.
+    expect(groupPermissions([{ group: "b", groupLabel: "B" }, { group: "a", groupLabel: "A" }, { group: "b", groupLabel: "B" }]).map((g) => [g.group, g.permissions.length]))
+      .toEqual([["b", 2], ["a", 1]]);
+  });
+
+  it("creates a custom role that the pickers offer next to the standard ones, and invitations use by code", async () => {
+    const role = await createRole({ name: name(), description: "Checks payments.", scope: "either", permissions: ["portal.estates.view", "portal.payments.verify"] }, ED);
+    expect(role).toMatchObject({ custom: true, scope: "either", canGrant: true });
+    expect(role.code).toMatch(/^custom_/);
+    const roles = await fetchAssignableRoles(ED);
+    expect(roles.find((x) => x.code === role.code)).toMatchObject({ custom: true });
+    expect(roles.find((x) => x.code === "sales_manager")).toMatchObject({ custom: false });
+
+    const inv = await inviteStaff({ email: fresh(), firstName: "A", lastName: "B", roleCode: role.code, scope: role.scope }, ED);
+    expect(inv.roleName).toBe(role.name);
+    // Offered by an open invitation, so it can't be deleted yet.
+    await expect(deleteRole(role.code, ED)).rejects.toMatchObject({ code: "ROLE_IN_USE" });
+    await actOnInvitation(inv.id, "revoke", ED);
+    await deleteRole(role.code, ED);
+    expect((await fetchAssignableRoles(ED)).some((x) => x.code === role.code)).toBe(false);
+  });
+
+  it("refuses what the backend refuses", async () => {
+    const base = { description: "", scope: "either" as const, permissions: ["portal.estates.view"] };
+    await expect(createRole({ ...base, name: " " }, ED)).rejects.toMatchObject({ field: "name" });
+    await expect(createRole({ ...base, name: name(), permissions: [] }, ED)).rejects.toMatchObject({ field: "permissions" });
+    // Can't reuse a standard role's name, in any case.
+    await expect(createRole({ ...base, name: "sales MANAGER" }, ED)).rejects.toMatchObject({ code: "ROLE_NAME_TAKEN", field: "name" });
+    await expect(createRole({ ...base, name: name(), permissions: ["portal.staff.invite"] }, ED))
+      .rejects.toMatchObject({ code: "PERMISSION_REQUIRES_COMPANY_SCOPE", field: "permissions" });
+    await expect(createRole({ ...base, name: name(), permissions: ["portal.estates.manage"] }, FINANCE))
+      .rejects.toMatchObject({ code: "CANNOT_GRANT_PERMISSION" });
+    await expect(createRole({ ...base, name: name() }, { ...ED, branchId: "heritage" }))
+      .rejects.toMatchObject({ code: "ROLES_REQUIRE_COMPANY_WIDE_SCOPE" });
+  });
+
+  it("edits name, description and permissions — never the scope — and locks standard roles", async () => {
+    const role = await createRole({ name: name(), description: "x", scope: "company", permissions: ["portal.staff.invite"] }, ED);
+    const edited = await updateRole(role.code, { description: "", permissions: ["portal.staff.invite", "portal.branches.manage"] }, ED);
+    expect(edited).toMatchObject({ scope: "company", description: null, permissions: ["portal.staff.invite", "portal.branches.manage"] });
+
+    const other = await createRole({ name: name(), description: "", scope: "either", permissions: ["portal.estates.view"] }, ED);
+    await expect(updateRole(other.code, { name: role.name.toUpperCase() }, ED)).rejects.toMatchObject({ code: "ROLE_NAME_TAKEN" });
+    await expect(updateRole("sales_manager", { name: "Sales" }, ED)).rejects.toMatchObject({ code: "STANDARD_ROLE_LOCKED" });
+    await expect(deleteRole("sales_manager", ED)).rejects.toMatchObject({ code: "STANDARD_ROLE_LOCKED" });
+    await expect(updateRole("custom_nope", { name: "X" }, ED)).rejects.toMatchObject({ code: "ROLE_NOT_FOUND" });
+    // Someone holding less than the role carries can't change it.
+    await expect(updateRole(role.code, { name: "Mine now" }, FINANCE)).rejects.toMatchObject({ code: "CANNOT_MANAGE_ROLE" });
+    await deleteRole(role.code, ED);
+    await deleteRole(other.code, ED);
+  });
+
+  it("caps a company at 30 roles of its own", async () => {
+    const made = [];
+    for (let i = 0; i < 30; i++) made.push(await createRole({ name: name(), description: "", scope: "either", permissions: ["portal.estates.view"] }, ED));
+    await expect(createRole({ name: name(), description: "", scope: "either", permissions: ["portal.estates.view"] }, ED))
+      .rejects.toMatchObject({ code: "ROLE_LIMIT_REACHED" });
+    for (const role of made) await deleteRole(role.code, ED);
+  });
+
+  it("an accepted invitation into a custom role carries exactly its permissions", async () => {
+    const role = await createRole({ name: name(), description: "", scope: "either", permissions: ["portal.estates.view", "portal.payments.verify"] }, ED);
+    const inv = await inviteStaff({ email: fresh(), firstName: "Ngozi", lastName: "E", roleCode: role.code, scope: role.scope }, ED);
+    const user = await acceptInvitation(tokenOf(inv.id)!, "a password");
+    expect(user.permissions).toEqual(["portal.estates.view", "portal.payments.verify"]);
+    // Now held by someone — deactivated or not, it stays.
+    await expect(deleteRole(role.code, ED)).rejects.toMatchObject({ code: "ROLE_IN_USE" });
   });
 });

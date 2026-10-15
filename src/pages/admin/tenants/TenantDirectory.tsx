@@ -4,6 +4,7 @@ import LoadError from "../../../components/LoadError";
 import { Link, useSearchParams } from "react-router-dom";
 import { fetchTenants, type TenantSummary, type VerificationState, type TenantPlan } from "../../../services/tenantsService";
 import StatusBadge, { verificationStateBadge } from "../../../components/StatusBadge";
+import { ListCard } from "../../../components/ui/Card";
 import type { NigerianState } from "../../../data/nigerianStates";
 
 const VALID_VERIFICATION_STATES: VerificationState[] = ["created", "documents_submitted", "under_review", "verified", "rejected", "suspended"];
@@ -70,11 +71,11 @@ export default function TenantDirectory() {
   if (loadError) return <LoadError error={loadError} what="the tenant directory" onRetry={() => window.location.reload()} />;
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-start justify-between mb-6 gap-4">
         <div>
           <h1 className="font-display text-3xl text-[var(--foreground)] mb-1">Tenants</h1>
-          <p className="text-sm text-[var(--muted-foreground)]">Every company operating on LandVault. Isolated from each other — this view is the only place they're seen together.</p>
+          <p className="text-sm text-[var(--muted-foreground)]">Every company operating on HomeTrue. Isolated from each other — this view is the only place they're seen together.</p>
         </div>
         <Link to="/admin/tenants/new" className="shrink-0 px-4 py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium hover:opacity-90 transition-opacity">
           + Onboard company
@@ -117,14 +118,11 @@ export default function TenantDirectory() {
       </div>
 
       <div className="space-y-3">
+        <ul className="space-y-3">
         {tenants.map((t) => {
           const verBadge = verificationStateBadge(t.verificationState);
           return (
-            <Link
-              key={t.id}
-              to={`/admin/tenants/${t.id}`}
-              className="block bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 hover:border-[var(--accent)]/50 hover:shadow-sm transition-all"
-            >
+            <ListCard key={t.id} to={`/admin/tenants/${t.id}`}>
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <div className="font-semibold text-[var(--foreground)] mb-1">{t.displayName}</div>
@@ -148,9 +146,10 @@ export default function TenantDirectory() {
                   </>
                 )}
               </div>
-            </Link>
+            </ListCard>
           );
         })}
+        </ul>
 
         {tenants.length === 0 && (
           <div className="text-center py-16 text-sm text-[var(--muted-foreground)]">No tenants match your filters.</div>

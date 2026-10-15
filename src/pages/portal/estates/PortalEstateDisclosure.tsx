@@ -18,8 +18,8 @@ import { fetchCostDisclosure } from "../../../services/costDisclosureService";
 import {
   fetchDefaultTerms, fetchFeeSchedule, fetchRefundTerms, toPublicFee,
 } from "../../../services/estateDisclosureService";
-import TabBar from "../../../components/TabBar";
-import EmptyState from "../../../components/marketplace/EmptyState";
+import TabBar from "../../../components/ui/Tabs";
+import EmptyState from "../../../components/ui/EmptyState";
 import FeeBreakdown from "../../../components/cost/FeeBreakdown";
 import FeeScheduleForm from "../../../components/portal/FeeScheduleForm";
 import RefundTermsForm from "../../../components/portal/RefundTermsForm";

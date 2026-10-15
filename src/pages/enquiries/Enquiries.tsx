@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { fetchMyEnquiries, type Enquiry } from "../../services/enquiryService";
+import { ListCard } from "../../components/ui/Card";
 
 const STATUS_STYLES: Record<Enquiry["status"], string> = {
   open: "bg-blue-50 text-blue-700 border-blue-200",
@@ -55,9 +56,9 @@ export default function Enquiries() {
         </div>
       ) : (
         <>
-          <div className="space-y-3">
+          <ul className="space-y-3">
             {enquiries.map((enq) => (
-              <div key={enq.id} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
+              <ListCard key={enq.id} density="compact">
                 <div className="flex items-start justify-between gap-3 mb-2">
                   <div>
                     <div className="font-medium text-sm text-[var(--foreground)]">{enq.listingName}</div>
@@ -72,9 +73,9 @@ export default function Enquiries() {
                     </div>
                   ))}
                 </div>
-              </div>
+              </ListCard>
             ))}
-          </div>
+          </ul>
           {hasMore && (
             <button onClick={loadMore} disabled={loadingMore} className="mt-4 w-full py-2.5 border border-[var(--border)] rounded-md text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors disabled:opacity-60">
               {loadingMore ? "Loading…" : "Load more"}

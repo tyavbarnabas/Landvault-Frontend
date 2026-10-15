@@ -6,6 +6,7 @@ import { toListingPlot, priceForPlot, type ListingPlot } from "../../services/ma
 import { fetchSyndicates, fetchSyndicateById, createSyndicate, type Syndicate } from "../../services/syndicatesService";
 import { useApp } from "../../contexts/AppContext";
 import PlotCanvas from "../../components/PlotCanvas";
+import { ListCard } from "../../components/ui/Card";
 
 // ─── Syndicate dashboard ───────────────────────────────────────────────────
 
@@ -50,17 +51,13 @@ export function SyndicateList() {
           </Link>
         </div>
       ) : (
-        <div className="space-y-4">
+        <ul className="space-y-3">
           {syndicates.map((syn) => {
             const estate = estates.find((e) => e.id === syn.estateId)!;
             const totalPaid = syn.members.filter((m) => m.status === "joined").reduce((s, m) => s + m.contributed, 0);
             const pct = Math.round((totalPaid / syn.totalPrice) * 100);
             return (
-              <Link
-                key={syn.id}
-                to={`/syndicates/${syn.id}`}
-                className="block bg-[var(--card)] rounded-xl border border-[var(--border)] p-5 hover:border-[var(--accent)]/50 hover:shadow-sm transition-all"
-              >
+              <ListCard key={syn.id} to={`/syndicates/${syn.id}`}>
                 <div className="flex items-start gap-4 mb-3">
                   <div className="w-12 h-12 rounded-lg overflow-hidden bg-[var(--muted)] shrink-0">
                     <img src={estate.imageUrl} alt={estate.name} className="w-full h-full object-cover" />
@@ -88,10 +85,10 @@ export function SyndicateList() {
                   ))}
                   <span className="text-xs text-[var(--muted-foreground)] ml-1">{syn.members.length} members</span>
                 </div>
-              </Link>
+              </ListCard>
             );
           })}
-        </div>
+        </ul>
       )}
 
       {/* Join by invite */}
@@ -442,7 +439,7 @@ export function SyndicateDetail() {
           <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-4">
             <h3 className="font-semibold text-sm mb-2">Invite link</h3>
             <div className="bg-[var(--muted)] rounded px-3 py-2 text-xs font-mono-data break-all text-[var(--muted-foreground)] mb-2">
-              landvault.app/join/syn-001-abc123
+              hometrue.com.ng/join/syn-001-abc123
             </div>
             <button className="text-xs text-[var(--accent)] hover:underline">Copy link</button>
           </div>

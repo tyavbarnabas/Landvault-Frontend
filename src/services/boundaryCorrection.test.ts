@@ -3,6 +3,7 @@
 // (backend commit 9cef857). Its own file: corrections mutate seeded estates.
 
 import { describe, it, expect } from "vitest";
+import { mockPermissionsForRole } from "./authService";
 import {
   addEstateBoundary, correctEstateBoundary, createPortalEstate, decideBoundaryChange, fetchBoundaryChanges,
   fetchBoundaryChangesForReview, fetchEstateGeoJson, fetchPortalEstateById, fetchPortalEstates, withdrawBoundaryChange,
@@ -147,7 +148,9 @@ describe("itemised plot conflicts", () => {
 
 describe("roles from the backend", () => {
   const ED = { tenantId: "estintin-group", branchId: null, email: "director@estintin.com",
-    permissions: ["portal.estates.view", "portal.estates.manage", "portal.branches.manage", "portal.staff.invite", "portal.staff.request"] };
+    // A director's real grant (incl. payments, changesets 073/075) — not a
+    // hand-kept list that drifts as permissions are added.
+    permissions: mockPermissionsForRole("executive_director") };
   const BM = { tenantId: "estintin-group", branchId: "heritage", email: "heritage@estintin.com", permissions: ["portal.estates.view", "portal.staff.request"] };
 
   it("canGrant is whether the caller holds every permission the role carries", async () => {

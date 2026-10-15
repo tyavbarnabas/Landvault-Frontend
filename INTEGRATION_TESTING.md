@@ -87,11 +87,9 @@ to fetch". The dev panel (bottom right) turns red when the origin is wrong.
 
 ## Backend gaps found while integrating
 
-1. **No payment endpoints, and no way to cancel a pending purchase.** A
-   purchase stops at *pending payment*, and the plot stays held until finance
-   verifies a payment, which can't happen yet. The checkout warns about this
-   on the plan step and offers "Release this plot" there. Once the purchase is
-   recorded, `DELETE /api/reservations/{id}` returns 409.
+1. ~~No payment endpoints.~~ **Resolved:** Paystack payments, finance
+   verification, payouts and refunds are live (see "Payments" below). An
+   unpaid purchase ends by itself (`abandoned`) when its hold runs out.
 2. ~~Plots without a boundary are invisible to buyers.~~ **Resolved:**
    `GET /api/marketplace/estates/{id}/plots` lists every plot, with
    `hasBoundary`. The picker lists them marked "boundary not surveyed", and
@@ -173,3 +171,49 @@ list.
   counts and page numbers come out wrong.
 - **Backend:** plot numbers are sorted as text (1, 10, 11, …, 2). They should
   be sorted as numbers (1, 2, … 10).
+
+## Payments (2026-10-09)
+
+Built from the backend's payments brief, Sections 1–9, and checked against
+the backend's code. Every screen below calls the real backend when one is
+configured, and has a demo-mode stand-in.
+
+| Who | Where | What |
+|---|---|---|
+| Buyer | checkout → **Pay with Paystack** | outright purchases in naira; Paystack's page takes card or transfer |
+| Buyer | `/payments/return` | asks the backend (`/verify`); never assumes; checks every 5s for about 2 min |
+| Buyer | `/purchases`, `/purchases/{id}`, dashboard | the server's status; "The plot is yours" **only** when `verified` |
+| Buyer | purchase page → refund | refund progress; bank account form (no name field) for bank-transfer refunds |
+| Finance officer / director | Portal → **Finance** | verify or reject (with Paystack's record beside the price), late payments, payouts (read-only) |
+| Director | Portal → **Payout account** | submit or withdraw; the bank's name for the account is shown back |
+| Super Admin | **Payout accounts** | approve or reject, with name and onboarding warnings (never blockers) |
+| Super Admin | **Payouts** | pay out the next part of a sale (₦10M cap per transfer), Paystack code dialog; finish or cancel stuck ones from History |
+| Super Admin | **Refunds** | refund the full amount; send to the buyer's account after checking the bank's name |
+
+**With a backend, the buyer dashboard shows only what has a backend:** real
+purchases. The demo attention list, portfolio, payment schedule and documents
+are hidden, so demo plots and "₦3.2M overdue" never sit beside real purchases.
+
+**Proven live:**
+- reserve → purchase → Paystack page opens
+- purchase page and return page (processing, unknown payment)
+- the real bank list (288 banks)
+- the buyer's purchase list and dashboard
+
+**Still to run live** (it needs the Super Admin's authenticator and a
+developer finance login) — the brief's acceptance check:
+1. The buyer reserves a plot and pays by bank transfer (Paystack test mode).
+2. The return page shows "being verified".
+3. Finance verifies, and the buyer sees "The plot is yours".
+4. The Super Admin approves the developer's payout account.
+5. The Super Admin pays out a ₦15M sale as 2 × ₦7.5M, with a code for each part.
+6. The developer's Finance → Payouts shows both parts as paid.
+7. The Super Admin refunds a rejected purchase, and the buyer sees "Refund paid".
+8. A late payment shows in Late payments and can be allocated.
+
+**Open items for the backend:**
+- The "refund needs your bank account" email has no link. It could point to
+  `/purchases/{transactionId}`.
+- The purchase doesn't carry its hold's end time, so the purchase page can't
+  show a countdown.
+- The finance, payout and refund lists aren't paged.

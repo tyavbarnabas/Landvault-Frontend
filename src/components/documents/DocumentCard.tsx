@@ -3,6 +3,7 @@
 // the type labels/icons so a new document type only needs to be added here.
 
 import type { Document } from "../../data/mockData";
+import { ListCard } from "../ui/Card";
 
 export const DOCUMENT_TYPE_LABELS: Record<Document["type"], string> = {
   receipt: "Receipt",
@@ -27,7 +28,7 @@ interface DocumentCardProps {
 
 export default function DocumentCard({ doc, onVerify }: DocumentCardProps) {
   return (
-    <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-4 flex items-center gap-4">
+    <ListCard density="compact" className="flex items-center gap-4">
       <div className="w-10 h-10 rounded-lg bg-[var(--muted)] flex items-center justify-center text-xl shrink-0">
         {DOCUMENT_TYPE_ICONS[doc.type]}
       </div>
@@ -54,6 +55,6 @@ export default function DocumentCard({ doc, onVerify }: DocumentCardProps) {
           </button>
         )}
       </div>
-    </div>
+    </ListCard>
   );
 }

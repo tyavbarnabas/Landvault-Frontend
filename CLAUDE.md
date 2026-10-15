@@ -1,1 +1,3 @@
 @AGENTS.md
+
+@FIGMA_DESIGN_RULES.md

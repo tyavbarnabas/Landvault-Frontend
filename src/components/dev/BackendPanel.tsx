@@ -11,7 +11,8 @@ export default function BackendPanel() {
 
   const entries = Object.entries(SERVICES) as [ServiceKey, ServiceEntry][];
   const live = entries.filter(([k]) => isLive(k));
-  const mocked = entries.filter(([k]) => !isLive(k));
+  const mocked = entries.filter(([k, e]) => !isLive(k) && e.status !== "retired");
+  const retired = entries.filter(([, e]) => e.status === "retired");
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const originBad = BACKEND_CONFIGURED && !originLooksAllowed(origin);
 
@@ -32,6 +33,22 @@ export default function BackendPanel() {
           </div>
           <List title={`Live (${live.length})`} items={live} live />
           <List title={`Mocked (${mocked.length})`} items={mocked} live={false} />
+          {BACKEND_CONFIGURED && retired.length > 0 && (
+            <div>
+              <div className="font-semibold text-[var(--foreground)] mb-1">Retired when live ({retired.length})</div>
+              <ul className="space-y-1">
+                {retired.map(([key, e]) => (
+                  <li key={key} className="text-[var(--muted-foreground)]">
+                    <span className="text-[var(--foreground)]">{e.label}</span>
+                    <span className="block">Replaced by a live screen. {e.reason ?? ""}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {BACKEND_CONFIGURED && (
+            <a href="/admin/dev/storage" className="block text-[var(--accent)] hover:underline">Storage upload test (Super Admin, backend dev profile) →</a>
+          )}
         </div>
       )}
       <button

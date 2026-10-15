@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { fetchMyInspections, cancelInspection, rescheduleInspection, type Inspection } from "../../services/inspectionService";
 import InspectionForm, { type InspectionFormValue } from "../../components/inspections/InspectionForm";
+import { ListCard } from "../../components/ui/Card";
 
 const STATUS_STYLES: Record<Inspection["status"], string> = {
   scheduled: "bg-blue-50 text-blue-700 border-blue-200",
@@ -77,31 +78,31 @@ export default function Inspections() {
           {upcoming.length > 0 && (
             <section>
               <h2 className="text-sm font-semibold text-[var(--foreground)] mb-3">Upcoming</h2>
-              <div className="space-y-3">
+              <ul className="space-y-3">
                 {upcoming.map((insp) => (
-                  <div key={insp.id} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
+                  <ListCard key={insp.id} density="compact">
                     <InspectionRow insp={insp} onCancel={() => handleCancel(insp.id)} onReschedule={() => setReschedulingId(reschedulingId === insp.id ? null : insp.id)} />
                     {reschedulingId === insp.id && (
                       <div className="mt-4 pt-4 border-t border-[var(--border)]">
                         <InspectionForm submitLabel="Confirm new date" onSubmit={(v) => handleReschedule(insp.id, v)} />
                       </div>
                     )}
-                  </div>
+                  </ListCard>
                 ))}
-              </div>
+              </ul>
             </section>
           )}
 
           {past.length > 0 && (
             <section>
               <h2 className="text-sm font-semibold text-[var(--foreground)] mb-3">Past & cancelled</h2>
-              <div className="space-y-3">
+              <ul className="space-y-3">
                 {past.map((insp) => (
-                  <div key={insp.id} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 opacity-75">
+                  <ListCard key={insp.id} density="compact" className="opacity-75">
                     <InspectionRow insp={insp} />
-                  </div>
+                  </ListCard>
                 ))}
-              </div>
+              </ul>
             </section>
           )}
 

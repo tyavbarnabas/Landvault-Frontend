@@ -9,6 +9,9 @@
 //   no_backend  nothing on the backend yet — stays on mock data, by design
 //   misaligned  the backend has the feature, but this frontend doesn't match
 //               it yet — stays on mock data until rewired
+//   retired     demo-only by design: with a backend the screen is replaced by
+//               a live one (redirected), so nothing mocked is shown in its
+//               place. Not counted or announced as mock data.
 //
 // With VITE_API_BASE_URL unset, EVERYTHING is mocked, exactly as before.
 //
@@ -21,7 +24,7 @@
 // or mocked as a whole — never half and half (checked in backends.test.ts).
 
 
-export type ServiceStatus = "live" | "no_backend" | "misaligned";
+export type ServiceStatus = "live" | "no_backend" | "misaligned" | "retired";
 
 export interface ServiceEntry {
   label: string;
@@ -44,28 +47,38 @@ export const SERVICES = {
   portalInventory: { label: "Portal inventory (tiers, blocks, plots, import)", status: "live", paths: [] },
   estateDisclosure: { label: "Fees & terms declarations", status: "live", paths: [] },
   branches: { label: "Branches", status: "live", paths: ["/api/portal/branches"] },
-  staff: { label: "Staff, roles & invitations", status: "live", paths: ["/api/portal/staff", "/api/portal/roles", "/api/auth/invitations"] },
+  staff: { label: "Staff, roles & invitations", status: "live", paths: ["/api/portal/staff", "/api/portal/roles", "/api/portal/permissions", "/api/auth/invitations"] },
 
   // ── The purchase flow: one group, live together ───────────────────────────
   marketplace: { label: "Marketplace listings", status: "live", group: "purchase", paths: ["/api/marketplace/estates"] },
   marketplacePlots: { label: "Marketplace plots (from the estate map)", status: "live", group: "purchase", paths: [] },
   costDisclosure: { label: "Public cost disclosure", status: "live", group: "purchase", paths: [] },
   reservation: { label: "Reservations", status: "live", group: "purchase", paths: ["/api/reservations"] },
-  checkout: { label: "Checkout (transactions)", status: "live", group: "purchase", paths: ["/api/checkout/transactions"] },
+  checkout: { label: "Checkout & payments", status: "live", group: "purchase", paths: ["/api/checkout/transactions", "/api/transactions", "/api/payments"] },
+  // The developer's side of the same purchases: verify or reject, late money,
+  // the company's payouts. Same ids as checkout, so the same group.
+  finance: { label: "Finance (verification, late payments, payouts)", status: "live", group: "purchase", paths: ["/api/portal/finance", "/api/portal/payouts"] },
+  // Super Admin: sending proceeds to developers, and refunds to buyers. Same
+  // sale ids as checkout and finance, so the same group.
+  adminPayouts: { label: "Payouts & refunds (Super Admin)", status: "live", group: "purchase", paths: ["/api/admin/payouts", "/api/admin/refunds"] },
+  settlement: { label: "Payout bank accounts", status: "live", paths: ["/api/portal/settlement", "/api/admin/settlement-accounts"] },
+  // Dev-only test routes (backend dev profile, Super Admin). Real uploads go
+  // through each feature's own routes, via src/lib/uploadFile.ts.
+  devStorage: { label: "File uploads (dev test routes)", status: "live", paths: ["/api/dev/storage"] },
 
-  // ── The backend has it, the frontend doesn't match yet ────────────────────
+  // ── Retired with a backend ────────────────────────────────────────────────
   estates: {
-    label: "Estates browse (/estates)", status: "misaligned", paths: ["/api/estates"],
+    label: "Estates browse (/estates)", status: "retired", paths: ["/api/estates"],
     // Retired in live mode — /estates redirects to /marketplace (App.tsx).
     // Real plots have boundaries, not grid positions, and the backend has
     // decided not to add any. Only demo-only screens (syndicates, upgrades)
     // still read it.
-    reason: "Retired with a backend: /estates redirects to /marketplace. The grid needs row/column positions real plots don't have, and the backend won't add them.",
+    reason: "/estates redirects to /marketplace. The grid needs row/column positions real plots don't have, and the backend won't add them.",
   },
 
   // ── No backend yet ────────────────────────────────────────────────────────
-  portfolio: { label: "Portfolio & payment schedules", status: "no_backend", paths: ["/api/portfolio"], reason: "Needs payments, which the backend doesn't have yet." },
-  documents: { label: "Document vault", status: "no_backend", paths: ["/api/documents"], reason: "Receipts and allocation letters need payments first." },
+  portfolio: { label: "Portfolio & payment schedules", status: "no_backend", paths: ["/api/portfolio"], reason: "The backend has purchases and payments, but no portfolio (owned plots, payment schedules) yet. Live, the dashboard shows real purchases instead." },
+  documents: { label: "Document vault", status: "no_backend", paths: ["/api/documents"], reason: "The backend doesn't issue receipts or allocation letters yet." },
   attention: { label: "Dashboard attention list", status: "no_backend", paths: ["/api/me/attention"], reason: "No /api/me/attention on the backend." },
   upgrades: { label: "Plot upgrades", status: "no_backend", paths: ["/api/upgrades"], reason: "Needs owned plots." },
   resale: { label: "Resale", status: "no_backend", paths: ["/api/resale"], reason: "Needs owned plots and title transfer." },
@@ -124,6 +137,9 @@ export function mockServedOn(pathname: string): ServiceKey[] {
 /** The check every service makes before choosing mock data over the API. */
 export function isMock(key: ServiceKey): boolean {
   if (isLive(key)) return false;
+  // Retired: its screens redirect to live ones, and the only readers left are
+  // demo-only features that announce themselves. Nothing to report.
+  if (entry(key).status === "retired") return true;
   if (BACKEND_CONFIGURED) {
     if (GLOBAL_SERVICES.includes(key)) servedGlobally.add(key);
     else if (typeof window !== "undefined") {
@@ -181,7 +197,7 @@ export function logBackendSummary(): void {
     return;
   }
   const rows = Object.fromEntries((Object.entries(SERVICES) as [ServiceKey, ServiceEntry][]).map(([key, e]) => [
-    key, { mode: isLive(key) ? "LIVE" : "mock", status: e.status, group: e.group ?? "", reason: e.reason ?? "" },
+    key, { mode: isLive(key) ? "LIVE" : e.status === "retired" ? "retired" : "mock", status: e.status, group: e.group ?? "", reason: e.reason ?? "" },
   ]));
   console.info(`[backend] ${import.meta.env.VITE_API_BASE_URL} — per-service mode:`);
   console.table(rows);

@@ -55,12 +55,21 @@ const CreatePortalPlots = lazy(() => import("./pages/portal/estates/CreatePortal
 const PortalEstateDisclosure = lazy(() => import("./pages/portal/estates/PortalEstateDisclosure"));
 const EditPortalEstate = lazy(() => import("./pages/portal/estates/EditPortalEstate"));
 const StateOverride = lazy(() => import("./pages/admin/estates/StateOverride"));
+const AdminPayoutAccounts = lazy(() => import("./pages/admin/payments/PayoutAccounts"));
+const AdminPayouts = lazy(() => import("./pages/admin/payments/Payouts"));
+const AdminRefunds = lazy(() => import("./pages/admin/payments/Refunds"));
 const BoundaryChanges = lazy(() => import("./pages/admin/estates/BoundaryChanges"));
 const PortalBranches = lazy(() => import("./pages/portal/branches/PortalBranches"));
 const NewPortalBranch = lazy(() => import("./pages/portal/branches/PortalBranches").then((m) => ({ default: m.NewPortalBranch })));
 const PortalStaff = lazy(() => import("./pages/portal/staff/PortalStaff"));
 const NewStaffInvitation = lazy(() => import("./pages/portal/staff/PortalStaff").then((m) => ({ default: m.NewStaffInvitation })));
+const PortalRoles = lazy(() => import("./pages/portal/staff/PortalRoles"));
+const RoleEditor = lazy(() => import("./pages/portal/staff/PortalRoles").then((m) => ({ default: m.RoleEditor })));
+const StorageTest = lazy(() => import("./pages/dev/StorageTest"));
 const AcceptInvitation = lazy(() => import("./pages/auth/AcceptInvitation"));
+const PortalFinance = lazy(() => import("./pages/portal/finance/PortalFinance"));
+const PayoutAccount = lazy(() => import("./pages/portal/finance/PayoutAccount"));
+const PayoutAccountHistory = lazy(() => import("./pages/portal/finance/PayoutAccountHistory"));
 const ImportPortalPlots = lazy(() => import("./pages/portal/estates/ImportPortalPlots"));
 const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
 const TenantDirectory = lazy(() => import("./pages/admin/tenants/TenantDirectory"));
@@ -76,6 +85,9 @@ const MarketplaceEstateDetail = lazy(() => import("./pages/marketplace/Marketpla
 const MarketplaceResaleDetail = lazy(() => import("./pages/marketplace/MarketplaceResaleDetail"));
 const MarketplacePlotSelection = lazy(() => import("./pages/marketplace/MarketplacePlotSelection"));
 const MarketplaceCheckout = lazy(() => import("./pages/marketplace/MarketplaceCheckout"));
+const PurchaseDetail = lazy(() => import("./pages/purchases/PurchaseDetail"));
+const MyPurchases = lazy(() => import("./pages/purchases/MyPurchases"));
+const PaymentReturn = lazy(() => import("./pages/payments/PaymentReturn"));
 const Wishlist = lazy(() => import("./pages/marketplace/Wishlist"));
 
 // Inspections & enquiries (buyer flow, Parts 3–4)
@@ -128,9 +140,9 @@ function PortalRoute({ children }: { children: React.ReactNode }) {
 // A page within the portal that needs a permission beyond portal access —
 // routed on permissions, never on a role string. Without it, the reader is
 // sent back to the estates list rather than shown an error.
-function PermissionGate({ anyOf, children }: { anyOf: string[]; children: React.ReactNode }) {
+function PermissionGate({ anyOf, children, to = "/portal/estates" }: { anyOf: string[]; children: React.ReactNode; to?: string }) {
   const { user } = useApp();
-  if (!anyOf.some((p) => user?.permissions?.includes(p))) return <Navigate to="/portal/estates" replace />;
+  if (!anyOf.some((p) => user?.permissions?.includes(p))) return <Navigate to={to} replace />;
   return <>{children}</>;
 }
 
@@ -238,6 +250,10 @@ function AppRoutes() {
       <Route path="/wishlist" element={<MarketplaceLayout><PrivateRoute><Wishlist /></PrivateRoute></MarketplaceLayout>} />
 
       {/* Marketplace checkout — no sidebar, same convention as /checkout */}
+      {/* Paystack sends the buyer back here; it verifies, it never assumes. */}
+      <Route path="/payments/return" element={<PrivateRoute><Suspense fallback={<PageLoading />}><PaymentReturn /></Suspense></PrivateRoute>} />
+      <Route path="/purchases" element={<AppPage><Suspense fallback={<PageLoading />}><MyPurchases /></Suspense></AppPage>} />
+      <Route path="/purchases/:id" element={<AppPage><Suspense fallback={<PageLoading />}><PurchaseDetail /></Suspense></AppPage>} />
       <Route path="/marketplace/checkout/:listingId/:plotId" element={<PrivateRoute><Suspense fallback={<PageLoading />}><MarketplaceCheckout /></Suspense></PrivateRoute>} />
 
       {/* Inspections & enquiries — Parts 3–4 of the buyer flow */}
@@ -259,15 +275,25 @@ function AppRoutes() {
       <Route path="/portal/branches/new" element={<PortalPage><PermissionGate anyOf={["portal.branches.manage"]}><NewPortalBranch /></PermissionGate></PortalPage>} />
       <Route path="/portal/staff" element={<PortalPage><PermissionGate anyOf={["portal.staff.invite", "portal.staff.request"]}><PortalStaff /></PermissionGate></PortalPage>} />
       <Route path="/portal/staff/new" element={<PortalPage><PermissionGate anyOf={["portal.staff.invite", "portal.staff.request"]}><NewStaffInvitation /></PermissionGate></PortalPage>} />
+      <Route path="/portal/staff/roles" element={<PortalPage><PermissionGate anyOf={["portal.roles.manage"]}><PortalRoles /></PermissionGate></PortalPage>} />
+      <Route path="/portal/staff/roles/new" element={<PortalPage><PermissionGate anyOf={["portal.roles.manage"]}><RoleEditor /></PermissionGate></PortalPage>} />
+      <Route path="/portal/staff/roles/:code/edit" element={<PortalPage><PermissionGate anyOf={["portal.roles.manage"]}><RoleEditor /></PermissionGate></PortalPage>} />
+      <Route path="/portal/finance" element={<PortalPage><PermissionGate anyOf={["portal.payments.verify"]}><PortalFinance /></PermissionGate></PortalPage>} />
+      <Route path="/portal/payout-account" element={<PortalPage><PermissionGate anyOf={["portal.settlement.manage"]}><PayoutAccount /></PermissionGate></PortalPage>} />
+      <Route path="/portal/payout-account/history" element={<PortalPage><PermissionGate anyOf={["portal.settlement.manage"]}><PayoutAccountHistory /></PermissionGate></PortalPage>} />
       <Route path="/portal/staff/invitations" element={<Navigate to="/portal/staff" replace />} />
       <Route path="/portal/estates/:estateId/plots/import" element={<PortalPage><ImportPortalPlots /></PortalPage>} />
 
       <Route path="/admin/dashboard" element={<AdminPage><AdminDashboard /></AdminPage>} />
+      {import.meta.env.DEV && <Route path="/admin/dev/storage" element={<AdminPage><StorageTest /></AdminPage>} />}
       <Route path="/admin/tenants" element={<AdminPage><TenantDirectory /></AdminPage>} />
       <Route path="/admin/tenants/new" element={<AdminPage><CreateTenant /></AdminPage>} />
       <Route path="/admin/tenants/:id" element={<AdminPage><TenantDetail /></AdminPage>} />
       <Route path="/admin/listing-conflicts" element={<AdminPage><ListingConflicts /></AdminPage>} />
       <Route path="/admin/estate-state-override" element={<AdminPage><StateOverride /></AdminPage>} />
+      <Route path="/admin/refunds" element={<AdminPage><PermissionGate anyOf={["admin.payouts.manage"]} to="/admin/dashboard"><AdminRefunds /></PermissionGate></AdminPage>} />
+      <Route path="/admin/payouts" element={<AdminPage><PermissionGate anyOf={["admin.payouts.manage"]} to="/admin/dashboard"><AdminPayouts /></PermissionGate></AdminPage>} />
+      <Route path="/admin/payout-accounts" element={<AdminPage><PermissionGate anyOf={["admin.payouts.manage"]} to="/admin/dashboard"><AdminPayoutAccounts /></PermissionGate></AdminPage>} />
       <Route path="/admin/boundary-changes" element={<AdminPage><BoundaryChanges /></AdminPage>} />
 
       {/* Fallback */}
@@ -278,7 +304,7 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <ErrorBoundary section="LandVault">
+    <ErrorBoundary section="HomeTrue">
       <BrowserRouter>
         <AppProvider>
           <SessionProblemBanner />

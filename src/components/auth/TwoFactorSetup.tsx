@@ -86,7 +86,7 @@ export default function TwoFactorSetup({ onEnabled, onCancel }: { onEnabled: () 
   return (
     <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 space-y-5">
       <div>
-        <h3 className="text-sm font-semibold text-[var(--foreground)] mb-1">Step 1 — add LandVault to your authenticator app</h3>
+        <h3 className="text-sm font-semibold text-[var(--foreground)] mb-1">Step 1 — add HomeTrue to your authenticator app</h3>
         <p className="text-xs text-[var(--muted-foreground)]">
           Scan this with Google Authenticator, 1Password, Authy or similar. Two-factor authentication is
           <span className="font-medium text-[var(--foreground)]"> not on yet</span> — it switches on once you enter a code below.

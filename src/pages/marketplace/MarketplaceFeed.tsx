@@ -5,7 +5,7 @@ import { formatCompactCurrency } from "../../lib/formatCurrency";
 import ListingCard from "../../components/marketplace/ListingCard";
 import FilterBar from "../../components/marketplace/FilterBar";
 import FilterChip from "../../components/marketplace/FilterChip";
-import EmptyState from "../../components/marketplace/EmptyState";
+import EmptyState from "../../components/ui/EmptyState";
 
 function filtersFromParams(params: URLSearchParams): UnifiedListingFilters {
   const get = (k: string) => params.get(k) || undefined;
@@ -115,7 +115,7 @@ export default function MarketplaceFeed() {
       {showWelcome && !welcomeDismissed && (
         <div className="mb-6 flex items-center justify-between gap-4 bg-[var(--secondary)] border border-[var(--border)] rounded-xl px-4 py-3">
           <p className="text-sm text-[var(--secondary-foreground)]">
-            Welcome to LandVault — browse verified developer estates and resale plots from every seller on the platform, all in one place.
+            Welcome to HomeTrue — browse verified developer estates and resale plots, own a property, or find a place to rent, from every seller on the platform, all in one place.
           </p>
           <button onClick={() => setWelcomeDismissed(true)} className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] shrink-0">Dismiss</button>
         </div>
@@ -123,7 +123,7 @@ export default function MarketplaceFeed() {
 
       <div className="mb-6">
         <h1 className="font-display text-3xl text-[var(--foreground)] mb-1">Marketplace</h1>
-        <p className="text-sm text-[var(--muted-foreground)]">Developer estates and resale plots from every seller on LandVault, across Nigeria — clearly labelled either way.</p>
+        <p className="text-sm text-[var(--muted-foreground)]">Developer estates and resale plots from every seller on HomeTrue, across Nigeria — clearly labelled either way.</p>
       </div>
 
       <div className="mb-3">

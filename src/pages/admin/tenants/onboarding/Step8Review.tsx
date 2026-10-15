@@ -112,7 +112,7 @@ export default function Step8Review({ onEditStep }: { onEditStep: (index: number
           {...register("accuracyAttestation")}
         />
         <CheckboxField
-          label="I agree to LandVault's platform terms on behalf of this company."
+          label="I agree to HomeTrue's platform terms on behalf of this company."
           error={errors.termsAgreement?.message}
           {...register("termsAgreement")}
         />

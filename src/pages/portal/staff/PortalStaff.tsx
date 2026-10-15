@@ -16,7 +16,8 @@ import LoadError from "../../../components/LoadError";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useApp } from "../../../contexts/AppContext";
 import { useFetch } from "../../../lib/useFetch";
-import { canInviteStaff, canRequestStaff } from "../../../services/authService";
+import { canInviteStaff, canManageRoles, canRequestStaff } from "../../../services/authService";
+import TextLink from "../../../components/ui/TextLink";
 import { fetchBranches, type PortalBranch } from "../../../services/branchesService";
 import { isLive } from "../../../lib/backends";
 import {
@@ -25,8 +26,9 @@ import {
   type StaffCaller, type StaffInvitation, type StaffMember,
 } from "../../../services/staffService";
 import StatusBadge, { invitationStatusBadge, staffStatusBadge } from "../../../components/StatusBadge";
-import TabBar from "../../../components/TabBar";
-import EmptyState from "../../../components/marketplace/EmptyState";
+import TabBar from "../../../components/ui/Tabs";
+import EmptyState from "../../../components/ui/EmptyState";
+import { ListCard } from "../../../components/ui/Card";
 import { Field, inputClass } from "../../../components/portal/formParts";
 import { usePortalScope } from "../usePortalScope";
 
@@ -84,11 +86,14 @@ export default function PortalStaff() {
               : "Your branch's team. To add someone, ask head office — they approve it before anything is sent."}
           </p>
         </div>
+        <div className="shrink-0 flex items-center gap-4">
+        {canManageRoles(user) && <TextLink to="/portal/staff/roles" className="text-sm">Roles</TextLink>}
         {(canInvite || canRequest) && (
           <Link to="/portal/staff/new" className="shrink-0 px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90">
             {canInvite ? "Invite someone" : "Ask for someone"}
           </Link>
         )}
+        </div>
       </div>
 
       {sent && <SentNotice sent={sent} />}
@@ -246,7 +251,7 @@ function InviteSection({ mode, caller, branches, roles: allRoles, onDone, onCanc
             <input id="inv-last" value={lastName} onChange={(e) => setLastName(e.target.value)} className={inputClass} />
           </Field>
         </div>
-        <Field id="inv-email" label="Work email" error={errorFor("email")} hint="An address with no LandVault account yet — not a personal buyer account.">
+        <Field id="inv-email" label="Work email" error={errorFor("email")} hint="An address with no HomeTrue account yet — not a personal buyer account.">
           <input id="inv-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
         </Field>
         <div className="grid sm:grid-cols-2 gap-4">
@@ -273,12 +278,10 @@ function InviteSection({ mode, caller, branches, roles: allRoles, onDone, onCanc
           )}
           {chosen?.description && <p className="text-xs text-[var(--muted-foreground)] sm:col-span-2 -mt-2">{chosen.description}</p>}
           {mode === "invite" && rule === "forbidden" && (
-            <p className="text-xs text-[var(--muted-foreground)] self-end pb-2">An Executive Director is company-wide — no branch.</p>
+            <p className="text-xs text-[var(--muted-foreground)] self-end pb-2">{chosen?.name ?? "This role"} is company-wide — no branch.</p>
           )}
         </div>
-        {mode === "invite" && rule === "required" && branches.length === 0 && (
-          <p className="text-xs text-amber-700">Your company has no branches yet. Add one under Branches first.</p>
-        )}
+        {mode === "invite" && rule && rule !== "forbidden" && branches.length === 0 && <NoBranchesNote required={rule === "required"} />}
         {error?.field === "form" && <p className="text-sm text-red-700" role="alert">{error.message}</p>}
         <div className="flex gap-3">
           <button type="submit" disabled={saving} className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
@@ -329,7 +332,7 @@ function InvitationList({ invitations, caller, canApprove, canCancel, onChanged 
         const badge = invitationStatusBadge(inv.status);
         const busy = busyId === inv.id;
         return (
-          <li key={inv.id} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 min-h-28 space-y-2">
+          <ListCard key={inv.id} className="space-y-2">
             <div className="flex flex-wrap items-start gap-3">
               <div className="flex-1 min-w-[200px]">
                 <div className="font-semibold text-[var(--foreground)]">{inv.firstName} {inv.lastName}</div>
@@ -385,7 +388,7 @@ function InvitationList({ invitations, caller, canApprove, canCancel, onChanged 
                 {message.text}
               </p>
             )}
-          </li>
+          </ListCard>
         );
       })}
     </ul>
@@ -426,7 +429,7 @@ function TeamList({ staff, caller, canManage, branches, roles, onChanged }: {
         const badge = staffStatusBadge(member.status);
         const isYou = member.email.toLowerCase() === caller.email.toLowerCase();
         return (
-          <li key={member.userId} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 min-h-28 space-y-2">
+          <ListCard key={member.userId} className="space-y-2">
             <div className="flex flex-wrap items-start gap-3">
               <div className="flex-1 min-w-[200px]">
                 <div className="font-semibold text-[var(--foreground)]">{member.firstName} {member.lastName}{isYou ? " (you)" : ""}</div>
@@ -466,7 +469,7 @@ function TeamList({ staff, caller, canManage, branches, roles, onChanged }: {
                 {message.text}
               </p>
             )}
-          </li>
+          </ListCard>
         );
       })}
     </ul>
@@ -520,6 +523,7 @@ function RoleChange({ member, caller, branches, roles, onCancel, onDone }: {
           </Field>
         )}
       </div>
+      {rule && rule !== "forbidden" && branches.length === 0 && <NoBranchesNote required={rule === "required"} />}
       {error?.field === "form" && <p className="text-sm text-red-700" role="alert">{error.message}</p>}
       <div className="flex gap-3">
         <button type="button" onClick={save} disabled={saving || !roleCode} className="px-3 py-1.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold disabled:opacity-60">
@@ -562,5 +566,16 @@ function Deactivate({ member, caller, onCancel, onDone }: { member: StaffMember;
         <button type="button" onClick={onCancel} className="px-3 py-1.5 border border-[var(--border)] rounded-md text-sm">Cancel</button>
       </div>
     </div>
+  );
+}
+
+// The branch picker lists only the company's branches; with none, it offers
+// nothing but "company-wide" — say why, and where to add one.
+function NoBranchesNote({ required }: { required: boolean }) {
+  return (
+    <p className="text-xs text-[var(--muted-foreground)]">
+      Your company has no branches yet{required ? ", and this role needs one" : ", so this can only be company-wide for now"}.{" "}
+      <TextLink to="/portal/branches">Add a branch</TextLink> first.
+    </p>
   );
 }

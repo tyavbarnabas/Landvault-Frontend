@@ -63,7 +63,7 @@ export default function Step6Directors() {
       />
 
       <CheckboxField
-        label="I confirm I am a director of this company and am authorised to register it on LandVault."
+        label="I confirm I am a director of this company and am authorised to register it on HomeTrue."
         error={errors.attestation?.message}
         {...register("attestation")}
       />

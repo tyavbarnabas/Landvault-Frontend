@@ -11,6 +11,7 @@ import {
   declineOffer, acceptOffer, getListingEligibility, fetchResaleTransfer, fetchMyResaleTransfers,
   RESALE_POLICY, type ResaleListing, type ResaleOffer, type ResaleTransfer, type OutstandingTreatment,
 } from "../../services/resaleService";
+import { ListCard } from "../../components/ui/Card";
 
 // This file is the SELLER workspace only — "what I'm selling," reachable
 // from the portfolio, deliberately not from the marketplace feed. Buyer-side
@@ -79,17 +80,17 @@ export function MyListings() {
       {(inFlightTransfers.length > 0 || pastTransfers.length > 0) && (
         <div className="mb-8">
           <h2 className="font-semibold text-sm mb-3">Transfers</h2>
-          <div className="space-y-2">
+          <ul className="space-y-3">
             {[...inFlightTransfers, ...pastTransfers].map((t) => (
-              <Link key={t.id} to={`/resale/transfer/${t.id}`} className="flex items-center justify-between gap-4 bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 hover:border-[var(--accent)]/50 transition-colors">
+              <ListCard key={t.id} to={`/resale/transfer/${t.id}`} density="compact" className="flex items-center justify-between gap-4">
                 <div>
                   <div className="font-medium text-sm">{t.estateName} — {t.plotLabel}</div>
                   <div className="text-xs text-[var(--muted-foreground)]">to {t.buyerName} · {formatAmount(t.amount, t.currency)}</div>
                 </div>
                 <TransferStatusPill status={t.status} />
-              </Link>
+              </ListCard>
             ))}
-          </div>
+          </ul>
         </div>
       )}
 
@@ -101,9 +102,9 @@ export function MyListings() {
             You don't have any plots available for listing right now.
           </div>
         ) : (
-          <div className="space-y-3">
+          <ul className="space-y-3">
             {eligible.map((plot) => (
-              <div key={plot.id} className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-4 flex items-center justify-between gap-4">
+              <ListCard key={plot.id} density="compact" className="flex items-center justify-between gap-4">
                 <div>
                   <div className="font-semibold text-sm">{plot.estate} — {plot.plotLabel}</div>
                   <div className="text-xs text-[var(--muted-foreground)]">{plot.sqm} sqm · Paid {formatAmount(plot.paidAmount, currency)}</div>
@@ -114,24 +115,24 @@ export function MyListings() {
                 >
                   Create listing
                 </Link>
-              </div>
+              </ListCard>
             ))}
-          </div>
+          </ul>
         )}
 
         {/* Fix 2: plots in arrears are blocked from listing, with a path forward */}
         {ineligibleInArrears.length > 0 && (
-          <div className="mt-3 space-y-2">
+          <ul className="mt-3 space-y-3">
             {ineligibleInArrears.map((plot) => (
-              <div key={plot.id} className="flex items-center justify-between gap-4 bg-red-50 border border-red-200 rounded-xl p-4">
+              <ListCard key={plot.id} density="compact" alert className="flex items-center justify-between gap-4">
                 <div>
-                  <div className="font-semibold text-sm text-red-900">{plot.estate} — {plot.plotLabel}</div>
-                  <div className="text-xs text-red-700">In arrears — can't be listed until resolved.</div>
+                  <div className="font-semibold text-sm text-[var(--foreground)]">{plot.estate} — {plot.plotLabel}</div>
+                  <div className="text-xs text-[var(--error-text)]">In arrears — can't be listed until resolved.</div>
                 </div>
-                <Link to={`/portfolio/${plot.id}`} className="text-xs font-medium text-red-800 hover:underline whitespace-nowrap">Request restructuring →</Link>
-              </div>
+                <Link to={`/portfolio/${plot.id}`} className="text-xs font-medium text-[var(--error-text)] hover:underline whitespace-nowrap">Request restructuring →</Link>
+              </ListCard>
             ))}
-          </div>
+          </ul>
         )}
       </div>
 

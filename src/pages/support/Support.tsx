@@ -4,6 +4,7 @@ import type { OwnedPlot } from "../../data/mockData";
 import { fetchOwnedPlots } from "../../services/portfolioService";
 import { fetchDisputes, createDispute, type DisputeTicket } from "../../services/disputesService";
 import { useApp } from "../../contexts/AppContext";
+import { ListCard } from "../../components/ui/Card";
 
 interface ChatMessage {
   id: string;
@@ -16,7 +17,7 @@ const INITIAL_MESSAGES: ChatMessage[] = [
   {
     id: "m0",
     from: "agent",
-    text: "Hi there! I'm the LandVault support assistant. How can I help you today? You can ask about your plots, payments, documents, or I can connect you with a human agent.",
+    text: "Hi there! I'm the HomeTrue support assistant. How can I help you today? You can ask about your plots, payments, documents, or I can connect you with a human agent.",
     time: now(),
   },
 ];
@@ -135,7 +136,7 @@ function ChatPanel({ userName }: { userName: string }) {
       <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-3">
         <div className="w-8 h-8 rounded-full bg-[var(--primary)] flex items-center justify-center text-white text-sm font-semibold">LV</div>
         <div>
-          <div className="text-sm font-semibold">LandVault Support</div>
+          <div className="text-sm font-semibold">HomeTrue Support</div>
           <div className="text-xs text-[var(--muted-foreground)]">
             Automated assistant — ask to be connected to a person
           </div>
@@ -168,7 +169,7 @@ function ChatPanel({ userName }: { userName: string }) {
 
         {handedOff && (
           <a
-            href="https://wa.me/2348012345678?text=Hi%2C%20I%20need%20help%20with%20my%20LandVault%20account."
+            href="https://wa.me/2348012345678?text=Hi%2C%20I%20need%20help%20with%20my%20HomeTrue%20account."
             target="_blank"
             rel="noreferrer"
             className="flex items-center gap-2 mx-auto w-fit px-4 py-2.5 bg-green-600 text-white rounded-full text-sm font-medium hover:bg-green-700 transition-colors"
@@ -317,8 +318,9 @@ function DisputesPanel({ initialPlotId, tickets, ticketsTotal, hasMore, onLoadMo
       {/* Ticket list */}
       {tickets.length > 0 && (
         <div className="space-y-3">
+          <ul className="space-y-3">
           {tickets.map((t) => (
-            <div key={t.id} className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-4">
+            <ListCard key={t.id} density="compact">
               <div className="flex items-start justify-between gap-3 mb-2">
                 <div>
                   <div className="font-medium text-sm">{t.subject}</div>
@@ -332,8 +334,9 @@ function DisputesPanel({ initialPlotId, tickets, ticketsTotal, hasMore, onLoadMo
                   ↳ Under review by our disputes team — we'll update this ticket once there's movement.
                 </div>
               )}
-            </div>
+            </ListCard>
           ))}
+          </ul>
           {hasMore && (
             <button onClick={onLoadMore} className="w-full py-2.5 border border-[var(--border)] rounded-md text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors">
               Load more

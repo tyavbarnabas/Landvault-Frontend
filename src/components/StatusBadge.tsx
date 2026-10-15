@@ -6,24 +6,13 @@ import type { ConflictStatus } from "../services/listingConflictsService";
 import type { PortalEstateStatus } from "../services/portalEstatesService";
 import type { InvitationStatus, StaffStatus } from "../services/staffService";
 import type { BoundaryChangeStatus } from "../services/portalEstatesService";
+import Badge, { type BadgeVariant } from "./ui/Badge";
+import type { PayoutStatus, RefundStatus, SettlementAccountStatus } from "../services/paymentTypes";
 
-export type BadgeVariant = "neutral" | "info" | "warning" | "success" | "error";
-
-const VARIANT_STYLES: Record<BadgeVariant, string> = {
-  neutral: "bg-[var(--muted)] text-[var(--muted-foreground)] border-[var(--border)]",
-  info: "bg-blue-50 text-blue-700 border-blue-200",
-  warning: "bg-amber-50 text-amber-700 border-amber-200",
-  success: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  error: "bg-red-50 text-red-700 border-red-200",
-};
-
-export default function StatusBadge({ label, variant }: { label: string; variant: BadgeVariant }) {
-  return (
-    <span className={`inline-flex items-center shrink-0 text-xs font-medium px-2.5 py-1 rounded-full border ${VARIANT_STYLES[variant]}`}>
-      {label}
-    </span>
-  );
-}
+// The pill itself lives in ui/Badge; this file maps each domain's statuses to
+// a label and a tone.
+export type { BadgeVariant };
+export default Badge;
 
 export function tenantStatusBadge(status: TenantStatus): { label: string; variant: BadgeVariant } {
   switch (status) {
@@ -103,4 +92,42 @@ export function boundaryChangeBadge(status: BoundaryChangeStatus): { label: stri
     case "rejected": return { label: "Rejected", variant: "error" };
     case "withdrawn": return { label: "Withdrawn", variant: "neutral" };
   }
+}
+
+export function payoutStatusBadge(status: PayoutStatus): { label: string; variant: BadgeVariant } {
+  switch (status) {
+    case "success": return { label: "Paid", variant: "success" };
+    case "pending": return { label: "With the bank", variant: "info" };
+    case "sending": return { label: "Sending", variant: "info" };
+    case "awaiting_otp": return { label: "Awaiting approval code", variant: "warning" };
+    case "failed": return { label: "Failed", variant: "error" };
+    case "reversed": return { label: "Reversed", variant: "error" };
+    case "cancelled": return { label: "Cancelled", variant: "neutral" };
+  }
+}
+
+export function settlementAccountBadge(status: SettlementAccountStatus): { label: string; variant: BadgeVariant } {
+  switch (status) {
+    case "approved": return { label: "Approved", variant: "success" };
+    case "pending": return { label: "Waiting for HomeTrue", variant: "warning" };
+    case "rejected": return { label: "Rejected", variant: "error" };
+    case "withdrawn": return { label: "Withdrawn", variant: "neutral" };
+    case "superseded": return { label: "Replaced", variant: "neutral" };
+  }
+}
+
+export function refundStatusBadge(status: RefundStatus): { label: string; variant: BadgeVariant } {
+  switch (status) {
+    case "pending": return { label: "Pending", variant: "info" };
+    case "sending": return { label: "Sending", variant: "info" };
+    case "processing": return { label: "Processing", variant: "info" };
+    case "needs-attention": return { label: "Needs an account", variant: "warning" };
+    case "processed": return { label: "Refunded", variant: "success" };
+    case "failed": return { label: "Failed", variant: "error" };
+  }
+}
+
+// A role the company made itself, or one of HomeTrue's standard roles.
+export function roleKindBadge(custom: boolean): { label: string; variant: BadgeVariant } {
+  return custom ? { label: "Your company's", variant: "info" } : { label: "HomeTrue standard", variant: "neutral" };
 }

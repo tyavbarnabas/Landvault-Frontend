@@ -22,7 +22,7 @@ export default function KYC() {
     <div className="min-h-full bg-[var(--background)] flex items-center justify-center px-4 py-16">
       <div className="w-full max-w-lg">
         <div className="mb-8">
-          <span className="font-display text-xl text-[var(--foreground)]">LandVault</span>
+          <span className="font-display text-xl text-[var(--foreground)]">HomeTrue</span>
           <div className="text-xs text-[var(--muted-foreground)] font-mono-data mt-0.5">Identity Verification</div>
         </div>
 

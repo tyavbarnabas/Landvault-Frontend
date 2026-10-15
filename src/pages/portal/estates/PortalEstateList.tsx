@@ -5,7 +5,8 @@ import { useFetch } from "../../../lib/useFetch";
 import { formatCompactCurrency } from "../../../lib/formatCurrency";
 import { fetchPortalEstates, type PortalEstate } from "../../../services/portalEstatesService";
 import StatusBadge, { portalEstateStatusBadge } from "../../../components/StatusBadge";
-import EmptyState from "../../../components/marketplace/EmptyState";
+import EmptyState from "../../../components/ui/EmptyState";
+import { ListCard } from "../../../components/ui/Card";
 import { usePortalScope } from "../usePortalScope";
 import { useApp } from "../../../contexts/AppContext";
 import { canManageEstates } from "../../../services/authService";
@@ -79,9 +80,9 @@ export default function PortalEstateList() {
 
       {!estates.loading && !estates.error && (estates.data?.items.length ?? 0) > 0 && (
         <>
-          <div className="space-y-3">
+          <ul className="space-y-3">
             {estates.data!.items.map((estate) => <EstateRow key={estate.id} estate={estate} branchNames={branchNames} />)}
-          </div>
+          </ul>
           <p className="text-xs text-[var(--muted-foreground)] mt-4">
             Showing {estates.data!.items.length} of {estates.data!.total}.
           </p>
@@ -95,10 +96,7 @@ function EstateRow({ estate, branchNames }: { estate: PortalEstate; branchNames:
   const badge = portalEstateStatusBadge(estate.status);
 
   return (
-    <Link
-      to={`/portal/estates/${estate.id}`}
-      className="block bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 min-h-28 hover:border-[var(--accent)]/50 transition-colors"
-    >
+    <ListCard to={`/portal/estates/${estate.id}`}>
       <div className="flex items-start justify-between gap-4 mb-2">
         <div className="min-w-0">
           <div className="font-semibold text-[var(--foreground)]">{estate.name}</div>
@@ -139,6 +137,6 @@ function EstateRow({ estate, branchNames }: { estate: PortalEstate; branchNames:
           ))}
         </ul>
       )}
-    </Link>
+    </ListCard>
   );
 }

@@ -93,7 +93,7 @@ export default function PortalEstateDetail() {
             {estate.plotsWithoutBoundary} {estate.plotsWithoutBoundary === 1 ? "plot isn't" : "plots aren't"} on the map.
           </span>{" "}
           {estate.plotsWithoutBoundary === 1 ? "It has" : "They have"} no surveyed boundary, so buyers see “boundary not surveyed” and
-          LandVault can't check {estate.plotsWithoutBoundary === 1 ? "it" : "them"} for double allocation. Add boundaries in{" "}
+          HomeTrue can't check {estate.plotsWithoutBoundary === 1 ? "it" : "them"} for double allocation. Add boundaries in{" "}
           <Link to={`/portal/estates/${estate.id}/inventory`} className="underline">Inventory</Link>.
         </div>
       )}

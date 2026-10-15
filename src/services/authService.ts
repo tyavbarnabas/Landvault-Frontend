@@ -72,6 +72,8 @@ const CLIENT_PERMISSIONS = [
   "client.syndicates.view",
   "client.support.view",
   "client.settings.view",
+  // Reserving, paying and the buyer's side of refunds (changeset 050).
+  "client.checkout.reserve",
 ];
 
 // Only what's actually built so far (tenant lifecycle, a platform dashboard,
@@ -79,11 +81,23 @@ const CLIENT_PERMISSIONS = [
 // backlog (the rest of marketplace governance, seller verification,
 // reputation/disputes, integrations, billing, compliance, support ops) adds
 // its own permission slugs here as those screens land.
+// Payments (changesets 073 and 075), granted exactly as the backend grants them:
+//   portal.payments.verify  — finance_officer AND executive_director: the
+//     finance queue, late payments, the company's payouts (read-only)
+//   portal.settlement.manage — executive_director only: the payout bank account
+//   admin.payouts.manage     — super_admin only: payout accounts, payouts, refunds
+// The Super Admin does NOT hold portal.payments.verify; finance staff hold no admin.*.
+export const PAYMENTS_VERIFY_PERMISSION = "portal.payments.verify";
+export const SETTLEMENT_MANAGE_PERMISSION = "portal.settlement.manage";
+export const ADMIN_PAYOUTS_PERMISSION = "admin.payouts.manage";
+export const CHECKOUT_RESERVE_PERMISSION = "client.checkout.reserve";
+
 const SUPER_ADMIN_PERMISSIONS = [
   "admin.dashboard.view",
   "admin.tenants.view",
   "admin.tenants.manage",
   "admin.marketplace.conflicts",
+  ADMIN_PAYOUTS_PERMISSION,
 ];
 
 // Only what this slice actually builds (DP-1 to DP-6: reach the portal, list
@@ -105,8 +119,13 @@ const PORTAL_PERMISSIONS = [
 export const BRANCHES_MANAGE_PERMISSION = "portal.branches.manage";
 export const STAFF_INVITE_PERMISSION = "portal.staff.invite";
 export const STAFF_REQUEST_PERMISSION = "portal.staff.request";
+// Company-made roles (changeset 084): executive_director only, and a
+// company-wide permission — a branch-narrowed view can't create, edit or
+// delete roles even holding it.
+export const ROLES_MANAGE_PERMISSION = "portal.roles.manage";
 
-const DIRECTOR_PERMISSIONS = [...PORTAL_PERMISSIONS, BRANCHES_MANAGE_PERMISSION, STAFF_INVITE_PERMISSION, STAFF_REQUEST_PERMISSION];
+const DIRECTOR_PERMISSIONS = [...PORTAL_PERMISSIONS, BRANCHES_MANAGE_PERMISSION, STAFF_INVITE_PERMISSION, STAFF_REQUEST_PERMISSION,
+  PAYMENTS_VERIFY_PERMISSION, SETTLEMENT_MANAGE_PERMISSION, ROLES_MANAGE_PERMISSION];
 // NOT portal.estates.manage: changeset 041 grants that to executive_director
 // and surveyor_project_manager only. A branch manager reads their branch's
 // estates and asks head office for staff — the surveyor they ask for is the
@@ -152,6 +171,12 @@ export function canInviteStaff(user: AuthUser | null | undefined): boolean {
 // refuses them at /requests — so they don't count here.
 export function canRequestStaff(user: AuthUser | null | undefined): boolean {
   return can(user, STAFF_REQUEST_PERMISSION) && !canInviteStaff(user);
+}
+
+// Create, edit and delete the company's own roles. The backend ALSO refuses
+// a caller whose current scope is one branch, so the page checks that too.
+export function canManageRoles(user: AuthUser | null | undefined): boolean {
+  return can(user, ROLES_MANAGE_PERMISSION);
 }
 
 export function isPlatformStaff(user: AuthUser | null | undefined): boolean {
@@ -271,14 +296,14 @@ export function mockAccountExists(email: string): boolean {
 
 // The permissions a mock account holds for a tenant role — the backend's
 // role_permissions, for the roles a tenant can assign.
-// Transcribed from changesets 041, 045, 065, 067 and 068.
+// Transcribed from changesets 041, 045, 065, 067, 068, 073 and 075.
 export function mockPermissionsForRole(roleCode: string): string[] {
   switch (roleCode) {
     case "executive_director": return DIRECTOR_PERMISSIONS;
     case "branch_manager": return BRANCH_MANAGER_PERMISSIONS;
     case "surveyor_project_manager": return PORTAL_PERMISSIONS;
+    case "finance_officer": return ["portal.estates.view", PAYMENTS_VERIFY_PERMISSION];
     case "sales_manager":
-    case "finance_officer":
     case "legal_officer": return ["portal.estates.view"];
     default: return [];
   }
@@ -650,8 +675,8 @@ function mockSetupTwoFactor(): TwoFactorSetup {
   // Base32 alphabet, so a real authenticator app would accept the shape.
   const secret = "JBSWY3DPEHPK3PXP";
   mockPendingSecret = secret;
-  const label = encodeURIComponent("LandVault:demo@landvault.com");
-  return { secret, otpAuthUri: `otpauth://totp/${label}?secret=${secret}&issuer=LandVault` };
+  const label = encodeURIComponent("HomeTrue:demo@landvault.com");
+  return { secret, otpAuthUri: `otpauth://totp/${label}?secret=${secret}&issuer=HomeTrue` };
 }
 
 function mockConfirmTwoFactor(code: string): string[] {

@@ -174,3 +174,55 @@ describe("estates with no branch", () => {
     expect(estate.branchId).toBeNull();
   });
 });
+
+// PortalRoleController and RoleExceptionHandler (backend commit 142e78d).
+describe("company-made roles", () => {
+  const ROLE = { code: "custom_484738371f3d4a8b", name: "Accounts Clerk", description: null, scope: "either", permissions: ["portal.estates.view"], canGrant: true, custom: true };
+
+  it("creates with name, description, scope and permissions", async () => {
+    respond({ "POST /api/portal/roles": { status: 201, body: ROLE } });
+    const { createRole } = await import("./staffService");
+
+    expect(await createRole({ name: " Accounts Clerk ", description: "", scope: "either", permissions: ["portal.estates.view"] }, CALLER)).toEqual(ROLE);
+    expect(calls[0].body).toEqual({ name: "Accounts Clerk", description: "", scope: "either", permissions: ["portal.estates.view"] });
+  });
+
+  it("an edit never sends the scope, and leaves out what isn't changing", async () => {
+    respond({ "PUT /api/portal/roles/custom_484738371f3d4a8b": { status: 200, body: ROLE } });
+    const { updateRole } = await import("./staffService");
+
+    await updateRole(ROLE.code, { permissions: ["portal.estates.view", "portal.payments.verify"] }, CALLER);
+    expect(calls[0].body).toEqual({ permissions: ["portal.estates.view", "portal.payments.verify"] });
+  });
+
+  it("shows the backend's message, under the field it belongs to", async () => {
+    respond({
+      "POST /api/portal/roles": { status: 409, body: { code: "ROLE_NAME_TAKEN", message: "Your company already has a role called 'Accounts Clerk'." } },
+      "DELETE /api/portal/roles/custom_484738371f3d4a8b": { status: 409, body: { code: "ROLE_IN_USE", message: "This role can't be deleted: someone still holds it (deactivated staff included). Give them another role first." } },
+    });
+    const { createRole, deleteRole } = await import("./staffService");
+
+    await expect(createRole({ name: "Accounts Clerk", description: "", scope: "either", permissions: ["portal.estates.view"] }, CALLER))
+      .rejects.toMatchObject({ field: "name", code: "ROLE_NAME_TAKEN", message: "Your company already has a role called 'Accounts Clerk'." });
+    await expect(deleteRole(ROLE.code, CALLER)).rejects.toMatchObject({ field: "form", code: "ROLE_IN_USE", message: expect.stringMatching(/another role first/) });
+  });
+
+  it("a validation failure comes back field by field", async () => {
+    respond({ "POST /api/portal/roles": { status: 400, body: { fieldErrors: { name: "size must be between 0 and 80" } } } });
+    const { createRole } = await import("./staffService");
+
+    await expect(createRole({ name: "A", description: "", scope: "either", permissions: ["portal.estates.view"] }, CALLER))
+      .rejects.toMatchObject({ field: "name", message: "size must be between 0 and 80" });
+  });
+
+  it("deletes with a 204, and reads the permission catalogue", async () => {
+    respond({
+      "DELETE /api/portal/roles/custom_484738371f3d4a8b": { status: 204 },
+      "GET /api/portal/permissions": { status: 200, body: [{ code: "portal.estates.view", label: "See estates, plots and prices", description: "…", requiresCompanyWide: false, held: true }] },
+    });
+    const { deleteRole, fetchPortalPermissions } = await import("./staffService");
+
+    await expect(deleteRole(ROLE.code, CALLER)).resolves.toBeUndefined();
+    expect((await fetchPortalPermissions(CALLER))[0].label).toBe("See estates, plots and prices");
+  });
+});

@@ -11,7 +11,8 @@ import { useFetch } from "../../../lib/useFetch";
 import { NIGERIAN_STATES } from "../../../data/nigerianStates";
 import { BranchError, createBranch, fetchBranches, updateBranch, type BranchInput, type PortalBranch } from "../../../services/branchesService";
 import { Field, inputClass } from "../../../components/portal/formParts";
-import EmptyState from "../../../components/marketplace/EmptyState";
+import EmptyState from "../../../components/ui/EmptyState";
+import { ListCard } from "../../../components/ui/Card";
 import { usePortalScope } from "../usePortalScope";
 
 export default function PortalBranches() {
@@ -68,7 +69,7 @@ export default function PortalBranches() {
       ) : (
         <ul className="space-y-3">
           {list.map((branch) => (
-            <li key={branch.id} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 min-h-28">
+            <ListCard key={branch.id}>
               {editingId === branch.id ? (
                 <BranchForm
                   initial={branch}
@@ -85,7 +86,7 @@ export default function PortalBranches() {
                   <button type="button" onClick={() => setEditingId(branch.id)} className="text-sm text-[var(--accent)] hover:underline">Edit</button>
                 </div>
               )}
-            </li>
+            </ListCard>
           ))}
         </ul>
       )}

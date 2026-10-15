@@ -41,6 +41,11 @@ import type { Currency, PlotStatus, PaymentPlan } from "../data/mockData";
 import { BUYER_FACING_STATUSES, CREATABLE_STATUSES, STATUS_COLORS, STATUS_LABELS } from "../lib/plotStatus";
 import type { TitleType } from "./marketplaceService";
 import { AUTH_ERROR_CODES, type AuthUser, type ChangePasswordInput, type TwoFactorChallenge, type UserRole } from "./authService";
+import type { PaymentStatus, PayoutStatus, RefundStatus, SettlementAccountStatus } from "./paymentTypes";
+import type { TransactionStatus } from "./marketplaceCheckoutService";
+import {
+  ADMIN_PAYOUTS_PERMISSION, CHECKOUT_RESERVE_PERMISSION, PAYMENTS_VERIFY_PERMISSION, SETTLEMENT_MANAGE_PERMISSION, mockPermissionsForRole,
+} from "./authService";
 import { DUE_TRIGGERS, FEE_CURRENCIES, FEE_TYPES, type RefundAppliesTo, type FeeSchedule } from "./estateDisclosureService";
 import { ELIGIBILITY_CONDITIONS, PUBLICATION_REFUSAL_CONDITIONS, type EstateEligibility, type PublicationResult } from "./portalEstatesService";
 
@@ -482,5 +487,45 @@ describe("boundary correction and itemised conflict shapes", () => {
     expect(Object.keys(changes).sort()).toEqual(["awaitingReview", "raised", "resolved", "stillOpen"]);
     expect(Object.keys(item)).toHaveLength(11);
     expect(wireValues(["estate_overlap", "plot_overlap"] satisfies readonly ConflictType[])).toEqual(["estate_overlap", "plot_overlap"]);
+  });
+});
+
+// Payments (backend payments/internal/enums + checkout TransactionStatus),
+// transcribed from each enum's wire(). RefundStatus is the odd one out: dashes.
+describe("payment enums", () => {
+  it("TransactionStatus — gains abandoned; payment_received exists but is never written", () => {
+    expect(wireValues(["pending_payment", "payment_received", "awaiting_finance", "verified", "rejected", "abandoned"] satisfies readonly TransactionStatus[]))
+      .toEqual(["pending_payment", "payment_received", "awaiting_finance", "verified", "rejected", "abandoned"]);
+  });
+
+  it("PaymentStatus", () => {
+    expect(wireValues(["initialized", "succeeded", "failed", "abandoned", "mismatched"] satisfies readonly PaymentStatus[]))
+      .toEqual(["initialized", "succeeded", "failed", "abandoned", "mismatched"]);
+  });
+
+  it("PayoutStatus", () => {
+    expect(wireValues(["sending", "awaiting_otp", "pending", "success", "failed", "reversed", "cancelled"] satisfies readonly PayoutStatus[]))
+      .toEqual(["sending", "awaiting_otp", "pending", "success", "failed", "reversed", "cancelled"]);
+  });
+
+  it("RefundStatus — HYPHENATED needs-attention, and sending (in the enum, missing from the brief)", () => {
+    expect(wireValues(["pending", "sending", "processing", "needs-attention", "processed", "failed"] satisfies readonly RefundStatus[]))
+      .toEqual(["pending", "sending", "processing", "needs-attention", "processed", "failed"]);
+  });
+
+  it("SettlementAccountStatus", () => {
+    expect(wireValues(["pending", "approved", "rejected", "withdrawn", "superseded"] satisfies readonly SettlementAccountStatus[]))
+      .toEqual(["pending", "approved", "rejected", "withdrawn", "superseded"]);
+  });
+
+  it("payment permissions go to exactly the roles the backend grants them to (changesets 073, 075)", () => {
+    expect([PAYMENTS_VERIFY_PERMISSION, SETTLEMENT_MANAGE_PERMISSION, ADMIN_PAYOUTS_PERMISSION, CHECKOUT_RESERVE_PERMISSION])
+      .toEqual(["portal.payments.verify", "portal.settlement.manage", "admin.payouts.manage", "client.checkout.reserve"]);
+    expect(mockPermissionsForRole("finance_officer")).toContain(PAYMENTS_VERIFY_PERMISSION);
+    expect(mockPermissionsForRole("finance_officer")).not.toContain(SETTLEMENT_MANAGE_PERMISSION);
+    expect(mockPermissionsForRole("executive_director")).toEqual(expect.arrayContaining([PAYMENTS_VERIFY_PERMISSION, SETTLEMENT_MANAGE_PERMISSION]));
+    for (const role of ["branch_manager", "sales_manager", "legal_officer", "surveyor_project_manager"]) {
+      expect(mockPermissionsForRole(role)).not.toContain(PAYMENTS_VERIFY_PERMISSION);
+    }
   });
 });

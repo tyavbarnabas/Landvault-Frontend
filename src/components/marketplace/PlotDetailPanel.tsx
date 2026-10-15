@@ -133,7 +133,7 @@ export default function PlotDetailPanel({ plot, listing, onClose, onOpenEnquiry 
         {plot.hasBoundary === false && (
           // The backend's own rule: never present an unsurveyed plot like a surveyed one.
           <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900">
-            <span className="font-semibold">Boundary not surveyed yet.</span> This plot isn't on the map, its exact position in the estate isn't confirmed, and it isn't covered by LandVault's double-allocation check until it's surveyed. Ask the developer before you commit.
+            <span className="font-semibold">Boundary not surveyed yet.</span> This plot isn't on the map, its exact position in the estate isn't confirmed, and it isn't covered by HomeTrue's double-allocation check until it's surveyed. Ask the developer before you commit.
           </div>
         )}
 

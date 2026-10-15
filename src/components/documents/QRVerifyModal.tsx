@@ -31,7 +31,7 @@ export default function QRVerifyModal({ doc, onClose }: { doc: Document; onClose
             </div>
             <div className={`text-xs mt-0.5 ${doc.status === "valid" ? "text-emerald-700" : "text-red-700"}`}>
               {doc.status === "valid"
-                ? "This document is authentic and has not been altered. Issued by LandVault Ltd."
+                ? "This document is authentic and has not been altered. Issued by HomeTrue."
                 : "This document has been voided or superseded. Do not accept as valid."}
             </div>
           </div>

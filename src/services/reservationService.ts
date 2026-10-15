@@ -14,7 +14,6 @@
 
 import { apiClient } from "../lib/apiClient";
 import { isMock } from "../lib/backends";
-import { PaymentsUnavailableError } from "./paymentsUnavailable";
 import { fetchPlotById, setPlotStatusMock, type PlotStatus } from "./marketplacePlotsService";
 
 export const RESERVATION_SECONDS = 45 * 60;
@@ -89,9 +88,9 @@ export async function releaseReservation(id: string): Promise<void> {
 // TODO (backend): this, the finance decision, and document issuance must be
 // one atomic transaction — see the note in marketplaceCheckoutService.ts.
 export async function convertReservation(id: string): Promise<void> {
-  // No such route: on the backend a reservation becomes a purchase only through
-  // a finance-verified payment, which isn't built. Never faked as done.
-  if (!isMock("reservation")) throw new PaymentsUnavailableError();
+  // Demo mode only. On the backend a reservation becomes a sale only when the
+  // developer's finance verifies the payment — never from the browser.
+  if (!isMock("reservation")) throw new Error("Demo mode only: the backend converts a reservation when finance verifies the payment.");
   const r = mockReservations.get(id);
   if (!r) return;
   setPlotStatusMock(r.listingId, r.plotId, "sold");

@@ -20,8 +20,9 @@ import {
 import EstateBoundaryMap from "../../../components/map/EstateBoundaryMap";
 import ConflictChangesView from "../../../components/portal/ConflictChangesView";
 import StatusBadge, { boundaryChangeBadge } from "../../../components/StatusBadge";
-import TabBar from "../../../components/TabBar";
-import EmptyState from "../../../components/marketplace/EmptyState";
+import TabBar from "../../../components/ui/Tabs";
+import EmptyState from "../../../components/ui/EmptyState";
+import { ListCard } from "../../../components/ui/Card";
 import { Field, inputClass } from "../../../components/portal/formParts";
 
 const TABS: { id: BoundaryChangeStatus; label: string }[] = [
@@ -87,7 +88,7 @@ function ChangeCard({ change, onDecided }: { change: BoundaryChange; onDecided: 
   ].filter(Boolean);
 
   return (
-    <li className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 min-h-28 space-y-3">
+    <ListCard className="space-y-3">
       <div className="flex flex-wrap items-start gap-3">
         <div className="flex-1 min-w-[200px]">
           <div className="font-semibold text-[var(--foreground)]">{change.estateName}</div>
@@ -147,6 +148,6 @@ function ChangeCard({ change, onDecided }: { change: BoundaryChange; onDecided: 
           <button type="button" onClick={onDecided} className="text-xs text-[var(--accent)] hover:underline">Refresh the list</button>
         </div>
       )}
-    </li>
+    </ListCard>
   );
 }

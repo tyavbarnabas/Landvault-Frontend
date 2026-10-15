@@ -31,11 +31,11 @@ export default function RecoveryCodes({ codes, onAcknowledged, title = "Save you
   };
 
   const download = () => {
-    const blob = new Blob([`LandVault recovery codes\n\nEach code works once. Keep them somewhere safe and private.\n\n${asText}\n`], { type: "text/plain" });
+    const blob = new Blob([`HomeTrue recovery codes\n\nEach code works once. Keep them somewhere safe and private.\n\n${asText}\n`], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "landvault-recovery-codes.txt";
+    link.download = "hometrue-recovery-codes.txt";
     link.click();
     URL.revokeObjectURL(url);
   };

@@ -16,9 +16,9 @@ import {
   type PortalPlotStatus, type PriceTierUpdate, type TierType, type UpdatePriceTierInput,
 } from "../../../services/portalInventoryService";
 import EstateBoundaryMap from "../../../components/map/EstateBoundaryMap";
-import EmptyState from "../../../components/marketplace/EmptyState";
+import EmptyState from "../../../components/ui/EmptyState";
 import StatusBadge from "../../../components/StatusBadge";
-import TabBar from "../../../components/TabBar";
+import TabBar from "../../../components/ui/Tabs";
 import { Field } from "../../../components/portal/formParts";
 import BoundaryField from "../../../components/portal/BoundaryField";
 import ConflictChangesView from "../../../components/portal/ConflictChangesView";

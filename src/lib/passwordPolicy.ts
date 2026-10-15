@@ -23,7 +23,7 @@ export const MAX_PASSWORD_LENGTH = 64;
 const COMMON = new Set([
   "password", "passw0rd", "qwerty", "qwertyuiop", "abc", "abcdef", "letmein", "welcome", "admin", "iloveyou",
   "monkey", "dragon", "football", "baseball", "sunshine", "princess", "master", "shadow", "trustno",
-  "changeme", "default", "secret", "login", "starwars", "whatever", "landvault", "nigeria", "naija",
+  "changeme", "default", "secret", "login", "starwars", "whatever", "landvault", "hometrue", "nigeria", "naija",
   "lagos", "abuja", "jesus", "godisgood", "blessed", "chelsea", "arsenal", "manutd",
 ]);
 

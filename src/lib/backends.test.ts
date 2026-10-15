@@ -56,6 +56,16 @@ describe("service registry", () => {
     vi.unstubAllGlobals();
   });
 
+  it("a retired service is never counted or reported as demo data", async () => {
+    vi.stubEnv("VITE_API_BASE_URL", "http://api.test");
+    vi.stubGlobal("window", { location: { pathname: "/syndicates" } });
+    const { isMock, isLive, mockServedOn } = await import("./backends");
+    expect(isLive("estates")).toBe(false);
+    expect(isMock("estates")).toBe(true); // demo-only readers still get demo data
+    expect(mockServedOn("/syndicates")).toEqual([]);
+    vi.unstubAllGlobals();
+  });
+
   it("names the service behind a request path", async () => {
     const { serviceForPath } = await import("./backends");
     expect(serviceForPath("/api/auth/login")).toBe("auth");
@@ -65,6 +75,9 @@ describe("service registry", () => {
     expect(serviceForPath("/api/portal/estates/e1/fees")).toBe("estateDisclosure");
     expect(serviceForPath("/api/marketplace/estates/e1/geojson")).toBe("marketplace");
     expect(serviceForPath("/api/marketplace/enquiries")).toBe("enquiries");
+    expect(serviceForPath("/api/transactions/x1/payments")).toBe("checkout");
+    expect(serviceForPath("/api/payments/PAY-1/verify")).toBe("checkout");
+    expect(serviceForPath("/api/checkout/transactions/mine")).toBe("checkout");
     expect(serviceForPath("/api/nothing")).toBeNull();
   });
 

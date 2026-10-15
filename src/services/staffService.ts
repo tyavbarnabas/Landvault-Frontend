@@ -87,9 +87,11 @@ function holdsAll(held: string[] | undefined, needed: string[]): boolean {
   return !held || needed.every((p) => held.includes(p));
 }
 
+// HomeTrue's standard roles and the company's own (`custom: true`), used by
+// `code` alike in invitations and role changes.
 export async function fetchAssignableRoles(caller: StaffCaller): Promise<AssignableRole[]> {
   if (!isMock("staff")) return apiClient.get<AssignableRole[]>("/api/portal/roles");
-  return MOCK_ROLES.map((r) => ({ ...r, permissions: [...r.permissions], canGrant: holdsAll(caller.permissions, r.permissions) }));
+  return mockRolesFor(caller.tenantId).map((r) => ({ ...r, permissions: [...r.permissions], canGrant: holdsAll(caller.permissions, r.permissions) }));
 }
 
 // ─── Types (DTOs) ────────────────────────────────────────────────────────────
@@ -191,7 +193,7 @@ export class StaffError extends Error {
 const MESSAGES: Record<string, { field: string; message: string }> = {
   // A deliberate refusal, not a bug: a buyer account that also held a company
   // role would keep its buyer role — and silently lose its branch wall.
-  EMAIL_HAS_ACCOUNT: { field: "email", message: "This email already has a LandVault account — often a personal buyer account. Use the person's work email instead: one account can't be both a buyer and company staff." },
+  EMAIL_HAS_ACCOUNT: { field: "email", message: "This email already has a HomeTrue account — often a personal buyer account. Use the person's work email instead: one account can't be both a buyer and company staff." },
   CANNOT_GRANT_ROLE: { field: "roleCode", message: "You can't give this role: it carries permissions you don't hold yourself." },
   ROLE_NOT_INVITABLE: { field: "roleCode", message: "That role can't be given by a company." },
   INVITATION_ALREADY_PENDING: { field: "email", message: "There's already an open invitation for this email. Resend it from the list instead." },
@@ -362,23 +364,24 @@ export async function requestStaff(input: Omit<InviteInput, "branchId">, caller:
   return mockCreate(full, caller, true);
 }
 
-function mockRole(roleCode: string) {
-  const role = MOCK_ROLES.find((r) => r.code === roleCode);
+function mockRole(roleCode: string, tenantId: string) {
+  const role = mockRolesFor(tenantId).find((r) => r.code === roleCode);
   if (!role) throw fail("ROLE_NOT_INVITABLE");
   return role;
 }
 
 function mockCreate(input: InviteInput, caller: StaffCaller, request: boolean): StaffInvitation {
   // SI-4 applies to whoever GRANTS: the inviter here, the approver for a request.
-  if (!request && !holdsAll(caller.permissions, mockRole(input.roleCode).permissions)) throw fail("CANNOT_GRANT_ROLE");
+  const role = mockRole(input.roleCode, caller.tenantId);
+  if (!request && !holdsAll(caller.permissions, role.permissions)) throw fail("CANNOT_GRANT_ROLE");
   if (mockEmailTaken(caller.tenantId, input.email)) throw fail("EMAIL_HAS_ACCOUNT");
   const open = mockInvitations.some((i) => i.tenantId === caller.tenantId && i.email.toLowerCase() === input.email.trim().toLowerCase()
     && (i.status === "pending" || i.status === "awaiting_approval"));
   if (open) throw fail("INVITATION_ALREADY_PENDING");
-  const branchId = branchRuleFor(input.roleCode) === "forbidden" ? null : (input.branchId ?? null);
+  const branchId = branchRuleForScope(role.scope) === "forbidden" ? null : (input.branchId ?? null);
   const inv: MockInvitation = {
     id: mockId("inv"), tenantId: caller.tenantId, email: input.email.trim(), firstName: input.firstName.trim(), lastName: input.lastName.trim(),
-    roleCode: input.roleCode, roleName: roleName(input.roleCode), branchId, branchName: mockBranchName(caller.tenantId, branchId),
+    roleCode: input.roleCode, roleName: role.name, branchId, branchName: mockBranchName(caller.tenantId, branchId),
     status: "awaiting_approval", createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + REQUEST_TTL_MS).toISOString(),
     acceptedAt: null, revokedAt: null, sendCount: 0, approvalRequired: request, requestedBy: caller.userId ?? caller.email,
     approvedAt: null, rejectedAt: null, rejectionReason: null, token: null, lastSentAt: null, requesterEmail: caller.email,
@@ -416,7 +419,7 @@ export async function actOnInvitation(id: string, action: InvitationAction, call
       if (caller.branchId) throw fail("INVITATIONS_REQUIRE_COMPANY_WIDE_SCOPE");
       if (inv.status !== "awaiting_approval") throw fail("INVITATION_NOT_AWAITING_APPROVAL");
       if (Date.parse(inv.expiresAt) < Date.now()) throw fail("INVITATION_REQUEST_EXPIRED");
-      if (!holdsAll(caller.permissions, mockRole(inv.roleCode).permissions)) throw fail("CANNOT_GRANT_ROLE");
+      if (!holdsAll(caller.permissions, mockRole(inv.roleCode, caller.tenantId).permissions)) throw fail("CANNOT_GRANT_ROLE");
       // Re-checked: an account may have appeared while the request waited.
       if (mockEmailTaken(caller.tenantId, inv.email)) throw fail("EMAIL_HAS_ACCOUNT");
       inv.approvedAt = new Date().toISOString();
@@ -545,7 +548,8 @@ export async function acceptInvitation(token: string, password: string): Promise
   const user: AuthUser = {
     name: `${inv.firstName} ${inv.lastName}`, email: inv.email, phone: "", country: "NG", currency: "NGN",
     kycStatus: "unsubmitted", kycType: "local", twoFAEnabled: false, role: "client",
-    permissions: mockPermissionsForRole(inv.roleCode), tenantId: inv.tenantId, branchId: inv.branchId,
+    permissions: mockRolesFor(inv.tenantId).find((r) => r.code === inv.roleCode)?.permissions ?? mockPermissionsForRole(inv.roleCode),
+    tenantId: inv.tenantId, branchId: inv.branchId,
   };
   registerMockAccount(user);
   mockStaffFor(inv.tenantId).push({
@@ -600,10 +604,11 @@ export async function changeStaffRole(userId: string, input: { roleCode: string;
     }
   }
   const member = mockManageable(userId, caller);
-  if (!holdsAll(caller.permissions, mockRole(input.roleCode).permissions)) throw fail("CANNOT_GRANT_ROLE");
+  const role = mockRole(input.roleCode, caller.tenantId);
+  if (!holdsAll(caller.permissions, role.permissions)) throw fail("CANNOT_GRANT_ROLE");
   if (input.roleCode !== "executive_director") mockRequireAnotherDirector(member, caller.tenantId);
-  const branchId = rule === "forbidden" ? null : (input.branchId ?? null);
-  member.roles = [{ roleCode: input.roleCode, roleName: roleName(input.roleCode), branchId, branchName: mockBranchName(caller.tenantId, branchId) }];
+  const branchId = branchRuleForScope(role.scope) === "forbidden" ? null : (input.branchId ?? null);
+  member.roles = [{ roleCode: input.roleCode, roleName: role.name, branchId, branchName: mockBranchName(caller.tenantId, branchId) }];
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { tenantId, ...dto } = member;
   return { ...dto };
@@ -634,4 +639,244 @@ export async function setStaffActive(userId: string, active: boolean, reason: st
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { tenantId, ...dto } = member;
   return { ...dto };
+}
+
+// ─── Company-made roles ──────────────────────────────────────────────────────
+//
+// A company bundles HomeTrue's seeded portal.* permissions into roles of its
+// own (changeset 084). Permissions stay HomeTrue's — a slug means something
+// only because code checks it. Endpoints, all portal.roles.manage:
+//
+//   GET    /api/portal/permissions   the checkboxes (also /roles above)
+//   POST   /api/portal/roles         create
+//   PUT    /api/portal/roles/{code}  edit name, description, permissions
+//   DELETE /api/portal/roles/{code}  only when nobody holds or is offered it
+//
+// The writes need a company-wide view (ROLES_REQUIRE_COMPANY_WIDE_SCOPE); the
+// reads don't, so a successful read never means editing is allowed. Only
+// custom roles can be edited or deleted (STANDARD_ROLE_LOCKED).
+
+// PortalPermissionDto.
+export interface PortalPermission {
+  code: string;
+  label: string;
+  description: string;
+  // Works only for company-wide staff, so it can go only in a "company" role.
+  requiresCompanyWide: boolean;
+  // You can only put permissions you hold into a role.
+  held: boolean;
+  // The role editor's heading (changeset 085), always present. The list comes
+  // ordered by group, then within it — both orders HomeTrue's.
+  group: string;
+  groupLabel: string;
+}
+
+export interface RoleInput {
+  name: string;
+  description: string;
+  scope: RoleScope;
+  permissions: string[];
+}
+
+// Scope is left out on purpose: it can't change (ROLE_SCOPE_IMMUTABLE).
+export type RoleChanges = Partial<Omit<RoleInput, "scope">>;
+
+export const MAX_CUSTOM_ROLES = 30;
+
+// MOCK MODE ONLY — standing in for GET /api/portal/permissions. Labels from
+// changeset 084, groups and order from 085, descriptions from the changesets
+// that seeded each one.
+const MOCK_PORTAL_PERMISSIONS: Omit<PortalPermission, "held">[] = [
+  { code: "portal.estates.view", label: "See estates, plots and prices", description: "Read the owning tenant's estates, blocks, price tiers and plots.", requiresCompanyWide: false, group: "estates", groupLabel: "Estates" },
+  { code: "portal.estates.manage", label: "Create and edit estates, plots and prices", description: "Create and manage estates, blocks, price tiers and plots for the owning tenant.", requiresCompanyWide: false, group: "estates", groupLabel: "Estates" },
+  { code: "portal.payments.verify", label: "Verify buyers' payments", description: "Review payments awaiting finance for your own company, and approve (allocate the plot) or reject them.", requiresCompanyWide: false, group: "finance", groupLabel: "Money" },
+  { code: "portal.settlement.manage", label: "Set the payout bank account", description: "Submit or withdraw the bank account your company is paid to. A HomeTrue Super Admin approves it before any payout uses it.", requiresCompanyWide: true, group: "finance", groupLabel: "Money" },
+  { code: "portal.branches.manage", label: "Create and rename branches", description: "Create and rename the owning tenant's branches. Company-wide roles only.", requiresCompanyWide: true, group: "branches", groupLabel: "Branches" },
+  { code: "portal.staff.invite", label: "Invite and manage staff", description: "Invite, revoke and resend staff invitations for the owning tenant. Company-wide roles only.", requiresCompanyWide: true, group: "staff", groupLabel: "Staff and roles" },
+  { code: "portal.staff.request", label: "Ask head office to invite staff to a branch", description: "Request a staff invitation into your own branch; it is sent only once a company-wide approver approves it.", requiresCompanyWide: false, group: "staff", groupLabel: "Staff and roles" },
+  { code: "portal.roles.manage", label: "Create and edit company roles", description: "Create, edit and delete your company's own roles, from permissions you hold. Company-wide roles only.", requiresCompanyWide: true, group: "staff", groupLabel: "Staff and roles" },
+];
+
+// The catalogue as the editor's headings, keeping the backend's order — it
+// is never re-sorted here.
+export function groupPermissions<T extends Pick<PortalPermission, "group" | "groupLabel">>(permissions: T[]): { group: string; label: string; permissions: T[] }[] {
+  const groups: { group: string; label: string; permissions: T[] }[] = [];
+  for (const p of permissions) {
+    const existing = groups.find((g) => g.group === p.group);
+    if (existing) existing.permissions.push(p);
+    else groups.push({ group: p.group, label: p.groupLabel, permissions: [p] });
+  }
+  return groups;
+}
+
+// Permissions that can't go into a role of this scope.
+export function companyOnlyPermissions(scope: RoleScope, permissions: string[], catalogue: Pick<PortalPermission, "code" | "requiresCompanyWide">[]): string[] {
+  if (scope === "company") return [];
+  return permissions.filter((code) => catalogue.find((p) => p.code === code)?.requiresCompanyWide);
+}
+
+// The backend's messages are written for users, so they're shown as they
+// come; the code only decides which field they sit under.
+const ROLE_ERROR_FIELDS: Record<string, string> = {
+  INVALID_ROLE_NAME: "name",
+  ROLE_NAME_TAKEN: "name",
+  INVALID_ROLE_SCOPE: "scope",
+  ROLE_SCOPE_IMMUTABLE: "scope",
+  ROLE_NEEDS_PERMISSIONS: "permissions",
+  UNKNOWN_PERMISSION: "permissions",
+  CANNOT_GRANT_PERMISSION: "permissions",
+  PERMISSION_REQUIRES_COMPANY_SCOPE: "permissions",
+};
+
+function roleError(err: unknown): Error {
+  if (err instanceof StaffError) return err;
+  if (!(err instanceof ApiError)) return err instanceof Error ? err : new Error("That didn't go through.");
+  const body = err.body;
+  if (body?.fieldErrors) {
+    const [field, message] = Object.entries(body.fieldErrors)[0] ?? [];
+    if (field) return new StaffError(field, "VALIDATION", message);
+  }
+  const code = body?.code ?? `HTTP_${err.status}`;
+  return new StaffError(ROLE_ERROR_FIELDS[code] ?? "form", code, body?.message ?? "That didn't go through.");
+}
+
+function validateRole(input: RoleChanges): void {
+  if (input.name !== undefined) {
+    if (!input.name.trim()) throw new StaffError("name", "VALIDATION", "Give the role a name.");
+    if (input.name.trim().length > 80) throw new StaffError("name", "VALIDATION", "Keep the name to 80 characters.");
+  }
+  if (input.description !== undefined && input.description.length > 500) throw new StaffError("description", "VALIDATION", "Keep the description to 500 characters.");
+  if (input.permissions !== undefined && input.permissions.length === 0) throw new StaffError("permissions", "VALIDATION", "Choose at least one permission.");
+}
+
+export async function fetchPortalPermissions(caller: StaffCaller): Promise<PortalPermission[]> {
+  if (!isMock("staff")) return apiClient.get<PortalPermission[]>("/api/portal/permissions");
+  return MOCK_PORTAL_PERMISSIONS.map((p) => ({ ...p, held: !caller.permissions || caller.permissions.includes(p.code) }));
+}
+
+export async function createRole(input: RoleInput, caller: StaffCaller): Promise<AssignableRole> {
+  validateRole(input);
+  const body = { name: input.name.trim(), description: input.description.trim(), scope: input.scope, permissions: input.permissions };
+  if (!isMock("staff")) {
+    try {
+      return await apiClient.post<AssignableRole>("/api/portal/roles", body);
+    } catch (err) {
+      throw roleError(err);
+    }
+  }
+  const tenantId = mockRequireCompanyWide(caller);
+  const own = mockCustomRolesFor(tenantId);
+  if (own.length >= MAX_CUSTOM_ROLES) throw mockRoleFail("ROLE_LIMIT_REACHED", `A company can have at most ${MAX_CUSTOM_ROLES} roles of its own. Delete one you no longer use first.`);
+  mockRequireNameFree(tenantId, body.name, null);
+  const role = {
+    code: `custom_${Math.random().toString(16).slice(2, 10)}${Math.random().toString(16).slice(2, 10)}`,
+    name: body.name, description: body.description || null, scope: input.scope,
+    permissions: mockGrantable(input.permissions, input.scope, caller), custom: true,
+  };
+  own.push(role);
+  return { ...role, permissions: [...role.permissions], canGrant: holdsAll(caller.permissions, role.permissions) };
+}
+
+// Left out = unchanged. People holding the role get the change when their
+// sign-in next refreshes — within 15 minutes, never instantly.
+export async function updateRole(code: string, changes: RoleChanges, caller: StaffCaller): Promise<AssignableRole> {
+  validateRole(changes);
+  const body = {
+    ...(changes.name !== undefined ? { name: changes.name.trim() } : {}),
+    // A blank description clears it.
+    ...(changes.description !== undefined ? { description: changes.description.trim() } : {}),
+    ...(changes.permissions !== undefined ? { permissions: changes.permissions } : {}),
+  };
+  if (!isMock("staff")) {
+    try {
+      return await apiClient.put<AssignableRole>(`/api/portal/roles/${encodeURIComponent(code)}`, body);
+    } catch (err) {
+      throw roleError(err);
+    }
+  }
+  const tenantId = mockRequireCompanyWide(caller);
+  const role = mockOwnRole(code, tenantId, caller);
+  if (body.name !== undefined && body.name !== role.name) mockRequireNameFree(tenantId, body.name, role.code);
+  const permissions = body.permissions !== undefined ? mockGrantable(body.permissions, role.scope, caller) : role.permissions;
+  role.name = body.name ?? role.name;
+  if (body.description !== undefined) role.description = body.description || null;
+  role.permissions = permissions;
+  return { ...role, permissions: [...role.permissions], canGrant: holdsAll(caller.permissions, role.permissions) };
+}
+
+// Refused (ROLE_IN_USE) while anyone holds it — deactivated staff included —
+// or an open invitation or branch request offers it.
+export async function deleteRole(code: string, caller: StaffCaller): Promise<void> {
+  if (!isMock("staff")) {
+    try {
+      await apiClient.del<void>(`/api/portal/roles/${encodeURIComponent(code)}`);
+      return;
+    } catch (err) {
+      throw roleError(err);
+    }
+  }
+  const tenantId = mockRequireCompanyWide(caller);
+  const role = mockOwnRole(code, tenantId, caller);
+  if (mockStaffFor(tenantId).some((s) => s.roles.some((r) => r.roleCode === code))) {
+    throw mockRoleFail("ROLE_IN_USE", "This role can't be deleted: someone still holds it (deactivated staff included). Give them another role first.");
+  }
+  if (mockInvitations.some((i) => i.tenantId === tenantId && i.roleCode === code && (i.status === "pending" || i.status === "awaiting_approval"))) {
+    throw mockRoleFail("ROLE_IN_USE", "This role can't be deleted: an invitation or request offering it is still open. Revoke or reject it first.");
+  }
+  const own = mockCustomRolesFor(tenantId);
+  own.splice(own.indexOf(role), 1);
+}
+
+// ─── Mock store: company-made roles ──────────────────────────────────────────
+
+type MockRole = Omit<AssignableRole, "canGrant">;
+const mockCustomRoles = new Map<string, MockRole[]>();
+
+function mockCustomRolesFor(tenantId: string): MockRole[] {
+  if (!mockCustomRoles.has(tenantId)) mockCustomRoles.set(tenantId, []);
+  return mockCustomRoles.get(tenantId)!;
+}
+
+function mockRolesFor(tenantId: string): MockRole[] {
+  return [...MOCK_ROLES, ...mockCustomRolesFor(tenantId)];
+}
+
+// Mock messages follow the backend's RoleException wording.
+function mockRoleFail(code: string, message: string): StaffError {
+  return new StaffError(ROLE_ERROR_FIELDS[code] ?? "form", code, message);
+}
+
+function mockRequireCompanyWide(caller: StaffCaller): string {
+  if (caller.branchId) throw mockRoleFail("ROLES_REQUIRE_COMPANY_WIDE_SCOPE", "Roles are managed company-wide. Switch to the whole-company view.");
+  return caller.tenantId;
+}
+
+function mockOwnRole(code: string, tenantId: string, caller: StaffCaller): MockRole {
+  const role = mockCustomRolesFor(tenantId).find((r) => r.code === code);
+  if (!role) {
+    throw MOCK_ROLES.some((r) => r.code === code)
+      ? mockRoleFail("STANDARD_ROLE_LOCKED", "HomeTrue's standard roles can't be changed or deleted. Create your own role instead.")
+      : mockRoleFail("ROLE_NOT_FOUND", "Role not found.");
+  }
+  if (!holdsAll(caller.permissions, role.permissions)) throw mockRoleFail("CANNOT_MANAGE_ROLE", "This role carries permissions you don't hold, so you can't change it.");
+  return role;
+}
+
+function mockRequireNameFree(tenantId: string, name: string, exceptCode: string | null): void {
+  const lower = name.toLowerCase();
+  const taken = MOCK_ROLES.some((r) => r.name.toLowerCase() === lower)
+    || mockCustomRolesFor(tenantId).some((r) => r.code !== exceptCode && r.name.toLowerCase() === lower);
+  if (taken) throw mockRoleFail("ROLE_NAME_TAKEN", `Your company already has a role called '${name}'.`);
+}
+
+function mockGrantable(requested: string[], scope: RoleScope, caller: StaffCaller): string[] {
+  const wanted = [...new Set(requested.map((c) => c.trim()).filter(Boolean))];
+  if (wanted.length === 0) throw mockRoleFail("ROLE_NEEDS_PERMISSIONS", "A role must carry at least one permission.");
+  const unknown = wanted.filter((c) => !MOCK_PORTAL_PERMISSIONS.some((p) => p.code === c));
+  if (unknown.length) throw mockRoleFail("UNKNOWN_PERMISSION", `Not a permission a company role can carry: ${unknown.join(", ")}.`);
+  const notHeld = caller.permissions ? wanted.filter((c) => !caller.permissions!.includes(c)) : [];
+  if (notHeld.length) throw mockRoleFail("CANNOT_GRANT_PERMISSION", `You can't put permissions you don't hold into a role: ${notHeld.join(", ")}.`);
+  const companyOnly = companyOnlyPermissions(scope, wanted, MOCK_PORTAL_PERMISSIONS);
+  if (companyOnly.length) throw mockRoleFail("PERMISSION_REQUIRES_COMPANY_SCOPE", `These permissions only work for company-wide staff, so a role carrying them must have scope 'company': ${companyOnly.join(", ")}.`);
+  return wanted;
 }

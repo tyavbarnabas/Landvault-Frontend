@@ -12,7 +12,7 @@ import PlotCanvas from "../../components/PlotCanvas";
 import PlotDetailPanel from "../../components/marketplace/PlotDetailPanel";
 import EnquiryPanel from "../../components/marketplace/EnquiryPanel";
 import EstateReviews, { StarRating } from "../../components/EstateReviews";
-import TabBar from "../../components/TabBar";
+import TabBar from "../../components/ui/Tabs";
 import PriceTierTable from "../../components/marketplace/PriceTierTable";
 import InspectionForm, { type InspectionFormValue } from "../../components/inspections/InspectionForm";
 import { TitleBadge } from "./Browse";

@@ -4,6 +4,7 @@ import { formatAmount, type Currency, type OwnedPlot } from "../../data/mockData
 import { fetchOwnedPlots, urgencyRank } from "../../services/portfolioService";
 import PlotStatusBadge from "../../components/portfolio/PlotStatusBadge";
 import ArrearsBanner from "../../components/portfolio/ArrearsBanner";
+import { ListCard } from "../../components/ui/Card";
 
 // Re-exported so Dashboard.tsx (and anything else ranking a buyer's plots by
 // urgency) uses the exact same logic — it now actually lives in
@@ -160,11 +161,13 @@ export default function Portfolio() {
       </div>
 
       {/* Plots list */}
-      <div className="space-y-4">
+      <ul className="space-y-3">
         {sortedPlots.map((plot) => {
           const pct = plot.totalPrice > 0 ? Math.round((plot.paidAmount / plot.totalPrice) * 100) : 0;
           return (
-            <div key={plot.id} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 hover:border-[var(--accent)]/50 hover:shadow-sm transition-all">
+            // Not a `to` row: the arrears banner below has its own buttons,
+            // which can't sit inside a link.
+            <ListCard key={plot.id} className="hover:border-[var(--accent)]/50 transition-colors">
               <Link to={`/portfolio/${plot.id}`} className="block">
                 <div className="grid md:grid-cols-3 gap-4">
                   {/* Info */}
@@ -213,10 +216,10 @@ export default function Portfolio() {
                   <ArrearsBanner arrears={plot.arrears} currency={plot.currency} restructureStatus={plot.restructureStatus} />
                 </div>
               )}
-            </div>
+            </ListCard>
           );
         })}
-      </div>
+      </ul>
 
       {hasMore && (
         <button onClick={loadMore} disabled={loadingMore} className="mt-4 w-full py-2.5 border border-[var(--border)] rounded-md text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors disabled:opacity-60">

@@ -86,7 +86,7 @@ export async function createInspection(input: CreateInspectionInput): Promise<In
     note: input.note,
     status: "scheduled",
     agent: assignAgent(input.sellerBranchName),
-    meetingPoint: input.type === "physical" ? `${input.listingName} main gate — ask for the LandVault visitor sign-in desk` : undefined,
+    meetingPoint: input.type === "physical" ? `${input.listingName} main gate — ask for the HomeTrue visitor sign-in desk` : undefined,
     createdAt: new Date().toISOString(),
   };
   mockInspections = [inspection, ...mockInspections];

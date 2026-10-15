@@ -5,7 +5,7 @@ import type { ResaleListing } from "../../services/resaleService";
 import { fetchWishlistListing, listingFromPrice, type MarketplaceListing } from "../../services/marketplaceFeedService";
 import ListingCard from "../../components/marketplace/ListingCard";
 import ListingTypeBadge from "../../components/marketplace/ListingTypeBadge";
-import EmptyState from "../../components/marketplace/EmptyState";
+import EmptyState from "../../components/ui/EmptyState";
 
 interface WishlistEntry {
   item: MarketplaceListing;

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { formatAmount, type Currency } from "../../data/mockData";
 import { submitOffer, RESALE_POLICY, type ResaleListing } from "../../services/resaleService";
 import { useApp } from "../../contexts/AppContext";
-import ModalShell from "./ModalShell";
+import ModalShell from "../ui/Dialog";
 
 export default function MakeOfferModal({ listing, currency, onClose }: { listing: ResaleListing; currency: Currency; onClose: () => void }) {
   const { user } = useApp();

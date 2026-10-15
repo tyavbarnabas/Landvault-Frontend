@@ -64,6 +64,6 @@ export async function fetchMyEnquiries(params: PageParams = {}): Promise<Page<En
 // API with a pre-provisioned number per seller/estate. This just builds a
 // wa.me deep link with a prefilled message — there's no integration behind it.
 export function whatsappHandoffUrl(listingName: string, plotLabel?: string): string {
-  const text = encodeURIComponent(`Hi, I'm interested in ${listingName}${plotLabel ? ` (${plotLabel})` : ""} on LandVault.`);
+  const text = encodeURIComponent(`Hi, I'm interested in ${listingName}${plotLabel ? ` (${plotLabel})` : ""} on HomeTrue.`);
   return `https://wa.me/2348020000000?text=${text}`;
 }

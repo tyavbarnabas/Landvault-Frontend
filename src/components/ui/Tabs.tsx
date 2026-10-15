@@ -1,6 +1,5 @@
-// Accessible tab bar — extracted from PlotView.tsx so EstateDetail.tsx (and
-// any future tabbed page) doesn't redraw the same role="tablist"/"tab" wiring
-// and arrow-key navigation. Real ARIA tab pattern: one roving tabIndex,
+// Accessible tab bar (formerly components/TabBar) — one copy of the
+// role="tablist"/"tab" wiring and arrow-key navigation for every tabbed page. Real ARIA tab pattern: one roving tabIndex,
 // aria-selected, aria-controls pointing at the matching panel id.
 
 import { useRef } from "react";
@@ -10,11 +9,13 @@ export interface TabBarProps<T extends string> {
   active: T;
   onActivate: (id: T) => void;
   ariaLabel: string;
+  // Underline the whole row and space it from the content below: the page-level look.
+  divider?: boolean;
 }
 
-export default function TabBar<T extends string>({ tabs, active, onActivate, ariaLabel }: TabBarProps<T>) {
+export default function TabBar<T extends string>({ tabs, active, onActivate, ariaLabel, divider }: TabBarProps<T>) {
   return (
-    <div className="flex gap-0" role="tablist" aria-label={ariaLabel}>
+    <div className={`flex gap-0${divider ? " border-b border-[var(--border)] mb-5" : ""}`} role="tablist" aria-label={ariaLabel}>
       {tabs.map((t, i) => (
         <TabButton key={t.id} id={t.id} label={t.label} active={active === t.id} index={i} tabs={tabs} onActivate={onActivate} />
       ))}
