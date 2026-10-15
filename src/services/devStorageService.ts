@@ -11,7 +11,7 @@
 import { apiClient } from "../lib/apiClient";
 import { uploadFile, type StoredFile, type UploadOptions, type UploadTicket } from "../lib/uploadFile";
 
-export type DevVisibility = "PUBLIC" | "PRIVATE";
+export type DevVisibility = "public" | "private";
 
 // The dev routes take any accepted type up to the platform limit; a real
 // feature states its own. 10 MB keeps the test honest.

@@ -15,7 +15,7 @@ import Alert from "../../components/ui/Alert";
 import { ErrorText } from "../../components/ui/Field";
 
 export default function StorageTest() {
-  const [visibility, setVisibility] = useState<DevVisibility>("PRIVATE");
+  const [visibility, setVisibility] = useState<DevVisibility>("private");
   const [progress, setProgress] = useState<number | null>(null);
   const [files, setFiles] = useState<StoredFile[]>([]);
   const [error, setError] = useState("");
@@ -65,9 +65,9 @@ export default function StorageTest() {
       <Card className="space-y-4 mb-6">
         <fieldset className="flex gap-4 text-sm">
           <legend className="text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Visibility</legend>
-          {(["PRIVATE", "PUBLIC"] as const).map((v) => (
+          {(["private", "public"] as const).map((v) => (
             <label key={v} className="flex items-center gap-2">
-              <input type="radio" name="visibility" checked={visibility === v} onChange={() => setVisibility(v)} /> {v.toLowerCase()}
+              <input type="radio" name="visibility" checked={visibility === v} onChange={() => setVisibility(v)} /> {v}
             </label>
           ))}
         </fieldset>
@@ -89,7 +89,7 @@ export default function StorageTest() {
           <Card as="li" padding="md" key={f.id} className="flex flex-wrap items-center gap-3 text-sm">
             <div className="flex-1 min-w-[200px]">
               <div className="font-semibold">{f.fileName}</div>
-              <div className="text-xs text-[var(--muted-foreground)] font-mono-data">{f.fileType.toLowerCase()} · {f.visibility.toLowerCase()} · {f.sizeBytes} bytes · {f.status}</div>
+              <div className="text-xs text-[var(--muted-foreground)] font-mono-data">{f.fileType} · {f.visibility} · {f.sizeBytes} bytes · {f.status}</div>
             </div>
             <Button variant="link" onClick={() => open(f)}>Open</Button>
             <Button variant="linkDanger" onClick={() => remove(f)}>Delete</Button>

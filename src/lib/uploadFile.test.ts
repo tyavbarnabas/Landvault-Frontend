@@ -11,7 +11,7 @@ const ticket = (n: number): UploadTicket => ({
 });
 
 const stored: StoredFile = {
-  id: "f1", visibility: "PRIVATE", purpose: "dev-test", fileType: "JPEG", fileName: "plot.jpg", sizeBytes: 1000,
+  id: "f1", visibility: "private", purpose: "dev-test", fileType: "jpeg", fileName: "plot.jpg", sizeBytes: 1000,
   status: "ready", publicUrl: null, uploadedBy: "u1", createdAt: "2026-10-14T12:00:00Z", confirmedAt: "2026-10-14T12:00:05Z",
 };
 
@@ -109,7 +109,7 @@ describe("the three steps", () => {
 });
 
 describe("reading the stored file", () => {
-  it("compares visibility and status ignoring case — the backend's casing may change", () => {
+  it("compares visibility and status ignoring case — older backends sent them uppercase", () => {
     expect(isPublicFile({ visibility: "PUBLIC" })).toBe(true);
     expect(isPublicFile({ visibility: "public" })).toBe(true);
     expect(isPublicFile({ visibility: "PRIVATE" })).toBe(false);
