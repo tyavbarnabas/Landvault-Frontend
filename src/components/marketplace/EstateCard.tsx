@@ -37,7 +37,7 @@ export default function EstateCard({ listing, priceChangeSinceSaved }: EstateCar
     >
       <div className="relative aspect-[4/3] bg-[var(--muted)]">
         {listing.imageUrl ? (
-          <img src={listing.imageUrl} alt={listing.name} className="w-full h-full object-cover" />
+          <img src={listing.imageUrl} alt={listing.photos[0]?.caption ?? listing.name} className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-[var(--muted-foreground)]/40">

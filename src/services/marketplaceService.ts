@@ -32,6 +32,7 @@ import { isMock } from "../lib/backends";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import type { NigerianState } from "../data/nigerianStates";
 import { ESTATES, type Estate as MockEstate } from "../data/mockData";
+import { mockListingPhotos } from "../data/mockEstatePhotos";
 import { tiersFromPlots, type PriceTier, type TierAvailability } from "./estatesService";
 import { fetchTenantByIdSync, tenantDisplayName } from "./tenantsService";
 
@@ -96,6 +97,16 @@ export interface Estate {
 export interface Listing extends Estate {
   seller: Seller;
   verified: true;
+  // The estate's own photos, cover first, then in the developer's order.
+  // `imageUrl` is the cover's. Both empty for an estate listed before photos
+  // were required: show a placeholder, never a stock photo as the estate.
+  photos: ListingPhoto[];
+}
+
+// The caption is the alt text; fall back to the estate name when it's null.
+export interface ListingPhoto {
+  url: string;
+  caption: string | null;
 }
 
 export interface WishlistItem {
@@ -195,6 +206,7 @@ export function projectListing(estate: MockEstate): Listing | null {
   if (!tenant.entitlements.marketplacePublishing) return null;
   if (tenant.status === "suspended") return null;
 
+  const photos = mockListingPhotos(estate.id);
   return {
     id: estate.id,
     name: estate.name,
@@ -203,7 +215,8 @@ export function projectListing(estate: MockEstate): Listing | null {
     state: estate.state,
     description: estate.description,
     amenities: estate.amenities,
-    imageUrl: estate.imageUrl,
+    // The cover, as the backend sends it — so a cover chosen in the portal shows here.
+    imageUrl: photos[0]?.url,
     titleType: estate.titleType,
     lastVerifiedDate: estate.lastVerified,
     priceTiers: tiersFromPlots(estate),
@@ -214,6 +227,7 @@ export function projectListing(estate: MockEstate): Listing | null {
     // No office in mock data: none was ever recorded, and none is invented.
     seller: { branchName: branch?.name ?? null, companyName: tenantDisplayName(tenant), office: null },
     verified: true,
+    photos,
   };
 }
 
@@ -250,6 +264,7 @@ export interface ListingDto {
   description: string | null;
   amenities: string[] | null;
   imageUrl: string | null;
+  photos: ListingPhoto[] | null;
   titleType: string | null;
   lastVerifiedDate: string | null;
   priceTiers: ListingTierDto[];
@@ -301,6 +316,7 @@ function fromListingDto(dto: ListingDto): Listing {
     publishedDate: dto.publishedDate ?? "",
     seller: { branchName: dto.seller.branchName, companyName: dto.seller.companyName, office: dto.seller.office },
     verified: true,
+    photos: dto.photos ?? [],
   };
 }
 

@@ -19,6 +19,7 @@ import EstateBoundaryMap from "../../../components/map/EstateBoundaryMap";
 import { usePortalScope } from "../usePortalScope";
 import { ownershipLabel, useBranchNames } from "../useBranchNames";
 import { ReadOnlyNotice } from "./PortalEstateInventory";
+import { PHOTO_LIMIT, fetchEstatePhotos } from "../../../services/estatePhotosService";
 
 export default function PortalEstateDetail() {
   const { estateId } = useParams<{ estateId: string }>();
@@ -99,6 +100,8 @@ export default function PortalEstateDetail() {
       )}
 
       <PublicationPanel estate={estate} scope={scope!} canManage={canManage} onChanged={loaded.refetch} />
+
+      {scope && <PhotosSummary estateId={estate.id} estateName={estate.name} scope={scope} canManage={canManage} />}
 
       <section className="mb-8">
         <div className="flex items-center justify-between gap-4 mb-3">
@@ -411,6 +414,39 @@ function CorrectionResult({ change }: { change: BoundaryChange }) {
       )}
       <ConflictChangesView changes={change.conflictChanges} />
     </div>
+  );
+}
+
+// The cover and a count; managing them is its own page.
+function PhotosSummary({ estateId, estateName, scope, canManage }: { estateId: string; estateName: string; scope: PortalScope; canManage: boolean }) {
+  const photos = useFetch(() => fetchEstatePhotos(estateId, scope), [estateId, scope.tenantId, scope.branchId]);
+  const list = photos.data ?? [];
+  const cover = list.find((p) => p.cover);
+  return (
+    <section className="mb-8">
+      <div className="flex items-center justify-between gap-4 mb-3">
+        <h2 className="text-sm font-semibold text-[var(--foreground)]">Photos</h2>
+        <Link to={`/portal/estates/${estateId}/photos`} className="text-xs font-semibold text-[var(--accent)] hover:underline">
+          {canManage ? "Manage photos →" : "View photos →"}
+        </Link>
+      </div>
+      {photos.loading && !photos.data ? (
+        <p className="text-sm text-[var(--muted-foreground)]">Loading photos…</p>
+      ) : photos.error ? (
+        <p className="text-sm text-[var(--muted-foreground)]">The photos couldn't be loaded.</p>
+      ) : cover ? (
+        <div className="flex items-center gap-4">
+          <img src={cover.url} alt={cover.caption ?? estateName} loading="lazy" className="w-28 aspect-[4/3] object-cover rounded-md bg-[var(--muted)]" />
+          <p className="text-sm text-[var(--muted-foreground)]">
+            {list.length} of {PHOTO_LIMIT} photos. The cover is the main image buyers see on the marketplace.
+          </p>
+        </div>
+      ) : (
+        <p className="text-sm text-[var(--muted-foreground)]">
+          No photos yet. An estate needs at least one photo of its own land before it can be published.
+        </p>
+      )}
+    </section>
   );
 }
 

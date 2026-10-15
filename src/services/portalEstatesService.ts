@@ -14,6 +14,7 @@
 // scope — a caller that passes a branch gets that branch.
 
 import { ESTATES, type Estate, type GeoPoint } from "../data/mockData";
+import { mockHasPhoto } from "../data/mockEstatePhotos";
 import { polygonAreaSqm, polygonOverlap } from "../lib/geometry";
 import { apiClient, ApiError, nullIfNotFound } from "../lib/apiClient";
 import { isMock } from "../lib/backends";
@@ -204,7 +205,7 @@ function footprintToPolygon(footprint: GeoPoint[]): GeoJsonPolygon {
 
 // ─── Publication eligibility ────────────────────────────────────────────────
 
-// Mirrors the backend's `EstateEligibilityDto` field for field — TEN
+// Mirrors the backend's `EstateEligibilityDto` field for field — ELEVEN
 // booleans, carried on `EstateDetailDto.eligibility`. Every one is a fact the
 // server computed; none is inferred here.
 //
@@ -229,6 +230,9 @@ export interface EstateEligibility {
   // Changeset 063: at least one live plot (ANY status, not an available one —
   // a sold-out estate stays listed). All-withdrawn counts as none.
   hasPlots: boolean;
+  // Storage step 2: at least one photo. Estates already published when this
+  // arrived are exempt and report true.
+  hasPhoto: boolean;
   noBlockingConflict: boolean;
   // Current state: the conjunction of all of the above, and exactly what the
   // public feed filters on at read time.
@@ -252,10 +256,11 @@ export const ELIGIBILITY_CONDITIONS: { key: EligibilityConditionKey; label: stri
   { key: "tenantActive", label: "Company account active", reason: "Your company's account isn't active right now" },
   { key: "feesDeclared", label: "Fee schedule declared", reason: "The fee schedule hasn't been declared" },
   { key: "refundTermsDeclared", label: "Refund terms declared", reason: "Refund terms haven't been declared" },
-  // The backend's order: boundary, then plots, then the conflict check the
-  // boundary makes meaningful.
+  // The backend's order: boundary, then plots, then photo, then the conflict
+  // check the boundary makes meaningful.
   { key: "hasBoundary", label: "Estate boundary added", reason: "This estate has no boundary, so it can't be checked against neighbouring land" },
   { key: "hasPlots", label: "At least one plot added", reason: "This estate has no plots for buyers to choose from" },
+  { key: "hasPhoto", label: "Add at least one photo", reason: "This estate has no photos for buyers to see" },
   // Never names the other party. Both sides of a boundary dispute believe
   // they are right, and the platform does not introduce them.
   { key: "noBlockingConflict", label: "No unresolved boundary conflict", reason: "This estate's boundary overlaps another registered boundary" },
@@ -264,7 +269,7 @@ export const ELIGIBILITY_CONDITIONS: { key: EligibilityConditionKey; label: stri
 // Conditions outside the company's immediate control.
 const HARD_BLOCKER_KEYS: EligibilityConditionKey[] = ["tenantVerified", "tenantEntitled", "tenantActive", "noBlockingConflict"];
 // Setup the company still has to finish itself.
-const OUTSTANDING_SETUP_KEYS: EligibilityConditionKey[] = ["feesDeclared", "refundTermsDeclared", "hasBoundary", "hasPlots"];
+const OUTSTANDING_SETUP_KEYS: EligibilityConditionKey[] = ["feesDeclared", "refundTermsDeclared", "hasBoundary", "hasPlots", "hasPhoto"];
 
 export function conflictIsBlocking(eligibility: EstateEligibility): boolean {
   return !eligibility.noBlockingConflict;
@@ -299,6 +304,7 @@ export const PUBLICATION_REFUSAL_CONDITIONS: Record<string, EligibilityCondition
   PUBLICATION_REFUND_TERMS_UNDECLARED: "refundTermsDeclared",
   PUBLICATION_BOUNDARY_MISSING: "hasBoundary",
   PUBLICATION_NO_PLOTS: "hasPlots",
+  PUBLICATION_NO_PHOTO: "hasPhoto",
   PUBLICATION_CONFLICT_OUTSTANDING: "noBlockingConflict",
 };
 
@@ -565,6 +571,7 @@ async function projectPortalEstate(estate: Estate): Promise<PortalEstate> {
     refundTermsDeclared,
     hasBoundary: estate.footprint.length >= 3,
     hasPlots: estate.plots.length > 0 || mockPortalPlotCount(estate.id) > 0,
+    hasPhoto: mockHasPhoto(estate.id),
     noBlockingConflict: !blockingConflict,
   };
 

@@ -8,6 +8,7 @@ import SellerLine, { SellerOffice } from "../../components/marketplace/SellerLin
 import PriceTierTable from "../../components/marketplace/PriceTierTable";
 import WishlistButton from "../../components/marketplace/WishlistButton";
 import EstateCard from "../../components/marketplace/EstateCard";
+import EstateGallery from "../../components/marketplace/EstateGallery";
 import EnquiryPanel from "../../components/marketplace/EnquiryPanel";
 import { CAPABILITIES } from "../../lib/capabilities";
 import { fetchCostDisclosure, tierCommitmentForSize, type EstateCostDisclosure } from "../../services/costDisclosureService";
@@ -60,22 +61,9 @@ export default function MarketplaceEstateDetail() {
 
   return (
     <div className="max-w-5xl mx-auto p-6">
-      {/* Gallery */}
-      <div className="relative aspect-[21/9] bg-[var(--muted)] rounded-xl overflow-hidden mb-6">
-        {listing.imageUrl ? (
-          <img src={listing.imageUrl} alt={listing.name} className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-[var(--muted-foreground)]/40">
-              <path d="M9 3L3 5v16l6-2 6 2 6-2V5l-6 2-6-2Z" />
-              <path d="M9 3v16M15 5v16" />
-            </svg>
-          </div>
-        )}
-        <div className="absolute top-4 right-4">
-          <WishlistButton listingId={listing.id} listingType="primary" fromPrice={fromPrice(listing)} className="w-10 h-10 flex items-center justify-center rounded-full bg-white/90 backdrop-blur hover:bg-white shadow-sm" />
-        </div>
-      </div>
+      <EstateGallery key={listing.id} photos={listing.photos} estateName={listing.name}>
+        <WishlistButton listingId={listing.id} listingType="primary" fromPrice={fromPrice(listing)} className="w-10 h-10 flex items-center justify-center rounded-full bg-white/90 backdrop-blur hover:bg-white shadow-sm" />
+      </EstateGallery>
 
       <div className="flex items-start justify-between gap-4 mb-2">
         <div>

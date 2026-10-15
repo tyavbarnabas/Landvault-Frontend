@@ -6,7 +6,7 @@
 // without being unpublished, and come back on reinstatement with nobody
 // touching the flag. A HIGH conflict raised after publication does the same.
 //
-// Every row below is one of the ten booleans in `EstateEligibilityDto`,
+// Every row below is one of the eleven booleans in `EstateEligibilityDto`,
 // rendered as the server reported it. None is inferred, and when the server
 // reported nothing each row reads "Unknown" — never met.
 
@@ -25,6 +25,7 @@ const FIX_LINKS: Partial<Record<EligibilityConditionKey, { label: string; path: 
   feesDeclared: { label: "Declare fees", path: "disclosure?tab=fees" },
   refundTermsDeclared: { label: "Declare refund terms", path: "disclosure?tab=refund" },
   hasPlots: { label: "Add plots", path: "inventory?tab=plots" },
+  hasPhoto: { label: "Add photos", path: "photos" },
 };
 
 interface PublicationPanelProps {
@@ -112,6 +113,13 @@ export default function PublicationPanel({ estate, scope, canManage, onChanged }
             <p className="text-xs text-amber-800 leading-relaxed mt-2">
               Every listing now needs a boundary — even ones published before the rule — because an estate without one can't be checked
               against neighbouring land. Add it in the Boundary section below and the listing comes back straight away.
+            </p>
+          )}
+          {/* The last photo was deleted. Estates listed before photos were
+              required are exempt and never land here. */}
+          {eligibility && !eligibility.hasPhoto && (
+            <p className="text-xs text-amber-800 leading-relaxed mt-2">
+              Add a photo under Photos and the listing comes back straight away.
             </p>
           )}
         </div>

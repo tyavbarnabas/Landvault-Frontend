@@ -166,7 +166,7 @@ export default function Landing() {
                   <Link to={`/marketplace/${listing.id}`} key={listing.id} className="group block bg-[var(--card)] rounded-xl overflow-hidden border border-[var(--border)] hover:border-[var(--accent)] transition-colors">
                     <div className="aspect-video overflow-hidden bg-[var(--muted)]">
                       {listing.imageUrl ? (
-                        <img src={listing.imageUrl} alt={listing.name} className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300" />
+                        <img src={listing.imageUrl} alt={listing.photos[0]?.caption ?? listing.name} className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-[var(--muted-foreground)]/40">
                           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 3L3 5v16l6-2 6 2 6-2V5l-6 2-6-2Z" /><path d="M9 3v16M15 5v16" /></svg>

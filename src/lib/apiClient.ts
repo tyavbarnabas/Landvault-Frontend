@@ -417,6 +417,7 @@ export const apiClient = {
   get: <T>(path: string, options?: RequestOptions) => request<T>(path, { ...options, method: "GET" }),
   post: <T>(path: string, body?: unknown, options?: RequestOptions) => request<T>(path, { ...options, method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined }),
   put: <T>(path: string, body?: unknown, options?: RequestOptions) => request<T>(path, { ...options, method: "PUT", body: body !== undefined ? JSON.stringify(body) : undefined }),
+  patch: <T>(path: string, body?: unknown, options?: RequestOptions) => request<T>(path, { ...options, method: "PATCH", body: body !== undefined ? JSON.stringify(body) : undefined }),
   del: <T>(path: string, options?: RequestOptions) => request<T>(path, { ...options, method: "DELETE" }),
   // multipart/form-data — a file upload. Sent as-is, never JSON-encoded.
   postForm: <T>(path: string, form: FormData, options?: RequestOptions) => request<T>(path, { ...options, method: "POST", body: form }),
