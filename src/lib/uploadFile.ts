@@ -42,9 +42,10 @@ export interface UploadTicket {
   expiresAt: string;
 }
 
-// Step 3's answer (StoredFileInfo). `visibility` and `fileType` currently
-// arrive UPPERCASE ("PRIVATE", "JPEG") while `status` is lowercase; the casing
-// may be normalised later, so compare with the helpers below, never ===.
+// Step 3's answer (StoredFileInfo). `visibility` ("public" / "private") and
+// `fileType` ("jpeg", "png", "webp", "pdf") are lowercase on the wire; they
+// arrived uppercase before backend branch storage-lowercase-wire, so compare
+// with the helpers below rather than ===.
 export interface StoredFile {
   id: string;
   visibility: string;
