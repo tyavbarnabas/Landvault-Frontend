@@ -4,6 +4,8 @@
 // whatever the listing actually offers.
 
 import { formatAmount } from "../../data/mockData";
+import OptionCard from "./OptionCard";
+import { BuildingIcon, CalendarIcon, CreditCardIcon } from "../icons";
 import type { Currency } from "../../data/mockData";
 import type { PaymentPlanType } from "../../services/marketplaceService";
 
@@ -15,48 +17,44 @@ interface PaymentPlanSelectorProps {
   onPlanChange: (plan: PaymentPlanType) => void;
   installmentMonths: number;
   onInstallmentMonthsChange: (months: number) => void;
+  // Plans the estate offers that can't be chosen here (live online payment is
+  // outright-only for now): shown greyed out with the reason, not hidden.
+  unavailablePlans?: PaymentPlanType[];
+  unavailableReason?: string;
 }
 
-const PLAN_INFO: Record<PaymentPlanType, { label: string; icon: string; desc: (total: string) => string }> = {
-  outright: { label: "Outright payment", icon: "⚡", desc: (total) => `Pay ${total} today and documents are issued once verified.` },
-  installment: { label: "Installment plan", icon: "📅", desc: () => "20% deposit now, balance spread evenly over your chosen period." },
-  milestone: { label: "Milestone plan", icon: "🏗", desc: () => "20% deposit now, balance tied to development milestones as they're reached." },
+const PLAN_INFO: Record<PaymentPlanType, { label: string; icon: React.ReactNode; desc: (total: string) => string }> = {
+  outright: { label: "Pay in full", icon: <CreditCardIcon size={20} />, desc: (total) => `${total} today. The plot is allocated once the developer verifies your payment.` },
+  installment: { label: "Pay in instalments", icon: <CalendarIcon size={20} />, desc: () => "20% deposit now, balance spread evenly over your chosen period." },
+  milestone: { label: "Pay by milestone", icon: <BuildingIcon size={20} />, desc: () => "20% deposit now, balance tied to development milestones as they're reached." },
 };
 
 export function depositFor(plan: PaymentPlanType, totalPrice: number): number {
   return plan === "outright" ? totalPrice : totalPrice * 0.2;
 }
 
-export default function PaymentPlanSelector({ availablePlans, totalPrice, currency, plan, onPlanChange, installmentMonths, onInstallmentMonthsChange }: PaymentPlanSelectorProps) {
+export default function PaymentPlanSelector({ availablePlans, totalPrice, currency, plan, onPlanChange, installmentMonths, onInstallmentMonthsChange, unavailablePlans = [], unavailableReason }: PaymentPlanSelectorProps) {
   const deposit = depositFor(plan, totalPrice);
   const remaining = totalPrice - deposit;
   const installmentAmount = plan !== "outright" ? remaining / installmentMonths : 0;
 
   return (
     <div>
-      <div className="grid gap-3 mb-4">
+      <div role="radiogroup" aria-label="Payment plan" className="grid gap-3">
         {availablePlans.map((p) => (
-          <button
-            key={p}
-            type="button"
-            onClick={() => onPlanChange(p)}
-            className={`text-left p-4 rounded-xl border-2 transition-colors ${plan === p ? "border-[var(--primary)] bg-[var(--secondary)]" : "border-[var(--border)]"}`}
-          >
-            <div className="flex items-start gap-3">
-              <span className="text-xl mt-0.5">{PLAN_INFO[p].icon}</span>
-              <div>
-                <div className="font-semibold text-sm">{PLAN_INFO[p].label}</div>
-                <div className="text-xs text-[var(--muted-foreground)] mt-0.5">{PLAN_INFO[p].desc(formatAmount(totalPrice, currency))}</div>
-              </div>
-            </div>
-          </button>
+          <OptionCard key={p} name="payment-plan" value={p} checked={plan === p} onSelect={() => onPlanChange(p)}
+            icon={PLAN_INFO[p].icon} title={PLAN_INFO[p].label} description={PLAN_INFO[p].desc(formatAmount(totalPrice, currency))} />
+        ))}
+        {unavailablePlans.filter((p) => !availablePlans.includes(p)).map((p) => (
+          <OptionCard key={p} name="payment-plan" value={p} checked={false} onSelect={() => {}} disabled
+            icon={PLAN_INFO[p].icon} title={PLAN_INFO[p].label} description={unavailableReason ?? "Not available here."} />
         ))}
       </div>
 
       {plan !== "outright" && (
-        <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-4">
-          <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-2">{plan === "milestone" ? "Number of milestones" : "Duration"}</label>
-          <select value={installmentMonths} onChange={(e) => onInstallmentMonthsChange(Number(e.target.value))} className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md bg-[var(--card)]">
+        <div className="mt-4 bg-[var(--muted)] rounded-xl p-4">
+          <label htmlFor="plan-length" className="block text-xs font-medium text-[var(--muted-foreground)] mb-2">{plan === "milestone" ? "Number of milestones" : "Duration"}</label>
+          <select id="plan-length" value={installmentMonths} onChange={(e) => onInstallmentMonthsChange(Number(e.target.value))} className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md bg-[var(--card)]">
             {[6, 9, 12, 18, 24].map((m) => <option key={m} value={m}>{m} {plan === "milestone" ? "milestones" : "months"}</option>)}
           </select>
           <div className="mt-3 space-y-1.5 text-sm">

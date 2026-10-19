@@ -1,39 +1,57 @@
 // Route: /marketplace/checkout/:listingId/:plotId — Parts 5–8 of the buyer
-// flow: reserve intent → KYC gate → 45-minute lock → purchase intent →
-// payment plan → payment → two-step verification → allocation. No sidebar,
-// same convention as the existing internal /checkout route.
+// flow: review → KYC gate → 45-minute lock → purchase details (intent and
+// payment plan) → payment → two-step verification → allocation. Its own
+// pared-down header instead of the marketplace navigation; the layout is the
+// Figma checkout proposal (labelled steps, order summary beside every step).
 //
 // CRITICAL, resolved sequencing (see landvault-buyer-purchase-flow in
 // project memory): KYC runs BEFORE the lock starts, never inside it.
 
 import { useState, useEffect } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
-import { formatAmount } from "../../data/mockData";
+import { useParams, useNavigate } from "react-router-dom";
+import { formatAmount, formatInCurrency } from "../../data/mockData";
 import { useApp } from "../../contexts/AppContext";
 import { useFetch } from "../../lib/useFetch";
-import { fetchCostDisclosure, tierCommitmentForSize } from "../../services/costDisclosureService";
+import { fetchCostDisclosure, isGrandfathered, tierCommitmentForSize } from "../../services/costDisclosureService";
 import CostDisclosureSection from "../../components/cost/CostDisclosureSection";
+import CommitmentBreakdown from "../../components/cost/CommitmentBreakdown";
+import ExitCostsPanel from "../../components/cost/ExitCostsPanel";
 import ErrorBoundary from "../../components/ErrorBoundary";
-import { fetchListingById, type Listing, type PaymentPlanType } from "../../services/marketplaceService";
-import { fetchPlotById, plotLabel, priceForPlot, type ListingPlot } from "../../services/marketplacePlotsService";
+import { fetchListingById, type PaymentPlanType } from "../../services/marketplaceService";
+import { fetchPlotById, plotLabel, priceForPlot } from "../../services/marketplacePlotsService";
 import { fetchKycStatus, type KycRecord } from "../../services/kycService";
 import { startReservation, releaseReservation, RESERVATION_SECONDS, type Reservation } from "../../services/reservationService";
 import {
   initiateTransaction, initiatePayment, confirmPayment, runFinanceVerification,
   paymentMethodsForCountry, type Transaction, type MarketplacePaymentMethod, type VirtualAccountDetails,
 } from "../../services/marketplaceCheckoutService";
-import CountdownTimer from "../../components/checkout/CountdownTimer";
+import { useHoldCountdown, HoldAnnouncement } from "../../components/checkout/CountdownTimer";
 import KycFlow from "../../components/checkout/KycFlow";
 import PaymentPlanSelector, { depositFor } from "../../components/checkout/PaymentPlanSelector";
 import PaymentMethodSelector from "../../components/checkout/PaymentMethodSelector";
 import VerificationProgress from "../../components/checkout/VerificationProgress";
+import OrderSummary, { OrderSummaryBar } from "../../components/checkout/OrderSummary";
+import OptionCard from "../../components/checkout/OptionCard";
+import { CheckoutHeader, CheckoutSteps } from "../../components/checkout/CheckoutShell";
 import { ApiError } from "../../lib/apiClient";
 import { describeLoadError } from "../../components/LoadError";
 import { isLive } from "../../lib/backends";
-import { formatInCurrency } from "../../data/mockData";
 import PayButton from "../../components/purchases/PayButton";
+import Card from "../../components/ui/Card";
+import Alert from "../../components/ui/Alert";
+import Button from "../../components/ui/Button";
+import TextLink from "../../components/ui/TextLink";
+import { Loading } from "../../components/ui/Page";
+import { ArrowLeftIcon, BuildingIcon, CheckIcon, ClockIcon, CreditCardIcon, FileCheckIcon, ShieldCheckIcon, TrendingUpIcon } from "../../components/icons";
 
-type Step = "confirm" | "kyc" | "intent" | "plan" | "payment" | "verifying" | "allocated" | "expired";
+type Step = "confirm" | "kyc" | "details" | "payment" | "verifying" | "allocated" | "expired";
+const IN_FLOW: Step[] = ["confirm", "kyc", "details", "payment"];
+const HOLD_MINUTES = Math.round(RESERVATION_SECONDS / 60);
+
+// The action row. On a phone it sticks to the bottom of the screen, so the
+// next step is always in reach while the buyer reads.
+const ACTIONS = "flex flex-wrap items-center gap-x-4 gap-y-2 max-lg:sticky max-lg:bottom-0 max-lg:z-10 max-lg:-mx-4 sm:max-lg:-mx-6 max-lg:px-4 sm:max-lg:px-6 max-lg:py-3 max-lg:bg-[var(--card)] max-lg:border-t max-lg:border-[var(--border)]";
+const PRIMARY_WIDTH = "w-full sm:w-auto";
 
 export default function MarketplaceCheckout() {
   const { listingId, plotId } = useParams<{ listingId: string; plotId: string }>();
@@ -42,6 +60,9 @@ export default function MarketplaceCheckout() {
 
   const [step, setStep] = useState<Step>("confirm");
   const [kycRecord, setKycRecord] = useState<KycRecord | null>(null);
+  // Whether this buyer had to verify at the start. Keeps "Verify identity"
+  // in the steps once they've passed it, so the count doesn't jump.
+  const [kycWasNeeded, setKycWasNeeded] = useState(false);
   const [reservation, setReservation] = useState<Reservation | null>(null);
   const [purchaseIntent, setPurchaseIntent] = useState<"development" | "investment">("development");
   const [plan, setPlan] = useState<PaymentPlanType>("outright");
@@ -69,14 +90,37 @@ export default function MarketplaceCheckout() {
 
   useEffect(() => {
     if (!user) return;
-    fetchKycStatus(user).then(setKycRecord);
+    fetchKycStatus(user).then((record) => {
+      setKycRecord(record);
+      setKycWasNeeded(record.status !== "approved");
+    });
   }, [user]);
 
-  if (pageLoading || !user) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Loading…</div>;
-  if (!listing || !plot) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Plot not found. <Link to="/marketplace" className="text-[var(--accent)] hover:underline">Back to marketplace</Link></div>;
+  const handleExpire = async () => {
+    // Once a purchase is recorded the backend ends it itself when the hold
+    // runs out (it becomes `abandoned`); there's nothing to release.
+    if (reservation && !transaction) await releaseReservation(reservation.id).catch(() => {});
+    setStep("expired");
+  };
+
+  // The hold keeps running after the purchase is recorded: pay before it ends.
+  const countdownRunning = !!reservation && ["details", "payment"].includes(step);
+  const holdSecondsLeft = useHoldCountdown(countdownRunning ? reservation!.expiresAt : null, handleExpire);
+
+  if (pageLoading || !user) return <Shell><Loading /></Shell>;
+  if (!listing || !plot) {
+    return (
+      <Shell>
+        <p className="text-sm text-[var(--muted-foreground)]">Plot not found. <TextLink to="/marketplace">Back to marketplace</TextLink></p>
+      </Shell>
+    );
+  }
 
   const tier = listing.priceTiers.find((t) => t.id === plot.tierId);
   const { base, final: totalPrice } = priceForPlot(plot, listing.priceTiers, listing.cornerPremiumPct);
+  const commitment = tierCommitmentForSize(disclosure, plot.sizeSqm);
+  const plotUrl = `/marketplace/${listing.id}/plots?size=${plot.sizeSqm}&plot=${plot.id}`;
+  const unavailable = tier?.availability === "sold_out" || plot.status === "sold" || plot.status === "reserved";
 
   const startLock = async () => {
     setLoading(true);
@@ -84,7 +128,7 @@ export default function MarketplaceCheckout() {
     try {
       const res = await startReservation(listing.id, plot.id);
       setReservation(res);
-      setStep("intent");
+      setStep("details");
     } catch (err) {
       setStepError(refusal(err, "We couldn't hold this plot."));
       setStep("confirm");
@@ -104,15 +148,9 @@ export default function MarketplaceCheckout() {
     startLock();
   };
 
-  const handleExpire = async () => {
-    // Once a purchase is recorded the backend ends it itself when the hold
-    // runs out (it becomes `abandoned`); there's nothing to release.
-    if (reservation && !transaction) await releaseReservation(reservation.id).catch(() => {});
-    setStep("expired");
-  };
-
   const handleReReserve = () => {
     setReservation(null);
+    setTransaction(null);
     setStep("confirm");
   };
 
@@ -124,26 +162,26 @@ export default function MarketplaceCheckout() {
     let txn: Transaction;
     try {
       txn = await initiateTransaction({
-      listingId: listing.id,
-      listingName: listing.name,
-      plotId: plot.id,
-      plotLabel: plotLabel(plot),
-      sizeSqm: plot.sizeSqm,
-      actualAreaSqm: plot.actualAreaSqm,
-      isCorner: plot.isCorner,
-      cornerPremiumPct: listing.cornerPremiumPct,
-      basePrice: base,
-      titleType: listing.titleType ?? "",
-      location: `${listing.area}, ${listing.city}, ${listing.state}`,
-      reservationId: reservation.id,
-      tierId: plot.tierId,
-      intent: purchaseIntent,
-      plan,
-      installmentMonths: plan === "outright" ? undefined : installmentMonths,
-      currency,
-      amountDue: deposit,
-      totalPrice,
-    });
+        listingId: listing.id,
+        listingName: listing.name,
+        plotId: plot.id,
+        plotLabel: plotLabel(plot),
+        sizeSqm: plot.sizeSqm,
+        actualAreaSqm: plot.actualAreaSqm,
+        isCorner: plot.isCorner,
+        cornerPremiumPct: listing.cornerPremiumPct,
+        basePrice: base,
+        titleType: listing.titleType ?? "",
+        location: `${listing.area}, ${listing.city}, ${listing.state}`,
+        reservationId: reservation.id,
+        tierId: plot.tierId,
+        intent: purchaseIntent,
+        plan,
+        installmentMonths: plan === "outright" ? undefined : installmentMonths,
+        currency,
+        amountDue: deposit,
+        totalPrice,
+      });
     } catch (err) {
       setStepError(refusal(err, "We couldn't start your purchase."));
       setLoading(false);
@@ -185,235 +223,281 @@ export default function MarketplaceCheckout() {
     }
   };
 
-
   const deposit = depositFor(plan, totalPrice);
-  // A recorded purchase stops the hold's clock on the backend (the plot stays
-  // held while payment is pending), so there's no countdown to show then.
-  // The hold keeps running after the purchase is recorded: pay before it ends.
-  const showCountdown = reservation && !["verifying", "allocated", "expired", "confirm", "kyc"].includes(step);
+  const steps = ["Review", ...(kycWasNeeded ? ["Verify identity"] : []), "Purchase details", "Payment"];
+  const stepIndex = step === "confirm" ? 0 : step === "kyc" ? 1 : step === "details" ? steps.length - 2 : steps.length - 1;
+  const heading: Record<string, [string, string]> = {
+    confirm: ["Review your plot", "Check the plot and its full cost. Nothing is charged here."],
+    kyc: ["Verify your identity", "We check who you are before we hold a plot for you. It's needed once."],
+    details: ["Purchase details", "Two quick choices that shape your documents."],
+    payment: ["Pay for your plot", "Your plot is held while you pay."],
+  };
+  const summaryProps = { listing, plot, base, totalPrice, currency, commitment, holdSecondsLeft, held: !!reservation };
+  const errorAlert = stepError && <Alert tone="error" role="alert">{stepError}</Alert>;
+
+  if (!IN_FLOW.includes(step)) {
+    return (
+      <Shell narrow>
+        <ErrorBoundary section="checkout">
+          {step === "verifying" && transaction && transaction.status !== "abandoned" && (
+            <VerificationProgress status={transaction.status} reference={transaction.reference} amountDue={deposit} currency={currency} rejectionReason={transaction.rejectionReason} />
+          )}
+
+          {step === "allocated" && transaction && (
+            <div className="text-center py-8">
+              <div className="w-20 h-20 rounded-full bg-[var(--success-surface)] text-[var(--success-text)] flex items-center justify-center mx-auto mb-6"><CheckIcon size={36} /></div>
+              <h1 className="font-display text-3xl text-[var(--foreground)] mb-2">Plot allocated</h1>
+              <p className="text-sm text-[var(--muted-foreground)] max-w-sm mx-auto mb-6">
+                {plotLabel(plot)} at {listing.name} is now allocated to you. Your documents are ready in your vault.
+              </p>
+              <div className="bg-[var(--secondary)] rounded-xl p-4 text-left mb-6">
+                <div className="text-xs text-[var(--muted-foreground)] mb-1.5 font-medium">Issued to your vault</div>
+                <ul className="text-sm space-y-1.5 text-[var(--muted-foreground)]">
+                  {["Payment receipt", "Provisional allocation letter", "Deed of assignment", "POA draft"].map((doc) => (
+                    <li key={doc} className="flex items-center gap-2"><CheckIcon size={14} className="text-[var(--success-text)]" />{doc}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="flex gap-3">
+                <Button variant="secondary" size="lg" className="flex-1" onClick={() => navigate("/documents")}>View documents</Button>
+                <Button size="lg" className="flex-1" onClick={() => navigate("/portfolio")}>Go to portfolio</Button>
+              </div>
+            </div>
+          )}
+
+          {step === "expired" && (
+            <div className="text-center py-8">
+              <div className="w-16 h-16 rounded-full bg-[var(--muted)] text-[var(--muted-foreground)] flex items-center justify-center mx-auto mb-6"><ClockIcon size={30} /></div>
+              <h1 className="font-display text-3xl text-[var(--foreground)] mb-2">Your hold expired</h1>
+              <p className="text-sm text-[var(--muted-foreground)] max-w-sm mx-auto mb-6">This plot may still be available — no payment was taken. You can reserve it again.</p>
+              <div className="flex gap-3">
+                <Button variant="secondary" size="lg" className="flex-1" onClick={() => navigate(plotUrl)}>Back to plot</Button>
+                <Button size="lg" className="flex-1" onClick={handleReReserve}>Reserve again</Button>
+              </div>
+            </div>
+          )}
+        </ErrorBoundary>
+      </Shell>
+    );
+  }
 
   return (
-    <div className="min-h-full bg-[var(--background)] py-8 px-4">
-      <div className="max-w-3xl mx-auto">
-        <button onClick={() => navigate(-1)} className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-6">← Back to plot</button>
-        <h1 className="font-display text-2xl mb-1">Reserve your plot</h1>
-        <p className="text-sm text-[var(--muted-foreground)] mb-6">{listing.name} — {plotLabel(plot)} · {plot.sizeSqm} sqm</p>
-
-        {showCountdown && reservation && <div className="mb-6"><CountdownTimer expiresAt={reservation.expiresAt} onExpire={handleExpire} /></div>}
-
-        {/* Progress */}
-        {!["expired", "verifying", "allocated"].includes(step) && (
-          <div className="flex gap-1 mb-6">
-            {(["confirm", "kyc", "intent", "plan", "payment"] as Step[]).map((s) => (
-              <div key={s} className={`h-1 flex-1 rounded-full ${["confirm", "kyc", "intent", "plan", "payment"].indexOf(step) >= ["confirm", "kyc", "intent", "plan", "payment"].indexOf(s) ? "bg-[var(--primary)]" : "bg-[var(--border)]"}`} />
-            ))}
-          </div>
+    <Shell bar={<OrderSummaryBar {...summaryProps} />}>
+      <HoldAnnouncement secondsLeft={holdSecondsLeft} />
+      <div className="mb-6 sm:mb-8 space-y-5">
+        {/* Leaving once the hold has started would strand it, so the way
+            back is only offered before then. */}
+        {(step === "confirm" || step === "kyc") && (
+          <TextLink to={plotUrl} muted className="inline-flex items-center gap-1.5 text-sm"><ArrowLeftIcon size={14} />Back to plot</TextLink>
         )}
+        <div>
+          <h1 className="font-display text-3xl text-[var(--foreground)] mb-1">{heading[step][0]}</h1>
+          <p className="text-[var(--muted-foreground)]">{heading[step][1]}</p>
+        </div>
+        <CheckoutSteps steps={steps} current={stepIndex} />
+      </div>
 
-        <ErrorBoundary section="checkout">
-        {step === "confirm" && (
-          <div>
-            {tier?.availability === "sold_out" || plot.status === "sold" || plot.status === "reserved" ? (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-800 mb-6">This plot is no longer available. Please choose another.</div>
+      <div className="grid gap-8 lg:gap-12 lg:grid-cols-[minmax(0,1fr)_380px] items-start">
+        <div className="min-w-0 space-y-6">
+          <ErrorBoundary section="checkout">
+            {step === "confirm" && (unavailable ? (
+              <Alert tone="error" role="alert">
+                This plot is no longer available. <TextLink to={`/marketplace/${listing.id}/plots`}>Choose another plot</TextLink>
+              </Alert>
             ) : (
               <>
-                <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5 mb-6">
-                  <h3 className="font-semibold text-sm mb-4">Order summary</h3>
-                  <div className="space-y-2 text-sm">
-                    <Row label="Estate" value={listing.name} />
-                    <Row label="Plot ref" value={plotLabel(plot)} mono />
-                    <Row label="Size" value={`${plot.sizeSqm} sqm nominal · ${plot.actualAreaSqm} sqm surveyed`} mono />
-                    <Row label="Type" value={plot.isCorner ? "Corner piece ★" : "Standard"} />
-                    {plot.isCorner && <Row label="Corner premium" value={`${base.toLocaleString()} + ${listing.cornerPremiumPct}%`} mono />}
-                    <div className="border-t border-[var(--border)] pt-2 mt-2">
-                      <Row label="Total price" value={formatAmount(totalPrice, currency)} mono bold />
-                    </div>
-                  </div>
-                </div>
                 {/* The full cost, before the reserve action completes. Every
                     term here is already disclosed by developers — in a letter
                     issued after the buyer has paid. The failure is sequence,
                     not secrecy, and this is the last moment disclosure can
                     still change the decision. */}
-                {disclosure && (
-                  <div className="mb-6">
-                    <h3 className="font-semibold text-sm mb-3">What this commits you to</h3>
-                    <CostDisclosureSection disclosure={disclosure} tier={tierCommitmentForSize(disclosure, plot.sizeSqm)} />
-                  </div>
+                <Card as="section" className="sm:p-6">
+                  <h2 className="font-semibold text-[var(--foreground)]">What this commits you to</h2>
+                  <p className="text-sm text-[var(--muted-foreground)] mb-4">The full cost of this plot, before anything is held or paid.</p>
+                  {disclosure && !isGrandfathered(disclosure) ? (
+                    <CommitmentBreakdown disclosure={disclosure} commitment={commitment} corner={plot.isCorner} />
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between gap-4 text-sm mb-4">
+                        <span className="text-[var(--muted-foreground)]">Plot price{plot.isCorner ? `, with the ${listing.cornerPremiumPct}% corner premium` : ""}</span>
+                        <span className="font-mono-data font-medium text-[var(--foreground)]">{formatAmount(totalPrice, currency)}</span>
+                      </div>
+                      <CostDisclosureSection disclosure={disclosure} tier={commitment} />
+                    </>
+                  )}
+                </Card>
+
+                {disclosure?.exitCosts && !isGrandfathered(disclosure) && (
+                  <Card as="section" className="sm:p-6">
+                    <h2 className="font-semibold text-[var(--foreground)] mb-3">If you change your mind</h2>
+                    <ExitCostsPanel exitCosts={disclosure.exitCosts} layout="rows" />
+                  </Card>
                 )}
 
-                <button onClick={handleConfirmReserve} disabled={loading} className="w-full py-3 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-60">
-                  {loading ? "Starting your hold…" : "Confirm & continue →"}
-                </button>
+                <Alert tone="info">
+                  Nothing is charged at this step. When you continue,{kycRecord && kycRecord.status !== "approved" ? " we check your identity first, then" : ""} we hold {plotLabel(plot)} for you for {HOLD_MINUTES} minutes while you finish.
+                </Alert>
+                {errorAlert}
+                <div className={ACTIONS}>
+                  <Button size="lg" className={PRIMARY_WIDTH} onClick={handleConfirmReserve} disabled={loading || !kycRecord}>
+                    {loading ? "Starting your hold…" : kycRecord && kycRecord.status !== "approved" ? "Continue to identity check" : "Hold this plot and continue"}
+                  </Button>
+                  <TextLink to={`/marketplace/${listing.id}/plots`} className="text-sm max-sm:w-full max-sm:text-center">Choose a different plot</TextLink>
+                </div>
+              </>
+            ))}
+
+            {step === "kyc" && kycRecord && (
+              <>
+                <KycFlow record={kycRecord} onApproved={handleKycApproved} />
+                {errorAlert}
               </>
             )}
-          </div>
-        )}
 
-        {step === "kyc" && kycRecord && <KycFlow record={kycRecord} onApproved={handleKycApproved} />}
-
-        {step === "intent" && (
-          <div>
-            <h2 className="font-semibold mb-2">Purchase intent</h2>
-            <p className="text-sm text-[var(--muted-foreground)] mb-5">Your declared intent determines the documents generated and the legal terms that apply.</p>
-            <div className="grid gap-3 mb-6">
-              {[
-                { id: "development" as const, label: "Development", desc: "You intend to build on this plot. A deed of assignment and allocation letter reflecting development use will be issued.", icon: "🏗" },
-                { id: "investment" as const, label: "Investment / appreciation", desc: "You're holding for capital appreciation or resale. Investment-use documents issued.", icon: "📈" },
-              ].map((opt) => (
-                <button key={opt.id} onClick={() => setPurchaseIntent(opt.id)} className={`text-left p-4 rounded-xl border-2 transition-colors ${purchaseIntent === opt.id ? "border-[var(--primary)] bg-[var(--secondary)]" : "border-[var(--border)]"}`}>
-                  <div className="flex items-start gap-3">
-                    <span className="text-2xl mt-0.5">{opt.icon}</span>
-                    <div><div className="font-semibold text-sm">{opt.label}</div><div className="text-xs text-[var(--muted-foreground)] mt-1 leading-relaxed">{opt.desc}</div></div>
+            {step === "details" && (
+              <>
+                <Card as="section" className="sm:p-6">
+                  <h2 className="font-semibold text-[var(--foreground)]">How will you use this plot?</h2>
+                  <p className="text-sm text-[var(--muted-foreground)] mb-4">This decides which documents and legal terms apply to your purchase.</p>
+                  <div role="radiogroup" aria-label="Purchase intent" className="grid gap-3 sm:grid-cols-2">
+                    <OptionCard name="intent" value="development" checked={purchaseIntent === "development"} onSelect={() => setPurchaseIntent("development")}
+                      icon={<BuildingIcon size={20} />} title="To build on it" description="Your deed of assignment and allocation letter are drawn up for development use." />
+                    <OptionCard name="intent" value="investment" checked={purchaseIntent === "investment"} onSelect={() => setPurchaseIntent("investment")}
+                      icon={<TrendingUpIcon size={20} />} title="To hold as an investment" description="Documents drawn up for holding the land for appreciation or resale." />
                   </div>
-                </button>
-              ))}
-            </div>
-            <button onClick={() => setStep("plan")} className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 transition-opacity">Select payment plan →</button>
-          </div>
-        )}
-
-        {step === "plan" && (
-          <div>
-            <h2 className="font-semibold mb-2">Payment plan</h2>
-            <p className="text-sm text-[var(--muted-foreground)] mb-5">Choose how you'd like to pay for this plot.</p>
-            <PaymentPlanSelector
-              availablePlans={live ? ["outright"] : listing.paymentPlans}
-              totalPrice={totalPrice}
-              currency={currency}
-              plan={plan}
-              onPlanChange={setPlan}
-              installmentMonths={installmentMonths}
-              onInstallmentMonthsChange={setInstallmentMonths}
-            />
-            {live && (
-              <p className="mt-3 text-xs text-[var(--muted-foreground)]">Online payment is for outright purchases only for now.</p>
-            )}
-            <div className="flex gap-2 mt-4">
-              <button onClick={() => setStep("intent")} className="flex-1 py-2.5 border border-[var(--border)] rounded-md text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]">← Back</button>
-              <button onClick={goToPayment} disabled={loading} className="flex-[2] py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-60">{live ? "Continue to payment →" : "Choose payment method →"}</button>
-            </div>
-          </div>
-        )}
-
-        {stepError && step !== "payment" && (
-          <div className="mb-5 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700" role="alert">{stepError}</div>
-        )}
-
-        {step === "payment" && transaction && live && (
-          // Paystack's own page takes the money; it sends the buyer back to
-          // /payments/return, which asks the backend what really happened.
-          <div className="space-y-4">
-            <h2 className="font-semibold">Pay for your plot</h2>
-            <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-4 text-sm space-y-1">
-              <div><span className="text-[var(--muted-foreground)]">Reference:</span> <span className="font-mono-data">{transaction.reference}</span></div>
-              <div><span className="text-[var(--muted-foreground)]">Amount:</span> <span className="font-mono-data">{formatInCurrency(transaction.totalPrice, "NGN")}</span></div>
-            </div>
-            <p className="text-sm text-[var(--muted-foreground)]">
-              Pay before your hold runs out. Once Paystack confirms your payment, the developer verifies it before allocating the plot to you.
-            </p>
-            <PayButton transactionId={transaction.id} label={`Pay ${formatInCurrency(transaction.totalPrice, "NGN")} with Paystack`} />
-            <Link to={`/purchases/${transaction.id}`} className="block text-center text-sm text-[var(--accent)] hover:underline">View this purchase</Link>
-          </div>
-        )}
-
-        {step === "payment" && transaction && !live && (
-          <div>
-            <h2 className="font-semibold mb-2">Payment</h2>
-            <p className="text-sm text-[var(--muted-foreground)] mb-5">Complete your {plan === "outright" ? "full payment" : "deposit"} to secure this plot.</p>
-
-            <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-4 mb-5">
-              <div className="text-xs text-[var(--muted-foreground)] mb-1">Amount due now</div>
-              <div className="font-display text-2xl">{formatAmount(deposit, currency)}</div>
-              {transaction.fxRateLocked !== undefined && (
-                <div className="text-xs text-[var(--muted-foreground)] mt-1">Rate locked for your checkout window: 1 {currency} ≈ ₦{Math.round(1 / transaction.fxRateLocked).toLocaleString()}</div>
-              )}
-            </div>
-
-            <div className="mb-5">
-              <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-2">Payment method</label>
-              <PaymentMethodSelector methods={paymentMethodsForCountry(user.country)} selected={payMethod} onSelect={selectPayMethod} />
-            </div>
-
-            {(payMethod === "virtual_account" || payMethod === "wire") && (
-              <div className="bg-[var(--muted)] rounded-lg p-4 mb-5 font-mono-data text-sm">
-                {virtualAccount ? (
-                  <>
-                    <div className="text-xs text-[var(--muted-foreground)] mb-1">Transfer to this account</div>
-                    <div className="font-semibold">{virtualAccount.bankName}</div>
-                    <div className="text-lg tracking-wider my-1">{virtualAccount.accountNumber}</div>
-                    <div className="text-xs text-[var(--muted-foreground)]">Account name: {virtualAccount.accountName}</div>
-                    <div className="mt-2 text-xs text-amber-700">Use this exact reference. It expires when your plot hold expires.</div>
-                  </>
-                ) : <div className="text-xs text-[var(--muted-foreground)]">Generating your dedicated account number…</div>}
-              </div>
+                </Card>
+                <Card as="section" className="sm:p-6">
+                  <h2 className="font-semibold text-[var(--foreground)]">How will you pay?</h2>
+                  <p className="text-sm text-[var(--muted-foreground)] mb-4">Choose a payment plan.</p>
+                  <PaymentPlanSelector
+                    availablePlans={live ? ["outright"] : listing.paymentPlans}
+                    unavailablePlans={live ? listing.paymentPlans : []}
+                    unavailableReason="Not available for online payment yet."
+                    totalPrice={totalPrice}
+                    currency={currency}
+                    plan={plan}
+                    onPlanChange={setPlan}
+                    installmentMonths={installmentMonths}
+                    onInstallmentMonthsChange={setInstallmentMonths}
+                  />
+                </Card>
+                {errorAlert}
+                <div className={ACTIONS}>
+                  <Button size="lg" className={PRIMARY_WIDTH} onClick={goToPayment} disabled={loading}>
+                    {loading ? "Starting your purchase…" : live ? "Continue to payment" : "Choose payment method"}
+                  </Button>
+                </div>
+              </>
             )}
 
-            {paymentError && <div className="mb-5 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">{paymentError}</div>}
+            {step === "payment" && transaction && live && (
+              // Paystack's own page takes the money; it sends the buyer back to
+              // /payments/return, which asks the backend what really happened.
+              <>
+                <Card as="section" className="sm:p-6">
+                  <div className="text-sm text-[var(--muted-foreground)]">Amount to pay</div>
+                  <div className="font-display text-4xl text-[var(--foreground)] my-1">{formatInCurrency(transaction.totalPrice, "NGN")}</div>
+                  <div className="text-sm text-[var(--muted-foreground)]">Pay in full · {plotLabel(plot)}, {listing.name}</div>
+                  <div className="text-sm text-[var(--muted-foreground)] mt-3 pt-3 border-t border-[var(--border)]">Reference <span className="font-mono-data text-[var(--foreground)]">{transaction.reference}</span></div>
+                </Card>
+                <NextSteps />
+                <Alert tone="warning">Pay before your hold runs out. If it ends first, nothing is taken and you can reserve the plot again.</Alert>
+                <div className={ACTIONS}>
+                  <div className="w-full"><PayButton transactionId={transaction.id} label={`Pay ${formatInCurrency(transaction.totalPrice, "NGN")} with Paystack`} /></div>
+                </div>
+                <p className="text-center text-sm"><TextLink to={`/purchases/${transaction.id}`}>View this purchase</TextLink></p>
+                <p className="text-xs text-[var(--muted-foreground)]">Online payment is for outright purchases only for now.</p>
+              </>
+            )}
 
-            <div className="flex gap-2">
-              <button onClick={() => setStep("plan")} className="flex-1 py-2.5 border border-[var(--border)] rounded-md text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]">← Back</button>
-              <button
-                onClick={handlePaymentSubmit}
-                disabled={!payMethod || (["virtual_account", "wire"].includes(payMethod ?? "") && !virtualAccount)}
-                className="flex-[2] py-2.5 bg-[var(--accent)] text-white rounded-md text-sm font-semibold disabled:opacity-60 hover:opacity-90 transition-opacity"
-              >
-                {payMethod === "virtual_account" || payMethod === "wire" ? "I've made the transfer →" : "Pay now →"}
-              </button>
-            </div>
-          </div>
-        )}
+            {step === "payment" && transaction && !live && (
+              <>
+                <Card as="section" className="sm:p-6">
+                  <div className="text-sm text-[var(--muted-foreground)]">Amount due now</div>
+                  <div className="font-display text-4xl text-[var(--foreground)] my-1">{formatAmount(deposit, currency)}</div>
+                  <div className="text-sm text-[var(--muted-foreground)]">{plan === "outright" ? "Pay in full" : "Deposit"} · {plotLabel(plot)}, {listing.name}</div>
+                  {transaction.fxRateLocked !== undefined && (
+                    <div className="text-xs text-[var(--muted-foreground)] mt-2">Rate locked for your checkout window: 1 {currency} ≈ ₦{Math.round(1 / transaction.fxRateLocked).toLocaleString()}</div>
+                  )}
+                </Card>
 
-        {step === "verifying" && transaction && transaction.status !== "abandoned" && (
-          <VerificationProgress status={transaction.status} reference={transaction.reference} amountDue={deposit} currency={currency} rejectionReason={transaction.rejectionReason} />
-        )}
+                <Card as="section" className="sm:p-6">
+                  <h2 className="font-semibold text-[var(--foreground)] mb-3">Payment method</h2>
+                  <PaymentMethodSelector methods={paymentMethodsForCountry(user.country)} selected={payMethod} onSelect={selectPayMethod} />
+                  {(payMethod === "virtual_account" || payMethod === "wire") && (
+                    <div className="bg-[var(--muted)] rounded-lg p-4 mt-4 font-mono-data text-sm">
+                      {virtualAccount ? (
+                        <>
+                          <div className="text-xs text-[var(--muted-foreground)] mb-1">Transfer to this account</div>
+                          <div className="font-semibold">{virtualAccount.bankName}</div>
+                          <div className="text-lg tracking-wider my-1">{virtualAccount.accountNumber}</div>
+                          <div className="text-xs text-[var(--muted-foreground)]">Account name: {virtualAccount.accountName}</div>
+                          <div className="mt-2 text-xs text-[var(--warning-text)]">Use this exact reference. It expires when your plot hold expires.</div>
+                        </>
+                      ) : <div className="text-xs text-[var(--muted-foreground)]">Generating your dedicated account number…</div>}
+                    </div>
+                  )}
+                </Card>
 
-        {step === "allocated" && transaction && (
-          <div className="text-center py-8">
-            <div className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-6 text-4xl">✅</div>
-            <h2 className="font-display text-2xl mb-2">Plot allocated!</h2>
-            <p className="text-sm text-[var(--muted-foreground)] max-w-sm mx-auto mb-6">
-              {plotLabel(plot)} at {listing.name} is now allocated to you. Your documents are ready in your vault.
-            </p>
-            <div className="bg-[var(--secondary)] rounded-xl p-4 text-left mb-6">
-              <div className="text-xs text-[var(--muted-foreground)] mb-1.5 font-medium">Issued to your vault</div>
-              <ul className="text-sm space-y-1.5 text-[var(--muted-foreground)]">
-                <li className="flex items-start gap-2"><span className="text-emerald-600 mt-0.5">✓</span>Payment receipt</li>
-                <li className="flex items-start gap-2"><span className="text-emerald-600 mt-0.5">✓</span>Provisional allocation letter</li>
-                <li className="flex items-start gap-2"><span className="text-emerald-600 mt-0.5">✓</span>Deed of assignment</li>
-                <li className="flex items-start gap-2"><span className="text-emerald-600 mt-0.5">✓</span>POA draft</li>
-              </ul>
-            </div>
-            <div className="flex gap-3">
-              <Link to="/documents" className="flex-1 py-2.5 border border-[var(--border)] rounded-md text-sm font-medium hover:bg-[var(--muted)] transition-colors text-center">View documents</Link>
-              <Link to="/portfolio" className="flex-1 py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 transition-opacity text-center">Go to portfolio</Link>
-            </div>
-          </div>
-        )}
+                {paymentError && <Alert tone="error" role="alert">{paymentError}</Alert>}
 
-        {step === "expired" && (
-          <div className="text-center py-8">
-            <div className="w-16 h-16 rounded-full bg-[var(--muted)] flex items-center justify-center mx-auto mb-6 text-3xl">⏱</div>
-            <h2 className="font-display text-2xl mb-2">Your hold expired</h2>
-            <p className="text-sm text-[var(--muted-foreground)] max-w-sm mx-auto mb-6">This plot may still be available — no payment was taken. You can reserve it again.</p>
-            <div className="flex gap-3">
-              <Link to={`/marketplace/${listing.id}/plots?size=${plot.sizeSqm}&plot=${plot.id}`} className="flex-1 py-2.5 border border-[var(--border)] rounded-md text-sm font-medium hover:bg-[var(--muted)] transition-colors text-center">Back to plot</Link>
-              <button onClick={handleReReserve} className="flex-1 py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 transition-opacity">Reserve again</button>
-            </div>
-          </div>
-        )}
-        </ErrorBoundary>
+                <div className={ACTIONS}>
+                  <Button variant="secondary" size="lg" onClick={() => setStep("details")}>Back</Button>
+                  <Button
+                    size="lg"
+                    className="flex-1 sm:flex-none"
+                    onClick={handlePaymentSubmit}
+                    disabled={!payMethod || (["virtual_account", "wire"].includes(payMethod ?? "") && !virtualAccount)}
+                  >
+                    {payMethod === "virtual_account" || payMethod === "wire" ? "I've made the transfer" : "Pay now"}
+                  </Button>
+                </div>
+              </>
+            )}
+          </ErrorBoundary>
+        </div>
+
+        <div className="hidden lg:block lg:sticky lg:top-6">
+          <OrderSummary {...summaryProps} />
+        </div>
       </div>
+    </Shell>
+  );
+}
+
+// The page frame: checkout header, the phone summary bar when there is one,
+// and the content width (narrow for the single-message outcome screens).
+function Shell({ children, bar, narrow }: { children: React.ReactNode; bar?: React.ReactNode; narrow?: boolean }) {
+  return (
+    <div className="min-h-screen bg-[var(--background)]">
+      <CheckoutHeader />
+      {bar && <div className="lg:hidden">{bar}</div>}
+      <main className={`${narrow ? "max-w-lg" : "max-w-6xl"} mx-auto px-4 sm:px-6 pt-6 sm:pt-8 pb-16 max-lg:pb-0`}>{children}</main>
     </div>
   );
 }
 
-function Row({ label, value, mono, bold }: { label: string; value: string; mono?: boolean; bold?: boolean }) {
+function NextSteps() {
+  const items: [React.ReactNode, string, string][] = [
+    [<CreditCardIcon key="c" size={18} />, "You pay on Paystack's secure page", "You come straight back here once you've paid."],
+    [<ShieldCheckIcon key="s" size={18} />, "The developer verifies your payment", "They check the money has arrived. The plot stays held for you meanwhile."],
+    [<FileCheckIcon key="f" size={18} />, "Your plot is allocated to you", "Your receipt and allocation letter appear in your document vault."],
+  ];
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-[var(--muted-foreground)]">{label}</span>
-      <span className={`${mono ? "font-mono-data" : ""} ${bold ? "font-semibold" : ""}`}>{value}</span>
-    </div>
+    <Card as="section" className="sm:p-6">
+      <h2 className="font-semibold text-[var(--foreground)] mb-4">What happens next</h2>
+      <ol className="space-y-4">
+        {items.map(([icon, title, body]) => (
+          <li key={title} className="flex gap-3.5">
+            <span className="w-9 h-9 shrink-0 rounded-full bg-[var(--secondary)] text-[var(--secondary-foreground)] flex items-center justify-center">{icon}</span>
+            <div>
+              <div className="text-sm font-semibold text-[var(--foreground)]">{title}</div>
+              <div className="text-sm text-[var(--muted-foreground)]">{body}</div>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </Card>
   );
 }
 

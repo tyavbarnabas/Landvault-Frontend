@@ -60,6 +60,19 @@ export type FeeType =
   | "legal"
   | "other";
 
+// A fee's name when the developer gave it no label of its own (the backend
+// sends `label: null` then): its type, as the portal's fee form names it.
+export const FEE_TYPE_LABELS: Record<FeeType, string> = {
+  application: "Application",
+  setting_out: "Setting out",
+  infrastructure: "Infrastructure",
+  construction_supervision: "Construction supervision",
+  facility_management: "Facility management",
+  survey: "Survey",
+  legal: "Legal",
+  other: "Other",
+};
+
 // A milestone-based fee is not one payment. Both source letters break the
 // infrastructure charge down identically, by construction stage, and that
 // schedule is part of the disclosure — a buyer who reads one number has not
@@ -377,7 +390,7 @@ function fromListingDisclosure(listing: ListingDto): EstateCostDisclosure {
   const dto = listing.costDisclosure as CostDisclosureDto | null;
   const fees: PublicFee[] = (dto?.fees ?? []).map((f) => ({
     ...f,
-    label: f.label ?? "",
+    label: f.label ?? FEE_TYPE_LABELS[f.feeType] ?? "Fee",
     notes: f.notes ?? undefined,
     variationBasis: f.variationBasis ?? undefined,
   }));

@@ -10,7 +10,6 @@ import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { isLive } from "../../lib/backends";
 import { useApp } from "../../contexts/AppContext";
 import { formatAmount } from "../../data/mockData";
-import { formatDeclaredAmount } from "../../lib/formatCurrency";
 import { formatDay } from "../../lib/formatDate";
 import {
   fetchListingById, fetchSimilarListings, fromPrice, cheapestTier, pricePerSqm, type Listing, type PriceTier,
@@ -23,7 +22,7 @@ import EnquiryPanel from "../../components/marketplace/EnquiryPanel";
 import { SellerOffice } from "../../components/marketplace/SellerLine";
 import AvailabilityPill from "../../components/marketplace/AvailabilityPill";
 import CostDisclosureSection from "../../components/cost/CostDisclosureSection";
-import FeeBreakdown from "../../components/cost/FeeBreakdown";
+import CommitmentBreakdown from "../../components/cost/CommitmentBreakdown";
 import ExitCostsPanel from "../../components/cost/ExitCostsPanel";
 import MoneyRangeDisplay from "../../components/cost/MoneyRangeDisplay";
 import Badge from "../../components/ui/Badge";
@@ -374,32 +373,7 @@ function Costs({ disclosure, commitment }: { disclosure: EstateCostDisclosure | 
   }
   return (
     <Section title="What this actually costs" subtitle={commitment ? `For a ${commitment.sizeSqm} sqm plot, paid outright. Every fee is declared by the developer before you pay.` : "Every fee is declared by the developer before you pay."}>
-      {commitment && (
-        <div className="flex items-start justify-between gap-4 pb-3 mb-3 border-b border-[var(--border)]">
-          <div>
-            <div className="text-sm font-medium text-[var(--foreground)]">Land price</div>
-            <div className="text-xs text-[var(--muted-foreground)]">{commitment.sizeSqm} sqm plot</div>
-          </div>
-          <span className="font-mono-data font-medium text-[var(--foreground)]">{formatDeclaredAmount(commitment.landPrice, commitment.currency)}</span>
-        </div>
-      )}
-      <FeeBreakdown feeSchedule={disclosure.fees} tier={commitment} bare />
-      {commitment && (
-        <div className="mt-4 rounded-lg bg-[var(--secondary)] text-[var(--secondary-foreground)] px-4 py-3.5 flex items-center justify-between gap-4">
-          <div>
-            <div className="font-semibold">Total commitment</div>
-            {commitment.totalCommitmentIfCorner && (
-              <div className="text-xs">On a corner plot: <MoneyRangeDisplay money={commitment.totalCommitmentIfCorner} currency={commitment.currency} className="font-mono-data" /></div>
-            )}
-          </div>
-          <MoneyRangeDisplay money={commitment.totalCommitment} currency={commitment.currency} className="font-mono-data font-semibold text-lg" />
-        </div>
-      )}
-      {commitment?.totalExcludesOtherCurrencyFees && (
-        <p className="text-xs text-[var(--warning-text)] mt-3">
-          This total leaves out at least one fee charged in another currency, because amounts in different currencies are not added together. Those charges are listed above.
-        </p>
-      )}
+      <CommitmentBreakdown disclosure={disclosure} commitment={commitment} />
     </Section>
   );
 }

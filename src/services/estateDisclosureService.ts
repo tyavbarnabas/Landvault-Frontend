@@ -24,7 +24,7 @@
 import { ESTATES, type Currency } from "../data/mockData";
 import { apiClient, ApiError } from "../lib/apiClient";
 import { isMock } from "../lib/backends";
-import { mockCostDisclosureFixture, type FeeDueTrigger, type FeeType, type PublicFee } from "./costDisclosureService";
+import { FEE_TYPE_LABELS, mockCostDisclosureFixture, type FeeDueTrigger, type FeeType, type PublicFee } from "./costDisclosureService";
 
 export type { FeeDueTrigger, FeeType };
 
@@ -43,16 +43,8 @@ export const DUE_TRIGGERS: readonly FeeDueTrigger[] = [
 
 export const FEE_CURRENCIES: readonly Currency[] = ["NGN", "USD", "GBP", "EUR"];
 
-export const FEE_TYPE_LABELS: Record<FeeType, string> = {
-  application: "Application",
-  setting_out: "Setting out",
-  infrastructure: "Infrastructure",
-  construction_supervision: "Construction supervision",
-  facility_management: "Facility management",
-  survey: "Survey",
-  legal: "Legal",
-  other: "Other",
-};
+// Moved beside the fee types; kept exported here for the portal screens.
+export { FEE_TYPE_LABELS };
 
 // ─── Read shapes ─────────────────────────────────────────────────────────────
 

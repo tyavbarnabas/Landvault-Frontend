@@ -75,6 +75,21 @@ export function LightbulbIcon(p: IconProps) {
 export function MenuIcon(p: IconProps) {
   return <Svg {...p}><path d="M4 6h16M4 12h16M4 18h16" /></Svg>;
 }
+export function ArrowLeftIcon(p: IconProps) {
+  return <Svg {...p}><path d="m12 19-7-7 7-7M19 12H5" /></Svg>;
+}
+export function ClockIcon(p: IconProps) {
+  return <Svg {...p}><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></Svg>;
+}
+export function TrendingUpIcon(p: IconProps) {
+  return <Svg {...p}><path d="M22 7 13.5 15.5 8.5 10.5 2 17M16 7h6v6" /></Svg>;
+}
+export function CreditCardIcon(p: IconProps) {
+  return <Svg {...p}><rect width="20" height="14" x="2" y="5" rx="2" /><path d="M2 10h20" /></Svg>;
+}
+export function CalendarIcon(p: IconProps) {
+  return <Svg {...p}><rect width="18" height="18" x="3" y="4" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></Svg>;
+}
 
 export function SearchIcon(p: IconProps) {
   return <Svg {...p}><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></Svg>;

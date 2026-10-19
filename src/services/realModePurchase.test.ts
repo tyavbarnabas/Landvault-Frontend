@@ -110,6 +110,16 @@ describe("cost disclosure comes from the listing", () => {
     expect(d?.tiers[0].optionalFees.map((f) => f.label)).toEqual(["Fencing"]);
     expect(d?.exitCosts?.revocation).toEqual({ trigger: "default", noticeDays: null, paymentsAlreadyMade: "refunded_less_fees" });
   });
+
+  it("names an unlabelled fee by its type (the backend sends label: null)", async () => {
+    const fees = (LISTING as { costDisclosure: { fees: Record<string, unknown>[] } }).costDisclosure.fees;
+    const types = ["survey", "facility_management", "other"];
+    const unlabelled = { ...LISTING, costDisclosure: { ...LISTING.costDisclosure, fees: fees.map((f, i) => ({ ...f, feeType: types[i], label: null })) } };
+    respond({ "GET /api/marketplace/estates/e1": { status: 200, body: unlabelled } });
+    const { fetchCostDisclosure } = await import("./costDisclosureService");
+    const d = await fetchCostDisclosure("e1");
+    expect(d?.fees.map((f) => f.label)).toEqual(["Survey", "Facility management", "Other"]);
+  });
 });
 
 describe("plots come from the plot list, boundary or not", () => {
