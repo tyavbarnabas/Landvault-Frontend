@@ -84,7 +84,7 @@ export default function EstateCard({ listing, priceChangeSinceSaved }: EstateCar
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--muted-foreground)] pt-2.5 border-t border-[var(--border)]">
           <span>{sizeRange}</span>
           <span>·</span>
-          <span>{titleLabel(listing.titleType)}</span>
+          <span>{titleLabel(listing.titleType, listing.titleStatus)}</span>
           <span>·</span>
           <span>{plotsRemaining} plots left</span>
         </div>

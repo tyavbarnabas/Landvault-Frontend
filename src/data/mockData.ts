@@ -169,7 +169,9 @@ export interface OwnedPlot {
   plotLabel: string;
   estate: string;
   location: string;
-  sqm: number;
+  // What it was sold as (the tier's size). Null for a built unit with no land
+  // area of its own; never filled in from actualSqm.
+  sqm: number | null;
   // Nominal tier size vs actual surveyed area (a plot sold as "250 sqm" may
   // survey at 248.6) — actualSqm is display-only, optional because the
   // internal single-tenant mockData.Plot model (unlike the marketplace's
@@ -184,13 +186,22 @@ export interface OwnedPlot {
   // ever fabricating a percentage that isn't real.
   basePrice?: number;
   titleType?: Estate["titleType"];
+  // Live: pending (declared), verified (by HomeTrue) or rejected. Mock plots
+  // predate it and carry only titleVerified. Never show titleType without it
+  // (see titleLabel in marketplaceService.ts).
+  titleStatus?: "pending" | "verified" | "rejected" | null;
   titleVerified?: boolean;
+  // The purchase this came from. Live, a plot still pending verification has
+  // the transaction id as its id; once finance verifies it the owned plot gets
+  // a new id, and /portfolio/{transactionId} keeps opening it.
+  transactionId?: string;
   intent: "development" | "investment";
   plan: PaymentPlan;
   totalPrice: number;
   paidAmount: number;
   currency: Currency;
-  acquiredDate: string;
+  // When finance verified the sale; null while pending verification.
+  acquiredDate: string | null;
   status: PlotAccountStatus;
   nextDueDate?: string;
   nextDueAmount?: number;

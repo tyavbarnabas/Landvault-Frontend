@@ -76,7 +76,7 @@ export default function MarketplaceEstateDetail() {
           <SellerOffice seller={listing.seller} />
         </div>
         <div className="text-right shrink-0">
-          <div className="text-xs text-[var(--muted-foreground)]">{titleLabel(listing.titleType)} · {landCheckLabel(listing.lastVerifiedDate)}</div>
+          <div className="text-xs text-[var(--muted-foreground)]">{titleLabel(listing.titleType, listing.titleStatus, listing.titleVerifiedAt, true)} · {landCheckLabel(listing.lastVerifiedDate)}</div>
         </div>
       </div>
 

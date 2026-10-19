@@ -31,12 +31,12 @@ import { formatAmount } from "../data/mockData";
 import { useFetch } from "../lib/useFetch";
 import { BACKEND_CONFIGURED, isLive, type ServiceKey } from "../lib/backends";
 import PurchaseList from "../components/purchases/PurchaseList";
-import { fetchOwnedPlots } from "../services/portfolioService";
+import { fetchOwnedPlots, fetchPortfolioSummary, installmentsAvailable } from "../services/portfolioService";
 import { fetchDocuments } from "../services/documentsService";
 import { fetchAttentionItems } from "../services/attentionService";
 import { DOCUMENT_TYPE_ICONS } from "../components/documents/DocumentCard";
 import AttentionStrip from "../components/dashboard/AttentionStrip";
-import { urgencyRank, groupPlotsByCurrency, isActivelyOwned } from "./portfolio/Portfolio";
+import { urgencyRank, isActivelyOwned } from "./portfolio/Portfolio";
 
 // Per-viewer convenience only (never read back by anything but this screen),
 // so localStorage is the right home for it and every access is guarded — a
@@ -51,9 +51,8 @@ function readLastVisit(): string | undefined {
   }
 }
 
-// See Portfolio.tsx's PORTFOLIO_PAGE_SIZE note: the summary line needs a true
-// total across every plot, which a real backend should compute server-side.
-const PORTFOLIO_SCAN_LIMIT = 500;
+// Upcoming payments only need the most urgent few (sorted by the server).
+const UPCOMING_SCAN_LIMIT = 20;
 
 export default function Dashboard() {
   const { user, wishlist } = useApp();
@@ -79,22 +78,27 @@ export default function Dashboard() {
   const showAttention = show("attention");
   const showDocuments = show("documents");
   const showPortfolio = show("portfolio");
+  // Installment plans have no backend yet: live, every plot is outright and
+  // nothing is ever due.
+  const showUpcoming = showPortfolio && installmentsAvailable();
 
   const attention = useFetch(
     () => (showAttention ? fetchAttentionItems({ wishlist, documentsSince: lastVisitAt }) : Promise.resolve([])),
     [wishlist, lastVisitAt, showAttention]);
 
   const overview = useFetch(async () => {
-    const [plotsPage, documentsPage] = await Promise.all([
-      showPortfolio ? fetchOwnedPlots({ limit: PORTFOLIO_SCAN_LIMIT }) : Promise.resolve({ items: [] }),
+    const [summary, plotsPage, documentsPage] = await Promise.all([
+      showPortfolio ? fetchPortfolioSummary() : Promise.resolve(null),
+      showUpcoming ? fetchOwnedPlots({ sort: "urgency", limit: UPCOMING_SCAN_LIMIT }) : Promise.resolve({ items: [] }),
       showDocuments ? fetchDocuments({ limit: 3 }) : Promise.resolve({ items: [] }), // already newest-first
     ]);
-    return { plots: plotsPage.items, documents: documentsPage.items };
+    return { summary, plots: plotsPage.items, documents: documentsPage.items };
   });
 
   const plots = overview.data?.plots ?? [];
   const documents = overview.data?.documents ?? [];
-  const byCurrency = groupPlotsByCurrency(plots);
+  const byCurrency = overview.data?.summary?.byCurrency ?? [];
+  const awaiting = overview.data?.summary?.awaitingVerification ?? 0;
   const upcomingPayments = plots
     .filter(isActivelyOwned)
     .filter((p) => p.nextDueDate && p.nextDueAmount !== undefined)
@@ -115,25 +119,14 @@ export default function Dashboard() {
 
       {showAttention && <AttentionStrip items={attention.data ?? []} loading={attention.loading} error={attention.error} />}
 
-      {live ? (
-        // With a backend: the buyer's REAL purchases. The portfolio and its
-        // payment schedule have no backend yet, and demo plots beside real
-        // purchases would read as plots the buyer owns.
-        <section className="mb-8" aria-labelledby="purchases-heading">
-          <div className="flex items-center justify-between mb-3">
-            <h2 id="purchases-heading" className="font-semibold text-sm">Your purchases</h2>
-            <Link to="/purchases" className="text-xs text-[var(--accent)] hover:underline">All purchases</Link>
-          </div>
-          <PurchaseList pageSize={5} showMore="link" density="compact" />
-        </section>
-      ) : (
-        // One thin line, not a stat grid — the numbers themselves belong to
-        // the portfolio, which owns the record. Grouped per currency actually
-        // held; never summed across currencies.
+      {/* One thin line, not a stat grid — the numbers themselves belong to
+          the portfolio, which owns the record. The server's totals, grouped
+          per currency actually held; never summed across currencies. */}
+      {showPortfolio && (
         <div className="mb-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-y border-[var(--border)] py-3">
           {overview.loading ? (
             <span className="text-sm text-[var(--muted-foreground)]">Loading your portfolio…</span>
-          ) : byCurrency.size === 0 ? (
+          ) : byCurrency.length === 0 && awaiting === 0 ? (
             <>
               <span className="text-sm text-[var(--muted-foreground)]">You don't own any plots yet.</span>
               <Link to="/marketplace" className="text-xs font-semibold text-[var(--accent)] hover:underline">Browse the marketplace →</Link>
@@ -141,11 +134,14 @@ export default function Dashboard() {
           ) : (
             <>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                {Array.from(byCurrency.entries()).map(([cur, g]) => (
-                  <span key={cur} className="text-sm text-[var(--foreground)]">
-                    {g.count} plot{g.count === 1 ? "" : "s"} · <span className="font-mono-data">{formatAmount(g.totalPaid, cur)}</span> paid of <span className="font-mono-data">{formatAmount(g.totalValue, cur)}</span>
+                {byCurrency.map((g) => (
+                  <span key={g.currency} className="text-sm text-[var(--foreground)]">
+                    {g.count} plot{g.count === 1 ? "" : "s"} · <span className="font-mono-data">{formatAmount(g.totalPaid, g.currency)}</span> paid of <span className="font-mono-data">{formatAmount(g.totalValue, g.currency)}</span>
                   </span>
                 ))}
+                {awaiting > 0 && (
+                  <span className="text-sm text-[var(--muted-foreground)]">{awaiting} purchase{awaiting === 1 ? "" : "s"} awaiting verification</span>
+                )}
               </div>
               <Link to="/portfolio" className="text-xs font-semibold text-[var(--accent)] hover:underline">View your portfolio →</Link>
             </>
@@ -153,11 +149,23 @@ export default function Dashboard() {
         </div>
       )}
 
+      {live && (
+        // With a backend: the buyer's purchases too, including unpaid holds
+        // the portfolio leaves out.
+        <section className="mb-8" aria-labelledby="purchases-heading">
+          <div className="flex items-center justify-between mb-3">
+            <h2 id="purchases-heading" className="font-semibold text-sm">Your purchases</h2>
+            <Link to="/purchases" className="text-xs text-[var(--accent)] hover:underline">All purchases</Link>
+          </div>
+          <PurchaseList pageSize={5} showMore="link" density="compact" />
+        </section>
+      )}
+
       <div className="grid lg:grid-cols-2 gap-6">
         {/* Upcoming payments — real plots with a real next due date, ordered
-            by the same urgency rank Portfolio.tsx uses. Demo mode only: live,
-            payment schedules have no backend yet. */}
-        {!live && (
+            by the same urgency rank Portfolio.tsx uses. Hidden live:
+            installment plans have no backend yet. */}
+        {showUpcoming && (
         <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
           <h3 className="font-semibold text-sm mb-4">Upcoming payments</h3>
           {overview.loading ? (

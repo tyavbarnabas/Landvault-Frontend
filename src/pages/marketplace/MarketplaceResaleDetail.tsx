@@ -55,7 +55,7 @@ export default function MarketplaceResaleDetail() {
   const isAvailable = listing.status === "active";
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
+    <div className="max-w-3xl mx-auto p-6">
       <div className="relative aspect-[21/9] bg-[var(--muted)] rounded-xl overflow-hidden mb-6 flex items-center justify-center">
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-[var(--muted-foreground)]/40">
           <path d="M9 3L3 5v16l6-2 6 2 6-2V5l-6 2-6-2Z" />

@@ -48,7 +48,9 @@ export default function TwoFactorSettings() {
       const errorCode = errorCodeOf(err);
       setError(errorCode === "TWO_FACTOR_MANDATORY"
         ? "Two-factor authentication is required for platform staff accounts and can't be turned off."
-        : "That code isn't valid. Try your authenticator app again, or use a recovery code.");
+        : errorCode === "TWO_FACTOR_LOCKED_OUT"
+          ? "Too many incorrect codes, so codes are paused for 15 minutes. Wait, then try again with the code your app shows at that point."
+          : "That code isn't valid. Try your authenticator app again, or use a recovery code.");
     } finally {
       setBusy(false);
     }
@@ -62,8 +64,10 @@ export default function TwoFactorSettings() {
       setCodes(await regenerateRecoveryCodes(code));
       setPanel("codes");
       setCode("");
-    } catch {
-      setError("That code isn't valid. Regenerating needs a current code from your authenticator app.");
+    } catch (err) {
+      setError(errorCodeOf(err) === "TWO_FACTOR_LOCKED_OUT"
+        ? "Too many incorrect codes, so codes are paused for 15 minutes. Wait, then try again with the code your app shows at that point."
+        : "That code isn't valid. Regenerating needs a current code from your authenticator app.");
     } finally {
       setBusy(false);
     }

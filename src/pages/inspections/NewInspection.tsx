@@ -50,7 +50,7 @@ export default function NewInspection() {
 
   return (
     <div className="min-h-full bg-[var(--background)] py-8 px-4">
-      <div className="max-w-lg mx-auto">
+      <div className="max-w-3xl mx-auto">
         <button onClick={() => navigate(-1)} className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-6">← Back</button>
 
         {!booked ? (

@@ -14,12 +14,13 @@ import { Field, inputClass } from "../../../components/portal/formParts";
 import { canManageEstates } from "../../../services/authService";
 import { useApp } from "../../../contexts/AppContext";
 import PublicationPanel from "../../../components/portal/PublicationPanel";
-import StatusBadge, { boundaryChangeBadge, portalEstateStatusBadge } from "../../../components/StatusBadge";
+import StatusBadge, { boundaryChangeBadge, portalEstateStatusBadge, titleStatusBadge } from "../../../components/StatusBadge";
 import EstateBoundaryMap from "../../../components/map/EstateBoundaryMap";
 import { usePortalScope } from "../usePortalScope";
 import { ownershipLabel, useBranchNames } from "../useBranchNames";
 import { ReadOnlyNotice } from "./PortalEstateInventory";
 import { PHOTO_LIMIT, fetchEstatePhotos } from "../../../services/estatePhotosService";
+import { fetchEstateTitle } from "../../../services/estateTitleService";
 
 export default function PortalEstateDetail() {
   const { estateId } = useParams<{ estateId: string }>();
@@ -64,7 +65,7 @@ export default function PortalEstateDetail() {
   const boundary = loaded.data?.boundary ?? null;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-6 max-w-3xl mx-auto">
       <Link to="/portal/estates" className="text-xs text-[var(--accent)] hover:underline">← Estates</Link>
 
       <div className="mt-2 mb-6 flex items-start justify-between gap-4">
@@ -174,19 +175,11 @@ export default function PortalEstateDetail() {
         )}
       </section>
 
+      {scope && <TitleSummary estateId={estate.id} scope={scope} canManage={canManage} />}
+
       <section>
-        <h2 className="text-sm font-semibold text-[var(--foreground)] mb-3">Title</h2>
-        {/* NOT_CHECKED never renders as verified, and an estate with no title
-            record shows none rather than a placeholder. */}
-        {estate.titleVerified ? (
-          <p className="text-sm text-[var(--foreground)]">{estate.titleType} — verified</p>
-        ) : (
-          <p className="text-sm text-[var(--muted-foreground)]">
-            No verified title record on file{estate.titleType ? ` (declared as ${estate.titleType})` : ""}. Filing title and verification
-            records comes in a later release.
-          </p>
-        )}
-        <p className="text-xs text-[var(--muted-foreground)] mt-3">
+        <h2 className="text-sm font-semibold text-[var(--foreground)] mb-3">Features</h2>
+        <p className="text-xs text-[var(--muted-foreground)]">
           Corner premium: {estate.cornerPremiumPct}%
           {estate.amenities.length > 0 ? ` · ${estate.amenities.join(", ")}` : ""}
         </p>
@@ -444,6 +437,37 @@ function PhotosSummary({ estateId, estateName, scope, canManage }: { estateId: s
       ) : (
         <p className="text-sm text-[var(--muted-foreground)]">
           No photos yet. An estate needs at least one photo of its own land before it can be published.
+        </p>
+      )}
+    </section>
+  );
+}
+
+// The declared title and where HomeTrue's review stands; changing it is its own page.
+function TitleSummary({ estateId, scope, canManage }: { estateId: string; scope: PortalScope; canManage: boolean }) {
+  const title = useFetch(() => fetchEstateTitle(estateId, scope), [estateId, scope.tenantId, scope.branchId]);
+  const t = title.data;
+  return (
+    <section className="mb-8">
+      <div className="flex items-center justify-between gap-4 mb-3">
+        <h2 className="text-sm font-semibold text-[var(--foreground)]">Land title</h2>
+        <Link to={`/portal/estates/${estateId}/title`} className="text-xs font-semibold text-[var(--accent)] hover:underline">
+          {!canManage ? "View title →" : t ? "Manage title →" : "Add title →"}
+        </Link>
+      </div>
+      {title.loading && !title.data ? (
+        <p className="text-sm text-[var(--muted-foreground)]">Loading title…</p>
+      ) : title.error ? (
+        <p className="text-sm text-[var(--muted-foreground)]">The title couldn't be loaded.</p>
+      ) : t ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm text-[var(--foreground)]">{t.titleType}</span>
+          <span className="text-sm text-[var(--muted-foreground)] font-mono-data">{t.titleNumber || "No title number"}</span>
+          <StatusBadge {...titleStatusBadge(t.status)} />
+        </div>
+      ) : (
+        <p className="text-sm text-[var(--muted-foreground)]">
+          No title recorded. Buyers see "Title not recorded" until you add one and upload its documents for HomeTrue to check.
         </p>
       )}
     </section>

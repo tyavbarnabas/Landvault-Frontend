@@ -101,7 +101,7 @@ export function NewPortalBranch() {
   const navigate = useNavigate();
   if (!scope) return <div className="p-8 text-sm text-[var(--muted-foreground)]">This account isn't linked to a company.</div>;
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <div className="p-6 max-w-3xl mx-auto">
       <Link to="/portal/branches" className="text-xs text-[var(--accent)] hover:underline">← Branches</Link>
       <h1 className="font-display text-3xl text-[var(--foreground)] mt-2 mb-1">New branch</h1>
       <p className="text-sm text-[var(--muted-foreground)] mb-6">

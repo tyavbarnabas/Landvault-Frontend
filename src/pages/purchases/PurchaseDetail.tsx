@@ -14,6 +14,7 @@ import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import TextLink from "../../components/ui/TextLink";
 import { refundExpected } from "../../lib/purchaseStatus";
+import { isAvailable } from "../../lib/backends";
 import { fetchPurchase } from "../../services/paymentsService";
 import { fetchListingById } from "../../services/marketplaceService";
 import { fetchPlotById, plotLabel } from "../../services/marketplacePlotsService";
@@ -45,8 +46,12 @@ export default function PurchaseDetail() {
 
   const p = purchase.payment;
   const showRefund = refundExpected(purchase);
+  // Paid purchases are in the portfolio from the moment they await finance.
+  // Its transaction id keeps opening the plot after finance verifies it, when
+  // the owned plot gets an id of its own.
+  const inPortfolio = isAvailable("portfolio") && (purchase.status === "awaiting_finance" || purchase.status === "verified");
   return (
-    <Page title={estateName ?? "Your purchase"} eyebrow={purchase.reference} titleSize="md" width="md"
+    <Page title={estateName ?? "Your purchase"} eyebrow={purchase.reference} titleSize="md" width="lg"
       description={plot ? `${plotLabel(plot)}${plot.sizeSqm ? ` · ${plot.sizeSqm} sqm` : ""}` : undefined}>
       <div className="space-y-6">
 
@@ -87,7 +92,10 @@ export default function PurchaseDetail() {
 
       <div className="flex justify-between text-sm">
         <TextLink to="/marketplace" muted>← Marketplace</TextLink>
-        <Button variant="link" onClick={loaded.refetch}>Refresh status</Button>
+        <div className="flex flex-wrap gap-4">
+          {inPortfolio && <TextLink to={`/portfolio/${purchase.id}`}>View in your portfolio →</TextLink>}
+          <Button variant="link" onClick={loaded.refetch}>Refresh status</Button>
+        </div>
       </div>
       </div>
     </Page>

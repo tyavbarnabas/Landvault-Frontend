@@ -126,7 +126,7 @@ export default function CreatePortalPlots() {
 
   if (tiers.length === 0) {
     return (
-      <div className="p-6 max-w-2xl mx-auto">
+      <div className="p-6 max-w-3xl mx-auto">
         <Link to={`/portal/estates/${estateId}/inventory`} className="text-xs text-[var(--accent)] hover:underline">← Inventory</Link>
         <h1 className="font-display text-3xl text-[var(--foreground)] mt-2 mb-2">Add plots</h1>
         <p className="text-sm text-[var(--muted-foreground)]">

@@ -41,7 +41,7 @@ describe("service registry", () => {
     const { isMock } = await import("./backends");
     expect(isMock("auth")).toBe(false);
     expect(isMock("reservation")).toBe(false);
-    expect(isMock("portfolio")).toBe(true);
+    expect(isMock("documents")).toBe(true);
     expect(isMock("estates")).toBe(true);
   });
 

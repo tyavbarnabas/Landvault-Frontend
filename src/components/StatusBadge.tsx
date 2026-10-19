@@ -7,6 +7,7 @@ import type { PortalEstateStatus } from "../services/portalEstatesService";
 import type { InvitationStatus, StaffStatus } from "../services/staffService";
 import type { OnboardingRequestStatus } from "../services/onboardingRequestsService";
 import type { BoundaryChangeStatus } from "../services/portalEstatesService";
+import type { TitleStatus } from "../services/estateTitleService";
 import Badge, { type BadgeVariant } from "./ui/Badge";
 import type { PayoutStatus, RefundStatus, SettlementAccountStatus } from "../services/paymentTypes";
 
@@ -139,5 +140,14 @@ export function onboardingRequestStatusBadge(status: OnboardingRequestStatus): {
     case "contacted": return { label: "Contacted", variant: "warning" };
     case "converted": return { label: "Converted", variant: "success" };
     case "declined": return { label: "Declined", variant: "neutral" };
+  }
+}
+
+// An estate's land title: the developer declares it, HomeTrue verifies it.
+export function titleStatusBadge(status: TitleStatus): { label: string; variant: BadgeVariant } {
+  switch (status) {
+    case "verified": return { label: "Verified by HomeTrue", variant: "success" };
+    case "rejected": return { label: "Not confirmed", variant: "error" };
+    case "pending": return { label: "Waiting for review", variant: "warning" };
   }
 }

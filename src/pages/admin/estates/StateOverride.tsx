@@ -40,7 +40,7 @@ export default function StateOverride() {
   };
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <div className="p-6 max-w-3xl mx-auto">
       <h1 className="font-display text-3xl text-[var(--foreground)] mb-1">Estate state override</h1>
       <p className="text-sm text-[var(--muted-foreground)] mb-6">
         For land on a disputed state border, where the reference boundaries and the land registry disagree. Recording an override says a

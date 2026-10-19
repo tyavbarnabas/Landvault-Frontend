@@ -93,7 +93,7 @@ export default function PlotDetailPanel({ plot, listing, onClose, onOpenEnquiry 
             // Live plots carry no orientation; an empty cell says nothing false.
             { label: "Orientation", value: plot.orientation || "—" },
             { label: "Block reference", value: plotLabel(plot) },
-            { label: "Title type", value: titleLabel(listing.titleType) },
+            { label: "Title", value: titleLabel(listing.titleType, listing.titleStatus) },
           ].map((d) => (
             <div key={d.label} className="bg-[var(--muted)] rounded-lg p-3">
               <div className="text-xs text-[var(--muted-foreground)] mb-0.5">{d.label}</div>

@@ -115,7 +115,7 @@ export default function TenantDetail() {
   const canReview = tenant.verificationState === "under_review";
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-6 max-w-3xl mx-auto">
       <Link to="/admin/tenants" className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]">← Tenants</Link>
 
       {submitProblem && (

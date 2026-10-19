@@ -73,7 +73,7 @@ export default function PortalEstateDisclosure() {
   const canManage = mayManage && !isReadOnlyForScope(estate, scope);
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-6 max-w-3xl mx-auto">
       <Link to={`/portal/estates/${estateId}`} className="text-xs text-[var(--accent)] hover:underline">← {estate.name}</Link>
       <h1 className="font-display text-3xl text-[var(--foreground)] mt-2 mb-1">Fees &amp; terms</h1>
       <p className="text-sm text-[var(--muted-foreground)] mb-6">

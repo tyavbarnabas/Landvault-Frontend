@@ -1,8 +1,14 @@
 // Backend integration seam for owned plots, payments & installment
 // schedules. See INTEGRATION.md.
+//
+// Live (GET /api/portfolio/plots, /plots/{id}, /summary): every plot the
+// buyer owns, plus paid purchases finance hasn't verified yet (their id is
+// the transaction id). Only outright purchases exist on the backend today, so
+// live mode never calls the installment, payment or restructure routes, and a
+// client never creates or changes ownership: only finance verification does.
 
 import { OWNED_PLOTS, type Currency, type OwnedPlot, type PaymentRecord } from "../data/mockData";
-import { apiClient } from "../lib/apiClient";
+import { apiClient, ApiError } from "../lib/apiClient";
 import { isMock } from "../lib/backends";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 
@@ -32,42 +38,137 @@ export interface FetchOwnedPlotsParams extends PageParams {
   sort?: "urgency";
 }
 
+// The backend sends null for "not set"; this app's optional fields mean the
+// same with undefined (`nextDueAmount !== undefined` and the like).
+type Nullable<T> = { [K in keyof T]: T[K] | null };
+type OwnedPlotDto = Nullable<OwnedPlot>;
+
+function fromOwnedPlotDto(dto: OwnedPlotDto): OwnedPlot {
+  const u = <T,>(v: T | null | undefined): T | undefined => v ?? undefined;
+  return {
+    ...(dto as OwnedPlot),
+    sqm: dto.sqm ?? null,
+    acquiredDate: dto.acquiredDate ?? null,
+    titleStatus: dto.titleStatus ?? null,
+    titleType: u(dto.titleType),
+    actualSqm: u(dto.actualSqm),
+    cornerPremiumPct: u(dto.cornerPremiumPct),
+    basePrice: u(dto.basePrice),
+    transactionId: u(dto.transactionId),
+    nextDueDate: u(dto.nextDueDate),
+    nextDueAmount: u(dto.nextDueAmount),
+    installmentMonths: u(dto.installmentMonths),
+    installmentsPaid: u(dto.installmentsPaid),
+    arrears: u(dto.arrears),
+    restructureStatus: u(dto.restructureStatus),
+    supersedes: u(dto.supersedes),
+    payments: (dto.payments ?? []).map((p) => ({ ...p, rejectionReason: u(p.rejectionReason), verifiedAt: u(p.verifiedAt) })),
+  };
+}
+
 export async function fetchOwnedPlots(params: FetchOwnedPlotsParams = {}): Promise<Page<OwnedPlot>> {
   if (isMock("portfolio")) {
     const source = params.sort === "urgency" ? [...mockOwnedPlots].sort((a, b) => urgencyRank(a) - urgencyRank(b)) : mockOwnedPlots;
     return paginateMock(source, params);
   }
-  return apiClient.get<Page<OwnedPlot>>(`/api/portfolio/plots?${new URLSearchParams(params as Record<string, string>)}`);
+  const query = new URLSearchParams();
+  if (params.sort) query.set("sort", params.sort);
+  if (params.cursor) query.set("cursor", params.cursor);
+  if (params.limit) query.set("limit", String(Math.min(params.limit, PORTFOLIO_MAX_PAGE)));
+  const page = await apiClient.get<Page<OwnedPlotDto> & { cursor?: string | null }>(`/api/portfolio/plots?${query}`);
+  return { ...page, items: page.items.map(fromOwnedPlotDto), cursor: page.cursor ?? undefined };
 }
 
+// "250 sqm", or null for a built unit with no land area of its own. Never
+// falls back to actualSqm: that is the surveyed area, shown on its own.
+export function sizeText(plot: Pick<OwnedPlot, "sqm">): string | null {
+  return plot.sqm === null ? null : `${plot.sqm} sqm`;
+}
+
+// The backend's largest page.
+export const PORTFOLIO_MAX_PAGE = 100;
+
+// A plot's id, or the transaction id of the purchase it came from (that link
+// keeps working after finance verifies it). Undefined when it isn't this
+// buyer's plot; anything else is a real failure and throws.
 export async function fetchOwnedPlotById(id: string): Promise<OwnedPlot | undefined> {
-  if (isMock("portfolio")) return mockOwnedPlots.find((p) => p.id === id);
+  if (isMock("portfolio")) return mockOwnedPlots.find((p) => p.id === id || p.transactionId === id);
   try {
-    return await apiClient.get<OwnedPlot>(`/api/portfolio/plots/${id}`);
-  } catch {
-    return undefined;
+    return fromOwnedPlotDto(await apiClient.get<OwnedPlotDto>(`/api/portfolio/plots/${encodeURIComponent(id)}`));
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 404 || (err.status === 400 && err.body?.code === "INVALID_PARAMETER"))) return undefined;
+    throw err;
   }
+}
+
+// ─── Totals ─────────────────────────────────────────────────────────────────
+//
+// Computed by the server over every plot, not the loaded page. One entry per
+// currency, never summed across currencies. Only plots still owned count
+// (transferred and superseded records are history), and paid purchases
+// awaiting finance are counted separately, not in the totals.
+
+export interface CurrencyTotals {
+  currency: Currency;
+  totalValue: number;
+  totalPaid: number;
+  count: number;
+}
+
+export interface PortfolioSummary {
+  byCurrency: CurrencyTotals[];
+  awaitingVerification: number;
+}
+
+export async function fetchPortfolioSummary(): Promise<PortfolioSummary> {
+  if (!isMock("portfolio")) return apiClient.get<PortfolioSummary>("/api/portfolio/summary");
+  return summarize(mockOwnedPlots);
+}
+
+// Mock mode's /summary, by the backend's rules.
+export function summarize(plots: OwnedPlot[]): PortfolioSummary {
+  const byCurrency = new Map<Currency, CurrencyTotals>();
+  let awaitingVerification = 0;
+  for (const p of plots) {
+    if (p.status === "transferred" || p.status === "superseded") continue;
+    if (p.status === "pending_verification") { awaitingVerification += 1; continue; }
+    const g = byCurrency.get(p.currency) ?? { currency: p.currency, totalValue: 0, totalPaid: 0, count: 0 };
+    g.totalValue += p.totalPrice;
+    g.totalPaid += p.paidAmount;
+    g.count += 1;
+    byCurrency.set(p.currency, g);
+  }
+  return { byCurrency: [...byCurrency.values()], awaitingVerification };
+}
+
+// Installment plans, their payments and restructuring exist only in mock
+// mode: the backend sells outright today. Live, their controls stay hidden
+// and these calls never reach the network.
+export function installmentsAvailable(): boolean {
+  return isMock("portfolio");
+}
+
+function notOnBackend(what: string): never {
+  throw new Error(`${what} isn't available yet.`);
 }
 
 // Used when a checkout completes — turns a fresh purchase into a real owned-plot
 // record in the mock store, rather than just a cosmetic "success" screen.
+// Mock only: live, a client can't create ownership; finance verification does.
 export async function addOwnedPlot(plot: OwnedPlot): Promise<OwnedPlot> {
-  if (isMock("portfolio")) {
-    mockOwnedPlots = [plot, ...mockOwnedPlots];
-    return plot;
-  }
-  return apiClient.post<OwnedPlot>("/api/portfolio/plots", plot);
+  if (!isMock("portfolio")) notOnBackend("Recording a plot from the browser");
+  mockOwnedPlots = [plot, ...mockOwnedPlots];
+  return plot;
 }
 
 // Used when a marketplace checkout's finance verification lands (or rejects)
 // — flips a pending-verification record to its final status without
 // replacing the whole record. See marketplaceCheckoutService.ts.
+// Mock only, like addOwnedPlot.
 export async function updateOwnedPlotStatus(id: string, status: OwnedPlot["status"], patch: Partial<OwnedPlot> = {}): Promise<OwnedPlot | undefined> {
-  if (isMock("portfolio")) {
-    mockOwnedPlots = mockOwnedPlots.map((p) => (p.id === id ? { ...p, ...patch, status } : p));
-    return mockOwnedPlots.find((p) => p.id === id);
-  }
-  return apiClient.put<OwnedPlot>(`/api/portfolio/plots/${id}`, { status, ...patch });
+  if (!isMock("portfolio")) notOnBackend("Changing a plot's status from the browser");
+  mockOwnedPlots = mockOwnedPlots.map((p) => (p.id === id ? { ...p, ...patch, status } : p));
+  return mockOwnedPlots.find((p) => p.id === id);
 }
 
 // ─── Installment schedule ───────────────────────────────────────────────────
@@ -130,7 +231,7 @@ function generateSchedule(plot: OwnedPlot): InstallmentSchedule | undefined {
       periods.push({
         id: `${plot.id}-period-${seq}`,
         sequence: seq,
-        dueDate: record?.date ?? addMonths(plot.acquiredDate, seq),
+        dueDate: record?.date ?? addMonths(plot.acquiredDate ?? plot.payments[0]?.date ?? new Date().toISOString(), seq),
         amount: record?.amount ?? perPeriodAmount,
         currency: plot.currency,
         status: "paid",
@@ -140,7 +241,7 @@ function generateSchedule(plot: OwnedPlot): InstallmentSchedule | undefined {
       continue;
     }
 
-    const dueDate = plot.nextDueDate && seq === paid + 1 ? plot.nextDueDate : addMonths(plot.nextDueDate ?? plot.acquiredDate, seq - paid - 1);
+    const dueDate = plot.nextDueDate && seq === paid + 1 ? plot.nextDueDate : addMonths(plot.nextDueDate ?? plot.acquiredDate ?? new Date().toISOString(), seq - paid - 1);
     const isTheOverdueOne = plot.status === "in_arrears" && seq === paid + 1;
     periods.push({
       id: `${plot.id}-period-${seq}`,
@@ -160,9 +261,8 @@ function generateSchedule(plot: OwnedPlot): InstallmentSchedule | undefined {
 const scheduleCache = new Map<string, InstallmentSchedule>();
 
 export async function fetchInstallmentSchedule(plotId: string): Promise<InstallmentSchedule | undefined> {
-  if (!isMock("portfolio")) {
-    try { return await apiClient.get<InstallmentSchedule>(`/api/portfolio/plots/${plotId}/schedule`); } catch { return undefined; }
-  }
+  // Live: every plot is outright today, so there is no schedule to ask for.
+  if (!installmentsAvailable()) return undefined;
   if (scheduleCache.has(plotId)) return scheduleCache.get(plotId);
   const plot = mockOwnedPlots.find((p) => p.id === plotId);
   if (!plot) return undefined;
@@ -191,7 +291,7 @@ export interface SubmitInstallmentPaymentInput {
 const DEMO_REJECT_AMOUNT = 1;
 
 export async function submitInstallmentPayment(input: SubmitInstallmentPaymentInput): Promise<PaymentRecord> {
-  if (!isMock("portfolio")) return apiClient.post<PaymentRecord>(`/api/portfolio/plots/${input.plotId}/payments`, input);
+  if (!installmentsAvailable()) notOnBackend("Paying an installment");
 
   await new Promise((resolve) => setTimeout(resolve, 1000)); // gateway webhook
 
@@ -220,7 +320,7 @@ export interface VerifyInstallmentPaymentResult {
 }
 
 export async function verifyInstallmentPayment(plotId: string, paymentId: string): Promise<VerifyInstallmentPaymentResult> {
-  if (!isMock("portfolio")) return apiClient.post<VerifyInstallmentPaymentResult>(`/api/portfolio/plots/${plotId}/payments/${paymentId}/verify`);
+  if (!installmentsAvailable()) notOnBackend("Paying an installment");
 
   await new Promise((resolve) => setTimeout(resolve, 2000)); // Finance Officer review
 
@@ -271,11 +371,7 @@ export async function verifyInstallmentPayment(plotId: string, paymentId: string
 // Request restructuring (extend term / adjust amounts) — approval logic
 // lives in the developer portal, not built in this repo yet.
 export async function requestRestructure(plotId: string, note: string): Promise<OwnedPlot | undefined> {
-  if (!isMock("portfolio")) {
-    // TODO (backend): POST to the developer portal's restructuring queue
-    // (DP-* story, not yet built) once it exists.
-    return apiClient.post<OwnedPlot>(`/api/portfolio/plots/${plotId}/restructure-requests`, { note });
-  }
+  if (!installmentsAvailable()) notOnBackend("Restructuring");
   void note;
   return updateOwnedPlotStatus(plotId, "in_arrears", { restructureStatus: "pending" });
 }

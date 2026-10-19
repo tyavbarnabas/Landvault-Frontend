@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { groupPlotsByCurrency, isActivelyOwned, urgencyRank } from "./Portfolio";
+import { isActivelyOwned, urgencyRank } from "./Portfolio";
+import { summarize } from "../../services/portfolioService";
 import { makeOwnedPlot } from "../../test/factories";
 
 describe("isActivelyOwned", () => {
@@ -12,7 +13,7 @@ describe("isActivelyOwned", () => {
   });
 });
 
-describe("groupPlotsByCurrency", () => {
+describe("summarize (mock /api/portfolio/summary)", () => {
   it("never sums across currencies: mixed NGN/USD plots produce two independent groups", () => {
     const plots = [
       makeOwnedPlot({ id: "1", currency: "NGN", totalPrice: 10_000_000, paidAmount: 4_000_000 }),
@@ -20,11 +21,12 @@ describe("groupPlotsByCurrency", () => {
       makeOwnedPlot({ id: "3", currency: "USD", totalPrice: 20_000, paidAmount: 5_000 }),
     ];
 
-    const byCurrency = groupPlotsByCurrency(plots);
+    const { byCurrency } = summarize(plots);
 
-    expect(byCurrency.size).toBe(2);
-    expect(byCurrency.get("NGN")).toEqual({ totalValue: 18_000_000, totalPaid: 12_000_000, count: 2 });
-    expect(byCurrency.get("USD")).toEqual({ totalValue: 20_000, totalPaid: 5_000, count: 1 });
+    expect(byCurrency).toEqual([
+      { currency: "NGN", totalValue: 18_000_000, totalPaid: 12_000_000, count: 2 },
+      { currency: "USD", totalValue: 20_000, totalPaid: 5_000, count: 1 },
+    ]);
   });
 
   it("excludes transferred/superseded plots from every currency's totals", () => {
@@ -33,13 +35,23 @@ describe("groupPlotsByCurrency", () => {
       makeOwnedPlot({ id: "2", currency: "NGN", totalPrice: 5_000_000, paidAmount: 5_000_000, status: "superseded" }),
     ];
 
-    const byCurrency = groupPlotsByCurrency(plots);
-
-    expect(byCurrency.get("NGN")).toEqual({ totalValue: 10_000_000, totalPaid: 10_000_000, count: 1 });
+    expect(summarize(plots).byCurrency).toEqual([{ currency: "NGN", totalValue: 10_000_000, totalPaid: 10_000_000, count: 1 }]);
   });
 
-  it("returns an empty map for no plots", () => {
-    expect(groupPlotsByCurrency([]).size).toBe(0);
+  it("counts purchases awaiting verification separately, not in the totals", () => {
+    const plots = [
+      makeOwnedPlot({ id: "1", currency: "NGN", totalPrice: 10_000_000, paidAmount: 10_000_000, status: "completed" }),
+      makeOwnedPlot({ id: "2", currency: "NGN", totalPrice: 7_000_000, paidAmount: 0, status: "pending_verification" }),
+    ];
+
+    expect(summarize(plots)).toEqual({
+      byCurrency: [{ currency: "NGN", totalValue: 10_000_000, totalPaid: 10_000_000, count: 1 }],
+      awaitingVerification: 1,
+    });
+  });
+
+  it("returns no groups for no plots", () => {
+    expect(summarize([])).toEqual({ byCurrency: [], awaitingVerification: 0 });
   });
 });
 

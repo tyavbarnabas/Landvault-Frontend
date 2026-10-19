@@ -91,6 +91,9 @@ export const PAYMENTS_VERIFY_PERMISSION = "portal.payments.verify";
 export const SETTLEMENT_MANAGE_PERMISSION = "portal.settlement.manage";
 export const ADMIN_PAYOUTS_PERMISSION = "admin.payouts.manage";
 export const CHECKOUT_RESERVE_PERMISSION = "client.checkout.reserve";
+// Verify or reject the land titles developers declare. super_admin only: a
+// developer can never verify its own land.
+export const TITLE_REVIEW_PERMISSION = "admin.titles.review";
 
 const SUPER_ADMIN_PERMISSIONS = [
   "admin.dashboard.view",
@@ -98,6 +101,7 @@ const SUPER_ADMIN_PERMISSIONS = [
   "admin.tenants.manage",
   "admin.marketplace.conflicts",
   ADMIN_PAYOUTS_PERMISSION,
+  TITLE_REVIEW_PERMISSION,
 ];
 
 // Only what this slice actually builds (DP-1 to DP-6: reach the portal, list

@@ -33,6 +33,7 @@ import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import type { NigerianState } from "../data/nigerianStates";
 import { ESTATES, type Estate as MockEstate } from "../data/mockData";
 import { mockListingPhotos } from "../data/mockEstatePhotos";
+import { mockListingTitle } from "../data/mockEstateTitles";
 import { tiersFromPlots, type PriceTier, type TierAvailability } from "./estatesService";
 import { fetchTenantByIdSync, tenantDisplayName } from "./tenantsService";
 
@@ -44,6 +45,7 @@ import { fetchTenantByIdSync, tenantDisplayName } from "./tenantsService";
 export type { PriceTier, TierAvailability };
 
 export type TitleType = "C of O" | "R of O" | "Governor's Consent" | "Gazette";
+export type ListingTitleStatus = "pending" | "verified" | "rejected";
 export type PaymentPlanType = "outright" | "installment" | "milestone";
 export type ListingIntent = "development" | "investment" | "both";
 
@@ -76,8 +78,14 @@ export interface Estate {
   description: string;
   amenities: string[];
   imageUrl?: string;
-  // Null when no title is recorded.
+  // Null when no title is recorded. Never shown without titleStatus: a
+  // declared title isn't a checked one.
   titleType: TitleType | null;
+  // The developer declares the title; only HomeTrue verifies it. Null with
+  // no title.
+  titleStatus: ListingTitleStatus | null;
+  // When HomeTrue verified it. Null unless titleStatus is "verified".
+  titleVerifiedAt: string | null;
   // Null when the land hasn't been checked. Distinct from `verified`, which
   // is about the DEVELOPER COMPANY, not the land.
   lastVerifiedDate: string | null;
@@ -144,8 +152,26 @@ export interface ListingFilters {
 // What a buyer reads about the LAND. `verified` on a listing is about the
 // developer company; these say plainly when the land has nothing recorded or
 // checked, so an absence can never read as a clean bill of health.
-export function titleLabel(titleType: TitleType | null | undefined): string {
-  return titleType ?? "Title not recorded";
+// The developer declares a title and HomeTrue verifies it, so a type alone is
+// "declared" (also what an unknown status means), and only HomeTrue's
+// verification drops the qualifier. `long` adds the date, for detail pages.
+export function titleLabel(
+  titleType: TitleType | null | undefined,
+  titleStatus?: ListingTitleStatus | null,
+  verifiedAt?: string | null,
+  long = false,
+): string {
+  if (!titleType) return "Title not recorded";
+  if (titleStatus === "verified") {
+    const on = long && verifiedAt ? ` on ${new Date(verifiedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}` : "";
+    return `${titleType}, verified by HomeTrue${on}`;
+  }
+  if (titleStatus === "rejected") return `${titleType} (declared, not confirmed)`;
+  return `${titleType} (declared)`;
+}
+
+export function isTitleVerified(listing: Pick<Estate, "titleType" | "titleStatus">): boolean {
+  return !!listing.titleType && listing.titleStatus === "verified";
 }
 
 export function landCheckLabel(lastVerifiedDate: string | null | undefined): string {
@@ -207,6 +233,7 @@ export function projectListing(estate: MockEstate): Listing | null {
   if (tenant.status === "suspended") return null;
 
   const photos = mockListingPhotos(estate.id);
+  const title = mockListingTitle(estate.id);
   return {
     id: estate.id,
     name: estate.name,
@@ -217,8 +244,10 @@ export function projectListing(estate: MockEstate): Listing | null {
     amenities: estate.amenities,
     // The cover, as the backend sends it — so a cover chosen in the portal shows here.
     imageUrl: photos[0]?.url,
-    titleType: estate.titleType,
-    lastVerifiedDate: estate.lastVerified,
+    // From the title record, never the demo estate's own field: an estate
+    // created in the portal has no title until one is declared.
+    ...title,
+    lastVerifiedDate: [estate.lastVerified, title.titleVerifiedAt?.slice(0, 10)].filter(Boolean).sort().pop() ?? null,
     priceTiers: tiersFromPlots(estate),
     cornerPremiumPct: estate.cornerPremiumPct,
     paymentPlans: estate.paymentPlans,
@@ -266,6 +295,8 @@ export interface ListingDto {
   imageUrl: string | null;
   photos: ListingPhoto[] | null;
   titleType: string | null;
+  titleStatus?: string | null;
+  titleVerifiedAt?: string | null;
   lastVerifiedDate: string | null;
   priceTiers: ListingTierDto[];
   cornerPremiumPct: number | null;
@@ -303,6 +334,9 @@ function fromListingDto(dto: ListingDto): Listing {
     imageUrl: dto.imageUrl ?? undefined,
     // Null means nothing is recorded — never filled in with a plausible title.
     titleType: (dto.titleType ?? null) as TitleType | null,
+    // Anything but a known value reads as declared, never as verified.
+    titleStatus: dto.titleType ? (dto.titleStatus === "verified" || dto.titleStatus === "rejected" ? dto.titleStatus : "pending") : null,
+    titleVerifiedAt: dto.titleStatus === "verified" ? dto.titleVerifiedAt ?? null : null,
     lastVerifiedDate: dto.lastVerifiedDate,
     // A unit-type tier has no size of its own; 0 here is "no size", never a
     // figure to compute with (see INTEGRATION_TESTING.md, known limits).

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { formatAmount, type OwnedPlot } from "../../data/mockData";
-import { fetchOwnedPlots, fetchOwnedPlotById } from "../../services/portfolioService";
+import { fetchOwnedPlots, fetchOwnedPlotById, sizeText } from "../../services/portfolioService";
 import { usePolling } from "../../lib/useFetch";
 import { useApp } from "../../contexts/AppContext";
 import PlotStatusBadge from "../../components/portfolio/PlotStatusBadge";
@@ -107,7 +107,7 @@ export function MyListings() {
               <ListCard key={plot.id} density="compact" className="flex items-center justify-between gap-4">
                 <div>
                   <div className="font-semibold text-sm">{plot.estate} — {plot.plotLabel}</div>
-                  <div className="text-xs text-[var(--muted-foreground)]">{plot.sqm} sqm · Paid {formatAmount(plot.paidAmount, currency)}</div>
+                  <div className="text-xs text-[var(--muted-foreground)]">{[sizeText(plot), `Paid ${formatAmount(plot.paidAmount, currency)}`].filter(Boolean).join(" · ")}</div>
                 </div>
                 <Link
                   to={`/resale/list/${plot.id}`}
@@ -239,7 +239,7 @@ export function ResaleTransferDetail() {
   if (transfer === null) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Transfer not found. <Link to="/resale/my-listings" className="text-[var(--accent)] hover:underline">Back to my listings</Link></div>;
 
   return (
-    <div className="p-6 max-w-xl mx-auto">
+    <div className="p-6 max-w-3xl mx-auto">
       <button onClick={() => navigate("/resale/my-listings")} className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-6">← Back to my listings</button>
       <h1 className="font-display text-2xl mb-1">{transfer.estateName} — {transfer.plotLabel}</h1>
       <p className="text-sm text-[var(--muted-foreground)] mb-6">Resale transfer to {transfer.buyerName}</p>
@@ -276,7 +276,7 @@ export function ListPlot() {
   const eligibility = getListingEligibility(plot);
   if (!eligibility.eligible) {
     return (
-      <div className="p-6 max-w-lg mx-auto">
+      <div className="p-6 max-w-3xl mx-auto">
         <div className="bg-red-50 border border-red-200 rounded-xl p-5">
           <div className="text-sm font-semibold text-red-900 mb-1">This plot can't be listed</div>
           <p className="text-xs text-red-800 mb-4">{eligibility.reason}</p>
@@ -318,7 +318,7 @@ export function ListPlot() {
 
   if (published) {
     return (
-      <div className="p-6 max-w-lg mx-auto text-center py-16">
+      <div className="p-6 max-w-3xl mx-auto text-center py-16">
         <div className="text-4xl mb-4" aria-hidden="true">🏷</div>
         <h2 className="font-display text-2xl mb-2">Listing published</h2>
         <p className="text-sm text-[var(--muted-foreground)] mb-6">
@@ -338,7 +338,7 @@ export function ListPlot() {
   }
 
   return (
-    <div className="p-6 max-w-lg mx-auto">
+    <div className="p-6 max-w-3xl mx-auto">
       <nav className="text-xs text-[var(--muted-foreground)] mb-4 flex items-center gap-1.5">
         <Link to="/resale/my-listings" className="hover:text-[var(--foreground)]">My listings</Link>
         <span>/</span>
@@ -349,7 +349,7 @@ export function ListPlot() {
       <div className="bg-[var(--muted)] rounded-xl p-4 mb-5 text-sm flex items-start justify-between gap-3">
         <div>
           <div className="font-semibold">{plot.estate} — {plot.plotLabel}</div>
-          <div className="text-[var(--muted-foreground)]">{plot.sqm} sqm · {plot.intent} · Original price {formatAmount(plot.totalPrice, currency)} · Paid {formatAmount(plot.paidAmount, currency)}</div>
+          <div className="text-[var(--muted-foreground)]">{sizeText(plot) ?? "No land area of its own"} · {plot.intent} · Original price {formatAmount(plot.totalPrice, currency)} · Paid {formatAmount(plot.paidAmount, currency)}</div>
         </div>
         <PlotStatusBadge status={plot.status} />
       </div>

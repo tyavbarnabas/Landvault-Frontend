@@ -194,7 +194,7 @@ export default function MarketplaceCheckout() {
 
   return (
     <div className="min-h-full bg-[var(--background)] py-8 px-4">
-      <div className="max-w-xl mx-auto">
+      <div className="max-w-3xl mx-auto">
         <button onClick={() => navigate(-1)} className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-6">← Back to plot</button>
         <h1 className="font-display text-2xl mb-1">Reserve your plot</h1>
         <p className="text-sm text-[var(--muted-foreground)] mb-6">{listing.name} — {plotLabel(plot)} · {plot.sizeSqm} sqm</p>

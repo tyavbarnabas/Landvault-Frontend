@@ -170,7 +170,7 @@ export function CreateSyndicate() {
   };
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <div className="p-6 max-w-3xl mx-auto">
       <nav className="text-xs text-[var(--muted-foreground)] mb-4 flex items-center gap-1.5">
         <Link to="/syndicates" className="hover:text-[var(--foreground)]">Co-ownership</Link>
         <span>/</span>
@@ -352,7 +352,7 @@ export function SyndicateDetail() {
   const pct = syn.totalPrice > 0 ? Math.round((totalPaid / syn.totalPrice) * 100) : 0;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-6 max-w-3xl mx-auto">
       <nav className="text-xs text-[var(--muted-foreground)] mb-4 flex items-center gap-1.5">
         <Link to="/syndicates" className="hover:text-[var(--foreground)]">Co-ownership</Link>
         <span>/</span>

@@ -45,6 +45,7 @@ export const SERVICES = {
   listingConflicts: { label: "Listing conflicts", status: "live", paths: ["/api/admin/listing-conflicts"] },
   stateOverride: { label: "State overrides", status: "live", paths: ["/api/admin/estates"] },
   portalEstates: { label: "Portal estates & boundary changes", status: "live", paths: ["/api/portal/estates", "/api/admin/boundary-changes"] },
+  estateTitles: { label: "Estate titles & HomeTrue title review", status: "live", paths: ["/api/admin/title-reviews"] },
   portalInventory: { label: "Portal inventory (tiers, blocks, plots, import)", status: "live", paths: [] },
   estateDisclosure: { label: "Fees & terms declarations", status: "live", paths: [] },
   branches: { label: "Branches", status: "live", paths: ["/api/portal/branches"] },
@@ -63,6 +64,10 @@ export const SERVICES = {
   // sale ids as checkout and finance, so the same group.
   adminPayouts: { label: "Payouts & refunds (Super Admin)", status: "live", group: "purchase", paths: ["/api/admin/payouts", "/api/admin/refunds"] },
   settlement: { label: "Payout bank accounts", status: "live", paths: ["/api/portal/settlement", "/api/admin/settlement-accounts"] },
+  // Owned plots and their totals. Outright purchases only: installment
+  // schedules, installment payments and restructuring have no backend, so
+  // their controls hide and portfolioService never calls them live.
+  portfolio: { label: "Portfolio (owned plots, outright)", status: "live", paths: ["/api/portfolio/plots", "/api/portfolio/summary"] },
   // Dev-only test routes (backend dev profile, Super Admin). Real uploads go
   // through each feature's own routes, via src/lib/uploadFile.ts.
   devStorage: { label: "File uploads (dev test routes)", status: "live", paths: ["/api/dev/storage"] },
@@ -78,7 +83,6 @@ export const SERVICES = {
   },
 
   // ── No backend yet ────────────────────────────────────────────────────────
-  portfolio: { label: "Portfolio & payment schedules", status: "no_backend", paths: ["/api/portfolio"], reason: "The backend has purchases and payments, but no portfolio (owned plots, payment schedules) yet. Live, the dashboard shows real purchases instead." },
   documents: { label: "Document vault", status: "no_backend", paths: ["/api/documents"], reason: "The backend doesn't issue receipts or allocation letters yet." },
   attention: { label: "Dashboard attention list", status: "no_backend", paths: ["/api/me/attention"], reason: "No /api/me/attention on the backend." },
   upgrades: { label: "Plot upgrades", status: "no_backend", paths: ["/api/upgrades"], reason: "Needs owned plots." },
@@ -136,6 +140,13 @@ export function mockServedOn(pathname: string): ServiceKey[] {
 }
 
 /** The check every service makes before choosing mock data over the API. */
+// Whether a service's screens and links should show at all: always in demo
+// mode, and with a backend only once that service is live. Demo items beside
+// real ones would read as the user's own.
+export function isAvailable(key: ServiceKey): boolean {
+  return !BACKEND_CONFIGURED || isLive(key);
+}
+
 export function isMock(key: ServiceKey): boolean {
   if (isLive(key)) return false;
   // Retired: its screens redirect to live ones, and the only readers left are

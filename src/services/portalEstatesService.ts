@@ -466,7 +466,9 @@ interface EstateDetailDto extends EstateSummaryDto {
   cornerPremiumPct: number | null;
   amenities: string[] | null;
   priceTiers: { price: number; currency: string }[] | null;
-  title: { titleType: Estate["titleType"] } | null;
+  // The full EstateTitleDto; estateTitleService reads it through its own
+  // route, so only the type is used here.
+  title: { titleType: Estate["titleType"]; status: string } | null;
   verificationChecks: unknown[] | null;
   eligibility: EstateEligibility;
   plotsWithoutBoundary?: number;

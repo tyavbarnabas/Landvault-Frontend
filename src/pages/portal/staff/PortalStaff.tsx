@@ -178,7 +178,7 @@ export function NewStaffInvitation() {
   }
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <div className="p-6 max-w-3xl mx-auto">
       <Link to="/portal/staff" className="text-xs text-[var(--accent)] hover:underline">← Staff</Link>
       <h1 className="font-display text-3xl text-[var(--foreground)] mt-2 mb-1">{canInvite ? "Invite someone" : "Ask head office for someone"}</h1>
       <p className="text-sm text-[var(--muted-foreground)] mb-6">

@@ -97,7 +97,7 @@ export default function CreatePortalEstate() {
   }
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <div className="p-6 max-w-3xl mx-auto">
       <Link to="/portal/estates" className="text-xs text-[var(--accent)] hover:underline">← Estates</Link>
       <h1 className="font-display text-3xl text-[var(--foreground)] mt-2 mb-1">New estate</h1>
       <p className="text-sm text-[var(--muted-foreground)] mb-6">

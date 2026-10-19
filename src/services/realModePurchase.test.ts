@@ -150,6 +150,14 @@ describe("listings never claim more than the backend says", () => {
     expect(landCheckLabel(l?.lastVerifiedDate)).toBe("Land not checked yet");
     expect(landCheckLabel("2026-09-01")).toBe("Land checked 2026-09-01");
   });
+
+  it("reads a title with no known status as declared, never verified", async () => {
+    respond({ "GET /api/marketplace/estates/e1": { status: 200, body: { ...LISTING, titleType: "C of O", titleStatus: "approved", titleVerifiedAt: "2026-10-01T00:00:00Z" } } });
+    const { fetchListingById, titleLabel } = await import("./marketplaceService");
+    const l = await fetchListingById("e1");
+    expect(l).toMatchObject({ titleStatus: "pending", titleVerifiedAt: null });
+    expect(titleLabel(l?.titleType, l?.titleStatus)).toBe("C of O (declared)");
+  });
 });
 
 describe("reservations", () => {

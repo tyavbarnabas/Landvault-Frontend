@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { formatAmount, type Currency, type OwnedPlot } from "../../data/mockData";
-import { fetchOwnedPlots, urgencyRank } from "../../services/portfolioService";
+import { formatAmount, type OwnedPlot } from "../../data/mockData";
+import { fetchOwnedPlots, fetchPortfolioSummary, sizeText, urgencyRank, type PortfolioSummary } from "../../services/portfolioService";
+import { isAvailable } from "../../lib/backends";
 import PlotStatusBadge from "../../components/portfolio/PlotStatusBadge";
 import ArrearsBanner from "../../components/portfolio/ArrearsBanner";
 import { ListCard } from "../../components/ui/Card";
@@ -24,37 +25,13 @@ export function isActivelyOwned(plot: OwnedPlot): boolean {
   return plot.status !== "transferred" && plot.status !== "superseded";
 }
 
-// Never sum across currencies — group totals per currency actually present on
-// the buyer's plots. Exported so Dashboard.tsx's summary tiles use the exact
-// same grouping instead of a second copy that could drift out of sync.
-export interface CurrencyTotals {
-  totalValue: number;
-  totalPaid: number;
-  count: number;
-}
-
-export function groupPlotsByCurrency(plots: OwnedPlot[]): Map<Currency, CurrencyTotals> {
-  const byCurrency = new Map<Currency, CurrencyTotals>();
-  for (const p of plots.filter(isActivelyOwned)) {
-    const g = byCurrency.get(p.currency) ?? { totalValue: 0, totalPaid: 0, count: 0 };
-    g.totalValue += p.totalPrice;
-    g.totalPaid += p.paidAmount;
-    g.count += 1;
-    byCurrency.set(p.currency, g);
-  }
-  return byCurrency;
-}
-
-// TODO (backend): the summary tiles below need a true total across every
-// plot the buyer owns, not just one loaded page — a real backend should
-// expose a dedicated aggregate/summary endpoint (sums computed server-side)
-// rather than the client fetching a large page to add them up itself. This
-// mock requests a generously-sized page instead (covers any realistic
-// portfolio) and still exposes real "Load more" if a buyer somehow exceeds it.
-const PORTFOLIO_PAGE_SIZE = 500;
+// Live there can be more plots than one page holds, so the totals come from
+// the server (fetchPortfolioSummary), never from adding up the loaded rows.
+const PORTFOLIO_PAGE_SIZE = 50;
 
 export default function Portfolio() {
   const [ownedPlots, setOwnedPlots] = useState<OwnedPlot[]>([]);
+  const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -64,8 +41,8 @@ export default function Portfolio() {
   const load = () => {
     setLoading(true);
     setLoadError(false);
-    fetchOwnedPlots({ sort: "urgency", limit: PORTFOLIO_PAGE_SIZE })
-      .then((page) => { setOwnedPlots(page.items); setCursor(page.cursor); setHasMore(page.hasMore); })
+    Promise.all([fetchOwnedPlots({ sort: "urgency", limit: PORTFOLIO_PAGE_SIZE }), fetchPortfolioSummary()])
+      .then(([page, totals]) => { setOwnedPlots(page.items); setCursor(page.cursor); setHasMore(page.hasMore); setSummary(totals); })
       .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   };
@@ -80,6 +57,9 @@ export default function Portfolio() {
     setHasMore(page.hasMore);
     setLoadingMore(false);
   };
+
+  // Resale has no backend yet: live, its link would open demo listings.
+  const resale = isAvailable("resale");
 
   if (loading) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Loading portfolio…</div>;
 
@@ -97,9 +77,11 @@ export default function Portfolio() {
       <div className="p-6 max-w-5xl mx-auto">
         <div className="mb-6 flex items-start justify-between gap-4">
           <h1 className="font-display text-3xl text-[var(--foreground)] mb-1">My portfolio</h1>
-          <Link to="/resale/my-listings" className="shrink-0 px-4 py-2 border border-[var(--border)] rounded-md text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors whitespace-nowrap">
-            My listings & offers
-          </Link>
+          {resale && (
+            <Link to="/resale/my-listings" className="shrink-0 px-4 py-2 border border-[var(--border)] rounded-md text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors whitespace-nowrap">
+              My listings & offers
+            </Link>
+          )}
         </div>
         <div className="text-center py-16 border border-dashed border-[var(--border)] rounded-xl">
           <div className="text-3xl mb-3" aria-hidden="true">🏡</div>
@@ -113,9 +95,8 @@ export default function Portfolio() {
     );
   }
 
-  // Today's fixtures are all NGN, so this renders one group in practice, but
-  // it stays correct the moment that's no longer true.
-  const byCurrency = groupPlotsByCurrency(ownedPlots);
+  const byCurrency = summary?.byCurrency ?? [];
+  const awaiting = summary?.awaitingVerification ?? 0;
 
   // Already sorted server-side (fetchOwnedPlots' sort: "urgency") — no
   // client-side re-sort, so ordering stays correct across "Load more" pages.
@@ -130,22 +111,24 @@ export default function Portfolio() {
         </div>
         {/* Selling workspace lives here, not in the marketplace browse
             surface — see PART 6 of the marketplace-unification spec. */}
-        <Link to="/resale/my-listings" className="shrink-0 px-4 py-2 border border-[var(--border)] rounded-md text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors whitespace-nowrap">
-          My listings & offers
-        </Link>
+        {resale && (
+          <Link to="/resale/my-listings" className="shrink-0 px-4 py-2 border border-[var(--border)] rounded-md text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors whitespace-nowrap">
+            My listings & offers
+          </Link>
+        )}
       </div>
 
-      {/* Summary — one card group per currency actually held */}
+      {/* Summary — one card group per currency actually held, from the server */}
       <div className="space-y-3 mb-8">
-        {Array.from(byCurrency.entries()).map(([cur, g]) => (
-          <div key={cur} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {byCurrency.size > 1 && (
-              <div className="col-span-2 lg:col-span-4 text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide -mb-1">{cur} plots</div>
+        {byCurrency.map((g) => (
+          <div key={g.currency} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {byCurrency.length > 1 && (
+              <div className="col-span-2 lg:col-span-4 text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide -mb-1">{g.currency} plots</div>
             )}
             {[
-              { label: "Total value", value: formatAmount(g.totalValue, cur) },
-              { label: "Equity paid", value: formatAmount(g.totalPaid, cur) },
-              { label: "Outstanding", value: formatAmount(g.totalValue - g.totalPaid, cur) },
+              { label: "Total value", value: formatAmount(g.totalValue, g.currency) },
+              { label: "Equity paid", value: formatAmount(g.totalPaid, g.currency) },
+              { label: "Outstanding", value: formatAmount(g.totalValue - g.totalPaid, g.currency) },
               { label: "Plots", value: g.count.toString() },
             ].map((s) => (
               <div key={s.label} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
@@ -155,8 +138,13 @@ export default function Portfolio() {
             ))}
           </div>
         ))}
-        {byCurrency.size > 1 && (
+        {byCurrency.length > 1 && (
           <p className="text-xs text-[var(--muted-foreground)]">Each group above shows that currency's own total — figures are never converted or combined across currencies.</p>
+        )}
+        {awaiting > 0 && (
+          <p className="text-sm text-[var(--muted-foreground)]" role="status">
+            {awaiting} purchase{awaiting === 1 ? "" : "s"} awaiting verification. {awaiting === 1 ? "It joins" : "They join"} these totals once finance confirms the payment.
+          </p>
         )}
       </div>
 
@@ -175,26 +163,35 @@ export default function Portfolio() {
                     <div className="flex items-start gap-3 mb-2">
                       <div>
                         <div className="font-semibold text-[var(--foreground)]">{plot.estate}</div>
-                        <div className="text-xs text-[var(--muted-foreground)]">{plot.plotLabel} · {plot.sqm} sqm · {plot.location}</div>
+                        <div className="text-xs text-[var(--muted-foreground)]">{[plot.plotLabel, sizeText(plot), plot.location].filter(Boolean).join(" · ")}</div>
                       </div>
                       <span className="ml-auto shrink-0"><PlotStatusBadge status={plot.status} /></span>
                     </div>
 
                     <div className="flex flex-wrap gap-3 text-xs text-[var(--muted-foreground)] mb-3">
-                      <span className="font-mono-data">Acquired {plot.acquiredDate}</span>
+                      <span className="font-mono-data">{plot.acquiredDate ? `Acquired ${plot.acquiredDate}` : "Not acquired until finance verifies"}</span>
                       <span>·</span>
                       <span className="capitalize">{plot.plan}</span>
                       <span>·</span>
                       <span className="capitalize">{plot.intent}</span>
                     </div>
 
-                    <div className="mb-1.5 flex items-center justify-between text-xs">
-                      <span className="text-[var(--muted-foreground)]" id={`equity-${plot.id}`}>Equity progress</span>
-                      <span className="font-mono-data">{formatAmount(plot.paidAmount, plot.currency)} / {formatAmount(plot.totalPrice, plot.currency)}</span>
-                    </div>
-                    <div className="h-2 bg-[var(--muted)] rounded-full overflow-hidden" role="progressbar" aria-labelledby={`equity-${plot.id}`} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
-                      <div className="h-full bg-[var(--primary)] rounded-full" style={{ width: `${pct}%` }} />
-                    </div>
+                    {plot.status === "pending_verification" ? (
+                      // Equity is 0 until finance verifies: a bar at 0% would read as "nothing paid".
+                      <p className="text-xs text-[var(--muted-foreground)]">
+                        Payment received for <span className="font-mono-data">{formatAmount(plot.totalPrice, plot.currency)}</span>. Finance is checking it; your equity shows once they confirm.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="mb-1.5 flex items-center justify-between text-xs">
+                          <span className="text-[var(--muted-foreground)]" id={`equity-${plot.id}`}>Equity progress</span>
+                          <span className="font-mono-data">{formatAmount(plot.paidAmount, plot.currency)} / {formatAmount(plot.totalPrice, plot.currency)}</span>
+                        </div>
+                        <div className="h-2 bg-[var(--muted)] rounded-full overflow-hidden" role="progressbar" aria-labelledby={`equity-${plot.id}`} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+                          <div className="h-full bg-[var(--primary)] rounded-full" style={{ width: `${pct}%` }} />
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   {/* Actions */}

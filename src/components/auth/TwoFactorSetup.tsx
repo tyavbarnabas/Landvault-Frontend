@@ -23,6 +23,17 @@ import RecoveryCodes from "./RecoveryCodes";
 
 type Stage = "loading" | "scan" | "confirm" | "codes" | "failed";
 
+// Each setup call replaces the backend's unconfirmed secret. React's
+// StrictMode mounts this twice in development, and two concurrent calls left
+// the screen showing one secret while the backend kept the other, so every
+// code was refused. Mounts that overlap share one request; a later visit
+// (after it settles) still gets a fresh secret.
+let inFlightSetup: ReturnType<typeof setupTwoFactor> | null = null;
+function setupOnce(): ReturnType<typeof setupTwoFactor> {
+  inFlightSetup ??= setupTwoFactor().finally(() => { inFlightSetup = null; });
+  return inFlightSetup;
+}
+
 export default function TwoFactorSetup({ onEnabled, onCancel }: { onEnabled: () => void; onCancel?: () => void }) {
   const [stage, setStage] = useState<Stage>("loading");
   const [enrolment, setEnrolment] = useState<Enrolment | null>(null);
@@ -35,7 +46,7 @@ export default function TwoFactorSetup({ onEnabled, onCancel }: { onEnabled: () 
 
   useEffect(() => {
     let cancelled = false;
-    setupTwoFactor()
+    setupOnce()
       .then(async (result) => {
         if (cancelled) return;
         setEnrolment(result);
@@ -60,9 +71,13 @@ export default function TwoFactorSetup({ onEnabled, onCancel }: { onEnabled: () 
       setStage("codes");
     } catch (err) {
       const errorCode = errorCodeOf(err);
+      // Locked out after 5 wrong codes, even a correct one is refused: say so,
+      // or the next correct code reads as wrong too.
       setError(errorCode === "TWO_FACTOR_SETUP_REQUIRED"
         ? "This setup session has expired. Start again to get a fresh QR code."
-        : "That code isn't valid. Check your authenticator app and try again.");
+        : errorCode === "TWO_FACTOR_LOCKED_OUT"
+          ? "Too many incorrect codes, so codes are paused for 15 minutes. Wait, then try again with the code your app shows at that point."
+          : "That code isn't valid. Check your authenticator app and try again.");
     } finally {
       setBusy(false);
     }
@@ -107,6 +122,7 @@ export default function TwoFactorSetup({ onEnabled, onCancel }: { onEnabled: () 
           <div>
             <div className="text-xs text-[var(--muted-foreground)] mb-1">Enter this key manually instead:</div>
             <code className="font-mono-data text-sm text-[var(--foreground)] tracking-wider break-all">{enrolment?.secret}</code>
+            <p className="text-xs text-[var(--muted-foreground)] mt-1">If your app asks, choose <span className="font-medium">Time based</span>.</p>
           </div>
         ) : (
           <button type="button" onClick={() => setShowSecret(true)} className="text-xs text-[var(--accent)] hover:underline">

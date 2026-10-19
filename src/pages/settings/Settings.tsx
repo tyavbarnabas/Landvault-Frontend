@@ -32,7 +32,7 @@ export default function Settings() {
   ];
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-6 max-w-3xl mx-auto">
       <div className="mb-6">
         <h1 className="font-display text-3xl text-[var(--foreground)] mb-1">Settings</h1>
         <p className="text-sm text-[var(--muted-foreground)]">Manage your account, security, and preferences.</p>

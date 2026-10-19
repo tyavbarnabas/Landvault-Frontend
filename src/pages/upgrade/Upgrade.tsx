@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { formatAmount, type OwnedPlot, type Estate } from "../../data/mockData";
-import { fetchOwnedPlotById } from "../../services/portfolioService";
+import { fetchOwnedPlotById, sizeText } from "../../services/portfolioService";
 import { fetchEstates, fetchPriceTiers, type PriceTier } from "../../services/estatesService";
 import { toListingPlot, priceForPlot, type ListingPlot } from "../../services/marketplacePlotsService";
 import {
@@ -64,7 +64,7 @@ export default function Upgrade() {
   const eligibility = getUpgradeEligibility(ownedPlot);
   if (!eligibility.eligible) {
     return (
-      <div className="p-6 max-w-lg mx-auto">
+      <div className="p-6 max-w-3xl mx-auto">
         <div className="bg-red-50 border border-red-200 rounded-xl p-5">
           <div className="text-sm font-semibold text-red-900 mb-1">This plot can't start an upgrade right now</div>
           <p className="text-xs text-red-800 mb-4">{eligibility.reason}</p>
@@ -149,7 +149,7 @@ export default function Upgrade() {
             <div className="text-xs text-[var(--muted-foreground)] mb-1">Current plot</div>
             <div className="font-semibold">{ownedPlot.estate} — {ownedPlot.plotLabel}</div>
             <div className="text-sm text-[var(--muted-foreground)]">
-              {ownedPlot.sqm} sqm · Equity paid: <span className="font-mono-data font-medium text-[var(--foreground)]">{formatAmount(ownedPlot.paidAmount, ownedPlot.currency)}</span>
+              {sizeText(ownedPlot) ?? "No land area of its own"} · Equity paid: <span className="font-mono-data font-medium text-[var(--foreground)]">{formatAmount(ownedPlot.paidAmount, ownedPlot.currency)}</span>
               {ownedPlot.totalPrice > ownedPlot.paidAmount && (
                 <> · Outstanding: <span className="font-mono-data font-medium text-[var(--foreground)]">{formatAmount(ownedPlot.totalPrice - ownedPlot.paidAmount, ownedPlot.currency)}</span> (retired if you upgrade, not carried forward)</>
               )}
@@ -438,7 +438,7 @@ export function UpgradeRequestDetail() {
   if (request === null) return <div className="p-8 text-[var(--muted-foreground)] text-sm">Upgrade request not found. <Link to="/portfolio" className="text-[var(--accent)] hover:underline">Back to portfolio</Link></div>;
 
   return (
-    <div className="p-6 max-w-xl mx-auto">
+    <div className="p-6 max-w-3xl mx-auto">
       <button onClick={() => navigate("/portfolio")} className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-6">← Back to portfolio</button>
       <h1 className="font-display text-2xl mb-1">{request.fromEstateName} → {request.toEstateName}</h1>
       <p className="text-sm text-[var(--muted-foreground)] mb-6">Upgrade request for {request.fromPlotLabel}</p>

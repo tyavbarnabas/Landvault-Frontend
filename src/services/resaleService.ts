@@ -203,6 +203,10 @@ export async function createListing(input: CreateListingInput): Promise<ResaleLi
     throw new Error("Choose how the outstanding balance will be handled before publishing.");
   }
 
+  // A resale listing is sold by its land area; a built unit has none of its own.
+  if (plot.sqm === null) throw new Error("This unit has no land area of its own, so it can't be listed for resale yet.");
+  const sqm = plot.sqm;
+
   const internalEstate = ESTATES.find((e) => e.id === plot.estateId);
   const listing: ResaleListing = {
     id: `l-${Date.now()}`,
@@ -216,7 +220,7 @@ export async function createListing(input: CreateListingInput): Promise<ResaleLi
     // landvault-catalogue-unification-plan in project memory).
     state: internalEstate?.state ?? ("Federal Capital Territory (Abuja)" as NigerianState),
     titleType: plot.titleType ?? internalEstate?.titleType ?? "C of O",
-    sqm: plot.sqm,
+    sqm,
     isCorner: !!plot.isCorner,
     intent: plot.intent,
     asking,

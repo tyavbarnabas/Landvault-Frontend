@@ -4,8 +4,10 @@ import { formatAmount, FX_RATES, type OwnedPlot, type Document } from "../../dat
 import TabBar from "../../components/ui/Tabs";
 import {
   fetchOwnedPlotById, fetchInstallmentSchedule, submitInstallmentPayment, verifyInstallmentPayment, requestRestructure,
-  type InstallmentSchedule, type PaymentRecord,
+  installmentsAvailable, sizeText, type InstallmentSchedule, type PaymentRecord,
 } from "../../services/portfolioService";
+import { titleLabel } from "../../services/marketplaceService";
+import { isAvailable } from "../../lib/backends";
 import { fetchDocumentsByPlotId } from "../../services/documentsService";
 import { fetchUpgradeRequestForPlot, type UpgradeRequest } from "../../services/upgradeService";
 import { useFetch } from "../../lib/useFetch";
@@ -37,7 +39,12 @@ export default function PlotView() {
   const { currency: displayCurrency, user } = useApp();
   const { data, loading, error: loadError, refetch, setData } = useFetch<PlotViewData>(async () => {
     if (!id) return { plot: null, docs: [], schedule: undefined };
-    const [plotData, docData, scheduleData] = await Promise.all([fetchOwnedPlotById(id), fetchDocumentsByPlotId(id), fetchInstallmentSchedule(id)]);
+    // No documents are issued live yet: an honest empty tab, not demo ones.
+    const [plotData, docData, scheduleData] = await Promise.all([
+      fetchOwnedPlotById(id),
+      isAvailable("documents") ? fetchDocumentsByPlotId(id) : Promise.resolve([]),
+      fetchInstallmentSchedule(id),
+    ]);
     return { plot: plotData ?? null, docs: docData, schedule: scheduleData };
   }, [id]);
   const [tab, setTab] = useState<Tab>("overview");
@@ -77,7 +84,20 @@ export default function PlotView() {
   const pct = plot.totalPrice > 0 ? Math.round((plot.paidAmount / plot.totalPrice) * 100) : 0;
   const outstanding = plot.totalPrice - plot.paidAmount;
   const nextPeriod = schedule?.periods.find((p) => p.status !== "paid");
-  const canPay = (plot.status === "installment_active" || plot.status === "in_arrears") && !!nextPeriod;
+  const installments = installmentsAvailable();
+  const canPay = installments && (plot.status === "installment_active" || plot.status === "in_arrears") && !!nextPeriod;
+  const pending = plot.status === "pending_verification";
+  const docsAvailable = isAvailable("documents");
+  // Upgrades, resale and disputes have no backend yet: live, they'd run demo
+  // flows against a real plot.
+  const actions = { upgrade: isAvailable("upgrades"), resale: isAvailable("resale") && plot.intent === "investment", dispute: isAvailable("disputes") };
+  const hasActions = actions.upgrade || actions.resale || actions.dispute;
+  // With nothing to pay and no actions (every live plot today), the overview
+  // takes the full width, like the cards above it.
+  const sidebar = canPay || hasActions;
+  // Mock plots predate titleStatus and carry only titleVerified.
+  const titleStatus = plot.titleStatus ?? (plot.titleVerified ? "verified" : null);
+  const purchasePayment = plot.payments[0];
 
   const resetPaymentForm = () => {
     setPayStep("form");
@@ -172,15 +192,23 @@ export default function PlotView() {
       <div className="flex flex-wrap items-start gap-4 mb-6">
         <div className="flex-1 min-w-0">
           <h1 className="font-display text-2xl text-[var(--foreground)]">{plot.estate}</h1>
-          <p className="text-sm text-[var(--muted-foreground)]">{plot.plotLabel} · {plot.sqm} sqm · {plot.location}</p>
+          <p className="text-sm text-[var(--muted-foreground)]">{[plot.plotLabel, sizeText(plot), plot.location].filter(Boolean).join(" · ")}</p>
         </div>
         <PlotStatusBadge status={plot.status} />
       </div>
 
-      {plot.status === "pending_verification" && (
-        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-          <div className="text-sm font-semibold text-amber-900 mb-1">Payment received — awaiting finance confirmation</div>
-          <p className="text-xs text-amber-700">Our Finance team confirms every payment by hand before allocation and documents are finalized. This usually completes within 1 business day, and you'll be notified the moment it does.</p>
+      {/* Paid, not yet verified: equity is 0 until finance signs off, so
+          this shows where it is rather than a tick. */}
+      {pending && (
+        <div className="mb-6 bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
+          <VerificationProgress
+            status="awaiting_finance"
+            reference={purchasePayment?.receiptId ?? plot.transactionId ?? ""}
+            amountDue={purchasePayment?.amount ?? plot.totalPrice}
+            currency={plot.currency}
+            finalStageLabel="Plot allocated"
+            finalStageDetail="Your equity and acquired date show here once finance confirms."
+          />
         </div>
       )}
 
@@ -190,7 +218,7 @@ export default function PlotView() {
             arrears={plot.arrears}
             currency={plot.currency}
             restructureStatus={plot.restructureStatus}
-            onRequestRestructure={handleRequestRestructure}
+            onRequestRestructure={installments ? handleRequestRestructure : undefined}
             requesting={restructuring}
           />
         </div>
@@ -203,14 +231,14 @@ export default function PlotView() {
 
       {/* Overview tab */}
       {tab === "overview" && (
-        <div id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" className="grid lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-5">
+        <div id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" className={sidebar ? "grid lg:grid-cols-3 gap-6" : ""}>
+          <div className={sidebar ? "lg:col-span-2 space-y-5" : "space-y-5"}>
             {/* Equity card */}
             <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
               <h3 className="font-semibold text-sm mb-4">Equity position</h3>
               <div className="grid grid-cols-3 gap-4 mb-4">
                 <Stat label="Total price" value={formatAmount(plot.totalPrice, plot.currency)} />
-                <Stat label="Paid" value={formatAmount(plot.paidAmount, plot.currency)} green />
+                <Stat label="Paid" value={formatAmount(plot.paidAmount, plot.currency)} green={!pending && plot.paidAmount > 0} />
                 <Stat label="Outstanding" value={formatAmount(outstanding, plot.currency)} />
               </div>
               <div className="mb-1.5 flex items-center justify-between text-xs">
@@ -250,12 +278,12 @@ export default function PlotView() {
                 {[
                   { label: "Estate", value: plot.estate },
                   { label: "Reference", value: plot.plotLabel },
-                  { label: "Nominal size", value: `${plot.sqm} sqm` },
+                  { label: "Nominal size", value: sizeText(plot) ?? "No land area of its own" },
                   { label: "Actual surveyed area", value: plot.actualSqm ? `${plot.actualSqm} sqm` : "Not yet surveyed" },
                   { label: "Type", value: plot.isCorner ? "Corner piece ★" : "Standard" },
                   { label: "Intent", value: plot.intent === "development" ? "Development" : "Investment" },
                   { label: "Plan", value: plot.plan === "outright" ? "Outright" : `${plot.installmentMonths}-month ${plot.plan}` },
-                  { label: "Acquired", value: plot.acquiredDate },
+                  { label: "Acquired", value: plot.acquiredDate ?? "When finance verifies" },
                 ].map((d) => (
                   <div key={d.label} className="bg-[var(--muted)] rounded-lg p-3">
                     <div className="text-xs text-[var(--muted-foreground)] mb-0.5">{d.label}</div>
@@ -264,22 +292,23 @@ export default function PlotView() {
                 ))}
               </div>
 
-              {plot.isCorner && plot.basePrice && plot.cornerPremiumPct !== undefined && (
+              {/* Only when a premium was actually applied. */}
+              {plot.cornerPremiumPct !== undefined && plot.basePrice !== undefined && (
                 <div className="mt-3 text-xs text-[var(--accent)] bg-[var(--secondary)] rounded-lg p-3">
                   {formatAmount(plot.basePrice, plot.currency)} + {plot.cornerPremiumPct}% corner premium = {formatAmount(plot.totalPrice, plot.currency)}
                 </div>
               )}
 
-              {plot.titleType && (
-                <div className="mt-3 flex items-center gap-2">
-                  <span className="text-xs text-[var(--muted-foreground)]">{plot.titleType}</span>
-                  {plot.titleVerified && <VerifiedBadge label="Title verified" />}
-                </div>
-              )}
+              {/* Never the title type alone: declared, verified or not confirmed. */}
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-xs text-[var(--muted-foreground)]">{titleLabel(plot.titleType, titleStatus)}</span>
+                {plot.titleType && titleStatus === "verified" && <VerifiedBadge label="Verified by HomeTrue" />}
+              </div>
             </div>
           </div>
 
           {/* Right sidebar */}
+          {sidebar && (
           <div className="space-y-4">
             {/* Make a payment */}
             {canPay && nextPeriod && (
@@ -368,10 +397,11 @@ export default function PlotView() {
             )}
 
             {/* Actions */}
+            {hasActions && (
             <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
               <h3 className="font-semibold text-sm mb-3">Actions</h3>
               <div className="space-y-2">
-                {plot.status === "upgrade_pending" && inFlightUpgrade ? (
+                {actions.upgrade && (plot.status === "upgrade_pending" && inFlightUpgrade ? (
                   <Link to={`/upgrade/request/${inFlightUpgrade.id}`} className="flex items-center gap-2 w-full py-2 text-left text-sm text-amber-700 hover:text-amber-800 border border-amber-200 bg-amber-50 rounded-md px-3 transition-colors">
                     <span aria-hidden="true">🔁</span> View upgrade progress
                   </Link>
@@ -379,18 +409,22 @@ export default function PlotView() {
                   <Link to={`/upgrade/${plot.id}`} className="flex items-center gap-2 w-full py-2 text-left text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] border border-[var(--border)] rounded-md px-3 transition-colors">
                     <span aria-hidden="true">🔁</span> Upgrade or swap plot
                   </Link>
-                )}
-                {plot.intent === "investment" && (
+                ))}
+                {actions.resale && (
                   <Link to={`/resale/list/${plot.id}`} className="flex items-center gap-2 w-full py-2 text-left text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] border border-[var(--border)] rounded-md px-3 transition-colors">
                     <span aria-hidden="true">🏷</span> List for resale
                   </Link>
                 )}
+                {actions.dispute && (
                 <Link to={`/support?dispute=true&plot=${plot.id}`} className="flex items-center gap-2 w-full py-2 text-left text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] border border-[var(--border)] rounded-md px-3 transition-colors">
                   <span aria-hidden="true">💬</span> Raise a dispute
                 </Link>
+                )}
               </div>
             </div>
+            )}
           </div>
+          )}
         </div>
       )}
 
@@ -399,7 +433,9 @@ export default function PlotView() {
         <div id="panel-payments" role="tabpanel" aria-labelledby="tab-payments" className="bg-[var(--card)] rounded-xl border border-[var(--border)] overflow-hidden">
           <div className="px-5 py-4 border-b border-[var(--border)]">
             <h3 className="font-semibold text-sm">Payment history</h3>
-            <p className="text-xs text-[var(--muted-foreground)] mt-0.5">Every payment is logged and immutable. Download any receipt from your vault.</p>
+            <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+              Every payment is logged and immutable.{docsAvailable ? " Download any receipt from your vault." : " Receipts aren't issued yet; quote the payment reference if you contact us."}
+            </p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -409,7 +445,7 @@ export default function PlotView() {
                   <th className="text-left px-4 py-2.5 text-xs font-medium text-[var(--muted-foreground)]">Type</th>
                   <th className="text-right px-4 py-2.5 text-xs font-medium text-[var(--muted-foreground)]">Amount</th>
                   <th className="text-center px-4 py-2.5 text-xs font-medium text-[var(--muted-foreground)]">Status</th>
-                  <th className="text-right px-4 py-2.5 text-xs font-medium text-[var(--muted-foreground)]">Receipt</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-medium text-[var(--muted-foreground)]">{docsAvailable ? "Receipt" : "Payment reference"}</th>
                 </tr>
               </thead>
               <tbody>
@@ -422,7 +458,7 @@ export default function PlotView() {
                       <PaymentStatusPill status={p.status} />
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {p.status === "confirmed" ? (
+                      {p.status === "confirmed" && docsAvailable ? (
                         <Link to="/documents" className="text-xs text-[var(--accent)] hover:underline font-mono-data">{p.receiptId}</Link>
                       ) : (
                         <span className="text-xs text-[var(--muted-foreground)] font-mono-data">{p.receiptId}</span>
@@ -569,7 +605,7 @@ function Stat({ label, value, green }: { label: string; value: string; green?: b
   return (
     <div>
       <div className="text-xs text-[var(--muted-foreground)] mb-0.5">{label}</div>
-      <div className={`font-semibold font-mono-data text-sm ${green ? "text-emerald-700" : ""}`}>{value}</div>
+      <div className={`font-semibold font-mono-data text-sm ${green ? "text-[var(--success-text)]" : ""}`}>{value}</div>
     </div>
   );
 }

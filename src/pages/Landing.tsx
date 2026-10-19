@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { fetchListings, fromPrice, titleLabel, type Listing } from "../services/marketplaceService";
+import { fetchListings, fromPrice, isTitleVerified, titleLabel, type Listing } from "../services/marketplaceService";
 import { formatCurrency } from "../data/mockData";
 
 export default function Landing() {
@@ -176,7 +176,7 @@ export default function Landing() {
                     <div className="p-4">
                       <div className="flex items-start justify-between gap-2 mb-1">
                         <div className="font-semibold text-sm text-[var(--foreground)]">{listing.name}</div>
-                        <span className={`text-xs font-mono-data px-2 py-0.5 rounded-full whitespace-nowrap ${listing.titleType ? "text-emerald-700 bg-emerald-50" : "text-[var(--muted-foreground)] bg-[var(--muted)]"}`}>{titleLabel(listing.titleType)}</span>
+                        <span className={`text-xs font-mono-data px-2 py-0.5 rounded-full whitespace-nowrap ${isTitleVerified(listing) ? "text-[var(--success-text)] bg-[var(--success-surface)]" : "text-[var(--muted-foreground)] bg-[var(--muted)]"}`}>{titleLabel(listing.titleType, listing.titleStatus)}</span>
                       </div>
                       <div className="text-xs text-[var(--muted-foreground)]">{listing.area}, {listing.city}</div>
                       <div className="mt-3 pt-3 border-t border-[var(--border)] flex items-center justify-between">
