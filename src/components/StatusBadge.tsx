@@ -62,6 +62,7 @@ export function portalEstateStatusBadge(status: PortalEstateStatus): { label: st
     // genuinely unknown there. Neutral, never positive — an unknown condition
     // is not a met one.
     case "unknown": return { label: "Readiness unknown", variant: "neutral" };
+    case "not_published": return { label: "Not published", variant: "neutral" };
   }
 }
 

@@ -211,7 +211,7 @@ export function isBuyer(user: AuthUser | null | undefined): boolean {
 // they don't have.
 export function landingRouteFor(user: AuthUser | null | undefined): string {
   if (isPlatformStaff(user)) return "/admin/dashboard";
-  if (isPortalStaff(user)) return "/portal/estates";
+  if (isPortalStaff(user)) return "/portal";
   return "/dashboard";
 }
 

@@ -47,6 +47,7 @@ import Support from "./pages/support/Support";
 // Super Admin (platform operator console) — lazy: an entire surface a
 // client-role session never navigates into at all.
 const TwoFactorSetupPage = lazy(() => import("./pages/auth/TwoFactorSetupPage"));
+const PortalOverview = lazy(() => import("./pages/portal/PortalOverview"));
 const PortalEstateList = lazy(() => import("./pages/portal/estates/PortalEstateList"));
 const CreatePortalEstate = lazy(() => import("./pages/portal/estates/CreatePortalEstate"));
 const PortalEstateDetail = lazy(() => import("./pages/portal/estates/PortalEstateDetail"));
@@ -277,7 +278,7 @@ function AppRoutes() {
 
       {/* Super Admin (platform operator console — same login point, gated by role) */}
       {/* Developer portal — a company managing its own estates */}
-      <Route path="/portal" element={<Navigate to="/portal/estates" replace />} />
+      <Route path="/portal" element={<PortalPage><PortalOverview /></PortalPage>} />
       <Route path="/portal/estates" element={<PortalPage><PortalEstateList /></PortalPage>} />
       <Route path="/portal/estates/new" element={<PortalPage><CreatePortalEstate /></PortalPage>} />
       <Route path="/portal/estates/:estateId" element={<PortalPage><PortalEstateDetail /></PortalPage>} />

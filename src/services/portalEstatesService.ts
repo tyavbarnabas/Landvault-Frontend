@@ -250,7 +250,9 @@ export type EligibilityConditionKey = keyof Omit<EstateEligibility, "eligible" |
 // suspension, a new HIGH conflict — so the listing is off the marketplace
 // without having been unpublished. It returns by itself once the condition
 // clears, because the flag was never touched.
-export type PortalEstateStatus = "draft" | "ready_to_publish" | "published" | "published_not_live" | "blocked" | "unknown";
+// "not_published": a list row whose flag is off. A summary carries no
+// eligibility, so it can't tell a draft from one ready to publish.
+export type PortalEstateStatus = "draft" | "ready_to_publish" | "published" | "published_not_live" | "blocked" | "not_published" | "unknown";
 
 // Each condition the backend checks before listing, in the order a developer
 // meets them, with copy they can act on. `published` is not among them — it is
@@ -425,6 +427,12 @@ export interface PortalEstate {
   availablePlots: number;
   soldPlots: number;
   reservedPlots: number;
+  // Held back by the developer: neither for sale nor sold.
+  withheldPlots: number;
+  // The developer's own publish flag (not whether the marketplace shows it).
+  published: boolean;
+  // The boundary's area, when the server computed it.
+  areaSqm: number | null;
   priceFrom: number;
   priceTo: number;
   currency: "NGN";
@@ -507,6 +515,9 @@ function fromSummaryDto(dto: EstateSummaryDto, tenantId: string, eligibility: Es
     availablePlots: countOf(dto.plotCounts, "available-dev", "available-inv"),
     soldPlots: countOf(dto.plotCounts, "sold"),
     reservedPlots: countOf(dto.plotCounts, "reserved"),
+    withheldPlots: countOf(dto.plotCounts, "withheld"),
+    published: dto.published,
+    areaSqm: dto.footprintAreaSqm ?? null,
     // A summary carries no tiers. Zero is what the list already treats as
     // "no price to show" — it hides the range rather than printing ₦0.
     priceFrom: 0,
@@ -619,6 +630,9 @@ async function projectPortalEstate(estate: Estate): Promise<PortalEstate> {
     availablePlots: estate.availablePlots,
     soldPlots: plots.filter((p) => p.status === "sold").length,
     reservedPlots: plots.filter((p) => p.status === "reserved").length,
+    withheldPlots: 0,
+    published: estate.published,
+    areaSqm: estate.footprint.length >= 3 ? Math.round(polygonAreaSqm(estate.footprint)) : null,
     priceFrom: estate.priceFrom,
     priceTo: estate.priceTo,
     currency: "NGN",
@@ -638,6 +652,36 @@ export function registerMockPortalPlotCounter(counter: (estateId: string) => num
   mockPortalPlotCount = counter;
 }
 
+// A list row's status from what a summary does carry: the developer's flag,
+// and whether the public marketplace lists it right now. Without the
+// marketplace's answer a published estate stays "unknown" — never live.
+export function listStatus(published: boolean, onMarketplace: boolean | undefined): PortalEstateStatus {
+  if (!published) return "not_published";
+  if (onMarketplace === undefined) return "unknown";
+  return onMarketplace ? "published" : "published_not_live";
+}
+
+// Every estate the public marketplace lists now, all pages (it lists only
+// live estates, so this stays small).
+async function marketplaceEstateIds(): Promise<Set<string>> {
+  const ids = new Set<string>();
+  let cursor: string | null = null;
+  for (let page = 0; page < 20; page++) {
+    const qp = new URLSearchParams({ limit: "100", ...(cursor ? { cursor } : {}) });
+    const res: { items: { id: string }[]; cursor: string | null; hasMore: boolean } = await apiClient.get(`/api/marketplace/estates?${qp}`);
+    for (const item of res.items) ids.add(item.id);
+    if (!res.hasMore || !res.cursor) return ids;
+    cursor = res.cursor;
+  }
+  return ids;
+}
+
+// "Lugbe, Abuja" — the parts an estate has, without empty ones (", , FCT").
+export function estatePlace(estate: Pick<PortalEstate, "area" | "city" | "state">): string {
+  const local = [estate.area, estate.city].filter((part) => part && part.trim());
+  return local.length ? local.join(", ") : estate.state ?? "";
+}
+
 export async function fetchPortalEstates(
   scope: PortalScope,
   filters: PortalEstateFilters = {},
@@ -645,8 +689,11 @@ export async function fetchPortalEstates(
 ): Promise<Page<PortalEstate>> {
   if (!isMock("portalEstates")) {
     const qp = new URLSearchParams({ ...(filters as Record<string, string>), ...(params as Record<string, string>) });
-    const page = await apiClient.get<Page<EstateSummaryDto>>(`/api/portal/estates?${qp}`);
-    return { ...page, items: page.items.map((dto) => fromSummaryDto(dto, scope.tenantId, null)) };
+    const [page, live] = await Promise.all([
+      apiClient.get<Page<EstateSummaryDto>>(`/api/portal/estates?${qp}`),
+      marketplaceEstateIds().catch(() => null),
+    ]);
+    return { ...page, items: page.items.map((dto) => ({ ...fromSummaryDto(dto, scope.tenantId, null), status: listStatus(dto.published, live?.has(dto.id)) })) };
   }
 
   // Standing in for RLS: tenant always, branch too when the user is

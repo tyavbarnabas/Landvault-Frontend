@@ -52,6 +52,7 @@ const NAV_SECTIONS = [
   {
     label: "My company",
     items: [
+      { path: "/portal", label: "Overview", icon: GridIcon, permission: "portal.estates.view" },
       { path: "/portal/estates", label: "Estates", icon: MapIcon, permission: "portal.estates.view" },
       { path: "/portal/staff", label: "Staff", icon: UsersIcon, permission: ["portal.staff.invite", "portal.staff.request"] },
       { path: "/portal/branches", label: "Branches", icon: BriefcaseIcon, permission: "portal.branches.manage" },
@@ -362,7 +363,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 {section.items.map(({ path, label, icon: Icon }) => {
                   const active =
                     location.pathname === path ||
-                    (path !== "/dashboard" &&
+                    (path !== "/dashboard" && path !== "/portal" &&
                       location.pathname.startsWith(path))
                   return (
                     <Link
