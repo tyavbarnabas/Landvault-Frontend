@@ -80,6 +80,7 @@ const CreateTenant = lazy(() => import("./pages/admin/tenants/CreateTenant"));
 const OnboardingRequests = lazy(() => import("./pages/admin/onboarding/OnboardingRequests"));
 const OnboardingRequestDetail = lazy(() => import("./pages/admin/onboarding/OnboardingRequests").then((m) => ({ default: m.OnboardingRequestDetail })));
 const ListYourCompany = lazy(() => import("./pages/developers/ListYourCompany"));
+const VerifyDocument = lazy(() => import("./pages/verify/VerifyDocument"));
 const TenantDetail = lazy(() => import("./pages/admin/tenants/TenantDetail"));
 const ListingConflicts = lazy(() => import("./pages/admin/marketplace/ListingConflicts"));
 
@@ -208,6 +209,9 @@ function AppRoutes() {
           the URL fragment and is read client-side. */}
       <Route path="/accept-invitation" element={<Suspense fallback={<PageLoading />}><AcceptInvitation /></Suspense>} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      {/* Public: what a receipt's or letter's QR code opens. No login. */}
+      <Route path="/verify" element={<MarketplaceLayout><VerifyDocument /></MarketplaceLayout>} />
+      <Route path="/verify/:code" element={<MarketplaceLayout><VerifyDocument /></MarketplaceLayout>} />
       {/* Routed to on mustChangePassword / mustSetUpTwoFa — never blocked on. */}
       <Route path="/change-password" element={<PrivateRoute><ChangePassword /></PrivateRoute>} />
       <Route path="/security/two-factor" element={<AppPage><TwoFactorSetupPage /></AppPage>} />

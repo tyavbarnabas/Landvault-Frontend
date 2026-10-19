@@ -6,7 +6,7 @@
 // bearer token, so they're fetched as blobs, never linked.
 
 import { DOCUMENTS, type Document } from "../data/mockData";
-import { apiClient } from "../lib/apiClient";
+import { apiClient, ApiError } from "../lib/apiClient";
 import { isMock } from "../lib/backends";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 
@@ -93,6 +93,51 @@ export async function shareFile(file: File, title: string): Promise<boolean> {
     if (err instanceof DOMException && err.name === "AbortError") return false;
     throw err;
   }
+}
+
+// ─── Public verification ─────────────────────────────────────────────────────
+// What the QR code opens. No login: anyone holding a copy can check it, so it
+// deliberately carries no amount and no name — initials only.
+
+export interface DocumentVerification {
+  status: "valid" | "refunded"; // refunded: the payment was later returned; still genuine
+  documentType: "receipt" | "allocation_letter";
+  number: string;
+  issuedAt: string;
+  issuedBy: string; // always "HomeTrue"
+  developer: string | null;
+  estate: string | null;
+  location: string | null;
+  plot: string | null;
+  holderInitials: string | null;
+  refundedAt: string | null;
+}
+
+/** A code as people type or paste it — dashes, spaces, lower case, even the
+ * whole verify link — as the 16 characters the URL uses. */
+export function normalizeVerifyCode(input: string): string {
+  const trimmed = input.trim();
+  const fromLink = /\/verify\/([^/?#\s]+)/i.exec(trimmed);
+  return (fromLink ? fromLink[1] : trimmed).replace(/[\s-]/g, "").toUpperCase();
+}
+
+/** 404 NOT_A_HOMETRUE_DOCUMENT for an unknown or malformed code (one answer
+ * for both); 429 when this connection has checked too many (30 a minute). */
+export async function verifyDocument(code: string): Promise<DocumentVerification> {
+  const normalized = normalizeVerifyCode(code);
+  if (isMock("documents")) {
+    const doc = mockDocuments.find((d) => normalizeVerifyCode(d.qrCode) === normalized);
+    if (!doc || (doc.type !== "receipt" && doc.type !== "allocation_letter")) {
+      throw new ApiError(404, "This is not a HomeTrue document.", { code: "NOT_A_HOMETRUE_DOCUMENT" });
+    }
+    // Demo documents carry only a type, a date and a code — nothing else is shown.
+    return {
+      status: doc.refundedAt ? "refunded" : "valid", documentType: doc.type, number: doc.number ?? doc.qrCode,
+      issuedAt: doc.issuedAt ?? doc.date, issuedBy: "HomeTrue", developer: null, estate: null, location: null, plot: null,
+      holderInitials: null, refundedAt: doc.refundedAt ?? null,
+    };
+  }
+  return apiClient.get<DocumentVerification>(`/api/documents/verify/${encodeURIComponent(normalized)}`);
 }
 
 // ─── Mock only ───────────────────────────────────────────────────────────────
