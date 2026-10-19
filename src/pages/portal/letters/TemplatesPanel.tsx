@@ -22,6 +22,7 @@ import { Loading } from "../../../components/ui/Page";
 import { ErrorText, Field, Input, Textarea, describedBy } from "../../../components/ui/Field";
 import ClauseListEditor, { indexedErrors } from "../../../components/letters/ClauseListEditor";
 import ReviewState from "../../../components/letters/ReviewState";
+import StatusBadge from "../../../components/StatusBadge";
 
 const FIELD_LABELS: Record<string, string> = {
   buyerName: "Buyer's name",
@@ -50,18 +51,56 @@ export default function TemplatesPanel({ scope, canManage }: { scope: PortalScop
         The words around each letter's conditions. The title, the salutation, "Yours faithfully", HomeTrue's fee and payment conditions and the QR code are fixed.
         A branch's own wording replaces the company's for that branch's estates.
       </p>
-      <ul className="space-y-6">
-        <TemplateCard template={overview.company} target="company" overview={overview} scope={scope} canManage={canManage} onChanged={loaded.refetch} />
-        {overview.branches.map((b) => (
-          <TemplateCard key={b.branchId} template={b} target={b.branchId!} overview={overview} scope={scope} canManage={canManage} onChanged={loaded.refetch} />
-        ))}
-      </ul>
+      <TemplateCard template={overview.company} target="company" overview={overview} scope={scope} canManage={canManage} onChanged={loaded.refetch} />
+      {overview.branches.length > 0 && <BranchWording overview={overview} scope={scope} canManage={canManage} onChanged={loaded.refetch} />}
     </div>
   );
 }
 
-function TemplateCard({ template, target, overview, scope, canManage, onChanged }: {
-  template: LetterTemplate; target: string; overview: LetterTemplatesOverview; scope: PortalScope; canManage: boolean; onChanged: () => void;
+// The branches as rows — whose wording each uses and where its review
+// stands — opening one branch's full wording at a time.
+function BranchWording({ overview, scope, canManage, onChanged }: { overview: LetterTemplatesOverview; scope: PortalScope; canManage: boolean; onChanged: () => void }) {
+  const [open, setOpen] = useState<string | null>(null);
+  return (
+    <Card as="section" padding="none" className="overflow-hidden" aria-labelledby="branch-wording-heading">
+      <div className="px-4 sm:px-5 py-3.5">
+        <h2 id="branch-wording-heading" className="font-semibold text-[var(--foreground)]">Branch wording</h2>
+        <p className="text-xs text-[var(--muted-foreground)]">A branch uses the company's wording until it writes its own and HomeTrue approves it.</p>
+      </div>
+      <ul className="divide-y divide-[var(--border)] border-t border-[var(--border)]">
+        {overview.branches.map((t) => {
+          const isOpen = open === t.branchId;
+          const own = t.inUse === "branch";
+          const pending = t.current && t.current.reviewStatus === "pending";
+          const badge = own ? (pending ? { label: "Newer version awaiting HomeTrue", variant: "warning" as const } : { label: "Approved", variant: "success" as const })
+            : t.current ? { label: pending ? "Awaiting HomeTrue" : "Not approved", variant: "warning" as const } : { label: "Company's", variant: "neutral" as const };
+          return (
+            <li key={t.branchId}>
+              <div className="px-4 sm:px-5 py-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                <div className="text-sm font-semibold text-[var(--foreground)] w-full sm:w-48">{t.branchName}</div>
+                <div className="text-sm text-[var(--foreground)] flex-1 min-w-48">
+                  {own && t.approved ? `Its own · version ${t.approved.version} · approved${t.approved.reviewedAt ? ` ${formatDay(t.approved.reviewedAt)}` : ""}` : `Uses ${IN_USE[t.inUse]}`}
+                </div>
+                <StatusBadge label={badge.label} variant={badge.variant} />
+                <Button variant="link" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : t.branchId)} className="sm:w-32 sm:text-right">
+                  {isOpen ? "Close" : t.current ? (canManage ? "Edit wording" : "View") : canManage ? "Write its own" : "View"}
+                </Button>
+              </div>
+              {isOpen && (
+                <div className="px-4 sm:px-5 pb-4">
+                  <TemplateCard template={t} target={t.branchId!} overview={overview} scope={scope} canManage={canManage} onChanged={onChanged} as="div" />
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
+  );
+}
+
+function TemplateCard({ template, target, overview, scope, canManage, onChanged, as = "section" }: {
+  template: LetterTemplate; target: string; overview: LetterTemplatesOverview; scope: PortalScope; canManage: boolean; onChanged: () => void; as?: "section" | "div";
 }) {
   const [editing, setEditing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -74,7 +113,7 @@ function TemplateCard({ template, target, overview, scope, canManage, onChanged 
   const startFrom = current ?? approved ?? (isBranch ? overview.company.approved ?? overview.company.current : null);
 
   return (
-    <Card as="li" className="space-y-4">
+    <Card as={as} className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-semibold text-[var(--foreground)]">{isBranch ? template.branchName : "Company wording"}</h2>

@@ -49,6 +49,8 @@ export default function BankAccountForm({ idPrefix, loadBanks, submitLabel, busy
 }) {
   const banks = useFetch(loadBanks, []);
   const [bankCode, setBankCode] = useState("");
+  // About 300 banks: typing narrows the list. The chosen one always stays in it.
+  const [bankQuery, setBankQuery] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
   const [errors, setErrors] = useState<BankAccountErrors>({});
   const [saving, setSaving] = useState(false);
@@ -73,10 +75,14 @@ export default function BankAccountForm({ idPrefix, loadBanks, submitLabel, busy
   return (
     <form onSubmit={submit} className="space-y-3" noValidate>
       <Field id={bankId} label="Bank" error={errors.bankCode}>
+        <Input value={bankQuery} onChange={(e) => setBankQuery(e.target.value)} placeholder="Type to search banks" aria-label="Search banks"
+          inputSize="sm" className="w-full mb-2" disabled={!banks.data} />
         <Select id={bankId} value={bankCode} onChange={(e) => setBankCode(e.target.value)} disabled={!banks.data}
           aria-invalid={!!errors.bankCode} aria-describedby={describedBy(bankId, { error: errors.bankCode })}>
           <option value="">{banks.data ? "Choose the bank" : "Loading banks…"}</option>
-          {(banks.data ?? []).map((b) => <option key={b.code} value={b.code}>{b.name}</option>)}
+          {/* Some banks share a code in the provider's list, so the name is part of the key. */}
+          {(banks.data ?? []).filter((b) => b.code === bankCode || !bankQuery.trim() || b.name.toLowerCase().includes(bankQuery.trim().toLowerCase()))
+            .map((b, i) => <option key={`${b.code}:${b.name}:${i}`} value={b.code}>{b.name}</option>)}
         </Select>
       </Field>
       <Field id={numberId} label="Account number" error={errors.accountNumber}>

@@ -19,6 +19,7 @@ import Alert from "../../../components/ui/Alert";
 import { ErrorText } from "../../../components/ui/Field";
 import StatusBadge, { settlementAccountBadge } from "../../../components/StatusBadge";
 import TextLink from "../../../components/ui/TextLink";
+import { WalletIcon } from "../../../components/icons";
 import BankAccountForm, { bankAccountErrors, type BankAccountErrors } from "../../../components/payments/BankAccountForm";
 import {
   fetchCompanySettlement, fetchSettlementBanks, submitSettlementAccount, withdrawSettlementAccount, type SettlementAccount,
@@ -30,6 +31,7 @@ export default function PayoutAccount() {
   const loaded = useFetch(() => fetchCompanySettlement(), []);
   const [justSubmitted, setJustSubmitted] = useState<SettlementAccount | null>(null);
   const [withdrawing, setWithdrawing] = useState<SettlementAccount | null>(null);
+  const [changing, setChanging] = useState(false);
 
   if (loaded.loading && !loaded.data) return <PayoutPage><Loading /></PayoutPage>;
   if (loaded.error) {
@@ -42,18 +44,18 @@ export default function PayoutAccount() {
   const { approved, pending, history } = loaded.data!;
 
   return (
-    <PayoutPage>
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-[var(--foreground)]">Payouts go here</h2>
-        {approved ? <AccountCard account={approved} /> : (
-          <Alert>No approved payout account yet. HomeTrue can't pay you for verified sales until one is approved.</Alert>
-        )}
-      </section>
+    <PayoutPage action={!pending ? <Button variant={approved ? "secondary" : "primary"} onClick={() => setChanging(true)}>{approved ? "Change account" : "Add a payout account"}</Button> : undefined}>
+      {approved ? <CurrentAccount account={approved} /> : (
+        <Alert>No approved payout account yet. HomeTrue can't pay you for verified sales until one is approved.</Alert>
+      )}
 
       {pending && (
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold text-[var(--foreground)]">Waiting for HomeTrue approval</h2>
-          <AccountCard account={pending} />
+        <Card as="section" aria-labelledby="pending-heading" className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 id="pending-heading" className="font-semibold text-[var(--foreground)]">Waiting for HomeTrue approval</h2>
+            <StatusBadge {...settlementAccountBadge(pending.status)} />
+          </div>
+          <AccountFacts account={pending} />
           {justSubmitted?.id === pending.id && (
             <Alert tone="info" role="status">
               The bank says this account belongs to: <strong>{pending.accountName}</strong>. If that isn't your company, withdraw it now.
@@ -61,40 +63,100 @@ export default function PayoutAccount() {
           )}
           <p className="text-sm text-[var(--muted-foreground)]">
             {approved ? "Payouts still go to your approved account until HomeTrue approves this one." : "Payouts are on hold until HomeTrue approves it."}
+            {" "}To submit a different account, withdraw this one first.
           </p>
           <Button variant="link" onClick={() => setWithdrawing(pending)}>Withdraw this account</Button>
-        </section>
+        </Card>
       )}
 
-      <section className="space-y-3">
-        <div className="flex items-baseline justify-between gap-3">
-          <h2 className="text-sm font-semibold text-[var(--foreground)]">{approved ? "Change the payout account" : "Add a payout account"}</h2>
-          {history.length > 0 && <TextLink to="/portal/payout-account/history" className="text-sm">History ({history.length}) →</TextLink>}
-        </div>
-        {pending ? (
-          <p className="text-sm text-[var(--muted-foreground)]">An account is already waiting for approval. Withdraw it first to submit a different one.</p>
-        ) : (
-          <Card className="space-y-3">
-            <p className="text-sm text-[var(--muted-foreground)]">
-              Use an account in the company's name. Your bank tells us whose account it is. Every Executive Director is emailed, and HomeTrue approves it before any money is sent there.
-            </p>
-            <BankAccountForm idPrefix="payout" loadBanks={fetchSettlementBanks} submitLabel="Submit for approval"
-              onSubmit={async (account) => {
-                try {
-                  setJustSubmitted(await submitSettlementAccount(account));
-                  loaded.refetch();
-                } catch (err) {
-                  return payoutAccountErrors(err);
-                }
-              }} />
-          </Card>
-        )}
-      </section>
+      {history.length > 0 && <HistoryTable history={history} />}
+
+      {changing && !pending && (
+        <Dialog title={approved ? "Change the payout account" : "Add a payout account"} onClose={() => setChanging(false)}>
+          <p className="text-sm text-[var(--muted-foreground)] mb-4">
+            Use an account in the company's name. Your bank tells us whose account it is. Every Executive Director is emailed, and HomeTrue approves it before any money is sent there.
+          </p>
+          <BankAccountForm idPrefix="payout" loadBanks={fetchSettlementBanks} submitLabel="Submit for approval" onCancel={() => setChanging(false)}
+            onSubmit={async (account) => {
+              try {
+                setJustSubmitted(await submitSettlementAccount(account));
+                setChanging(false);
+                loaded.refetch();
+              } catch (err) {
+                return payoutAccountErrors(err);
+              }
+            }} />
+        </Dialog>
+      )}
 
       {withdrawing && (
         <WithdrawDialog account={withdrawing} onClose={() => setWithdrawing(null)} onDone={() => { setJustSubmitted(null); loaded.refetch(); }} />
       )}
     </PayoutPage>
+  );
+}
+
+// The account payouts go to now, and what a change would take.
+function CurrentAccount({ account }: { account: SettlementAccount }) {
+  return (
+    <Card as="section" aria-labelledby="current-heading" className="space-y-4">
+      <div className="flex items-center gap-3.5">
+        <span className="w-11 h-11 shrink-0 rounded-lg bg-[var(--secondary)] text-[var(--secondary-foreground)] flex items-center justify-center"><WalletIcon size={22} /></span>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs text-[var(--muted-foreground)]">Payouts go to</div>
+          <h2 id="current-heading" className="font-semibold text-lg text-[var(--foreground)] truncate">{account.accountName}</h2>
+        </div>
+        <StatusBadge {...settlementAccountBadge(account.status)} />
+      </div>
+      <AccountFacts account={account} />
+      <p className="text-sm rounded-lg bg-[var(--info-surface)] text-[var(--info-text)] px-3.5 py-2.5">
+        A change needs an account in the company's name. Every Executive Director is emailed, and HomeTrue approves it before any money goes there — until then payouts keep going to this account.
+      </p>
+    </Card>
+  );
+}
+
+function AccountFacts({ account }: { account: SettlementAccount }) {
+  const facts: [string, React.ReactNode][] = [
+    ["Bank", account.bankName],
+    ["Account number", <span className="font-mono-data">{account.accountNumber}</span>],
+    account.status === "approved" ? ["Approved by HomeTrue", day(account.decidedAt) ?? "—"] : ["Submitted", day(account.submittedAt) ?? "—"],
+  ];
+  return (
+    <dl className="grid sm:grid-cols-3 gap-3">
+      {facts.map(([label, value]) => (
+        <div key={label} className="rounded-lg bg-[var(--muted)] px-3.5 py-2.5">
+          <dt className="text-xs text-[var(--muted-foreground)]">{label}</dt>
+          <dd className="text-sm font-medium text-[var(--foreground)]">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+// The latest few accounts on the page; the full history keeps its own page.
+const HISTORY_ON_PAGE = 5;
+
+function HistoryTable({ history }: { history: SettlementAccount[] }) {
+  const shown = history.slice(0, HISTORY_ON_PAGE);
+  return (
+    <Card as="section" padding="none" className="overflow-hidden" aria-labelledby="history-heading">
+      <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5">
+        <h2 id="history-heading" className="font-semibold text-[var(--foreground)]">History</h2>
+        {history.length > HISTORY_ON_PAGE && <TextLink to="/portal/payout-account/history" className="text-sm">All {history.length} →</TextLink>}
+      </div>
+      <ul className="divide-y divide-[var(--border)] border-t border-[var(--border)]">
+        {shown.map((a) => (
+          <li key={a.id} className="px-4 sm:px-5 py-3 sm:grid sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1.2fr)_minmax(0,1fr)_auto] sm:items-center sm:gap-4">
+            <div className="text-sm text-[var(--foreground)]">{a.bankName} · <span className="font-mono-data">{a.accountNumber}</span></div>
+            <div className="text-sm text-[var(--muted-foreground)] truncate">{a.accountName}</div>
+            <div className="text-xs text-[var(--muted-foreground)]">Submitted {day(a.submittedAt)}{a.decidedAt ? ` · decided ${day(a.decidedAt)}` : ""}</div>
+            <div className="mt-1.5 sm:mt-0"><StatusBadge {...settlementAccountBadge(a.status)} /></div>
+            {a.decisionNote && <p className="text-sm text-[var(--foreground)] mt-1 sm:col-span-4">HomeTrue's note: “{a.decisionNote}”</p>}
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }
 
@@ -109,21 +171,6 @@ export function payoutAccountErrors(err: unknown): BankAccountErrors {
       default: return message && code.startsWith("SETTLEMENT_") ? { form: message } : undefined;
     }
   });
-}
-
-function AccountCard({ account }: { account: SettlementAccount }) {
-  return (
-    <Card padding="md" className="flex flex-wrap items-center gap-x-4 gap-y-1">
-      <div>
-        <div className="font-semibold text-[var(--foreground)]">{account.accountName}</div>
-        <div className="text-sm text-[var(--muted-foreground)]">{account.bankName} · <span className="font-mono-data">{account.accountNumber}</span></div>
-      </div>
-      <div className="ml-auto text-right">
-        <StatusBadge {...settlementAccountBadge(account.status)} />
-        <div className="text-xs text-[var(--muted-foreground)] mt-1">{account.status === "approved" ? `Approved ${day(account.decidedAt) ?? ""}` : `Submitted ${day(account.submittedAt)}`}</div>
-      </div>
-    </Card>
-  );
 }
 
 function WithdrawDialog({ account, onClose, onDone }: { account: SettlementAccount; onClose: () => void; onDone: () => void }) {
@@ -151,9 +198,9 @@ function WithdrawDialog({ account, onClose, onDone }: { account: SettlementAccou
   );
 }
 
-function PayoutPage({ children }: { children: React.ReactNode }) {
+function PayoutPage({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <Page title="Payout account" description="Where HomeTrue sends the money from your verified sales." width="lg">
+    <Page title="Payout account" description="Where HomeTrue sends the money from your verified sales." actions={action}>
       <div className="space-y-6">{children}</div>
     </Page>
   );

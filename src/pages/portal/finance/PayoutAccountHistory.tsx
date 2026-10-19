@@ -1,7 +1,6 @@
 // Every payout account the company has submitted, newest first —
 // /portal/payout-account/history (portal.settlement.manage). The Payout
-// account page shows no history itself, only a link here beside the change
-// form, so the form never ends up buried under a long list.
+// account page shows the latest few and links here for the rest.
 //
 // The backend returns the whole history in one response (GET
 // /api/portal/settlement/account), so paging is done here. The current page

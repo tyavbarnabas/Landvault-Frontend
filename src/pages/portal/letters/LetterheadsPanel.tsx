@@ -45,23 +45,73 @@ export default function LetterheadsPanel({ scope, canManage }: { scope: PortalSc
         Every allocation letter is printed under the letterhead of the branch that sells the estate, or the company's for a company-level estate.
         A branch uses the company's logo, seal and signatory until it sets its own.
       </p>
-      <ul className="space-y-6">
-        <LetterheadCard head={company} target="company" scope={scope} canManage={canManage} onChanged={loaded.refetch} />
-        {branches.map((b) => (
-          <LetterheadCard key={b.branchId} head={b} target={b.branchId!} scope={scope} canManage={canManage} onChanged={loaded.refetch} />
-        ))}
-      </ul>
+      <LetterheadCard head={company} target="company" scope={scope} canManage={canManage} onChanged={loaded.refetch} />
+      {branches.length > 0 && <BranchLetterheads branches={branches} company={company} scope={scope} canManage={canManage} onChanged={loaded.refetch} />}
     </div>
   );
 }
 
-function LetterheadCard({ head, target, scope, canManage, onChanged }: { head: Letterhead; target: string; scope: PortalScope; canManage: boolean; onChanged: () => void }) {
+// The branches as rows — what each prints with and who signs — with one
+// branch's full editor opened at a time, rather than every editor open at once.
+function BranchLetterheads({ branches, company, scope, canManage, onChanged }: {
+  branches: Letterhead[]; company: Letterhead; scope: PortalScope; canManage: boolean; onChanged: () => void;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
+  return (
+    <Card as="section" padding="none" className="overflow-hidden" aria-labelledby="branch-letterheads-heading">
+      <div className="px-4 sm:px-5 py-3.5">
+        <h2 id="branch-letterheads-heading" className="font-semibold text-[var(--foreground)]">Branch letterheads</h2>
+        <p className="text-xs text-[var(--muted-foreground)]">A branch uses the company's logo, seal and signatory until it sets its own.</p>
+      </div>
+      <div aria-hidden="true" className="hidden md:grid md:grid-cols-[minmax(0,1.2fr)_minmax(0,2fr)_minmax(0,1.4fr)_8rem_7rem] gap-4 bg-[var(--muted)] px-5 py-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)] border-t border-[var(--border)]">
+        <span>Branch</span><span>Prints with</span><span>Signed by</span><span>Status</span><span />
+      </div>
+      <ul className="divide-y divide-[var(--border)] border-t border-[var(--border)] md:border-t-0">
+        {branches.map((b) => {
+          const p = b.printed;
+          const ownOffice = p.address !== company.printed.address;
+          const ownImages = (["logo", "signature", "seal"] as ImageKind[]).filter((k) => b[k]).map((k) => IMAGE_KIND_LABELS[k].toLowerCase());
+          const isOpen = open === b.branchId;
+          return (
+            <li key={b.branchId}>
+              <div className="px-4 sm:px-5 py-3 md:grid md:grid-cols-[minmax(0,1.2fr)_minmax(0,2fr)_minmax(0,1.4fr)_8rem_7rem] md:items-center md:gap-4 space-y-1.5 md:space-y-0">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-[var(--foreground)]">{b.branchName}</div>
+                  <div className="text-xs text-[var(--muted-foreground)]">{b.version > 0 ? `version ${b.version}` : "never customised"}</div>
+                </div>
+                <div className="text-sm text-[var(--foreground)] min-w-0">
+                  {ownOffice ? <>Its own office{p.address ? `: ${p.address}` : ""}</> : "The company's details"}
+                  {ownImages.length > 0 && <span className="block text-xs text-[var(--muted-foreground)]">Own {ownImages.join(", ")}</span>}
+                </div>
+                <div className="text-sm min-w-0">
+                  <span className="text-[var(--foreground)]">{p.signatoryName ?? "No one yet"}</span>
+                  {p.signatorySource && <span className="block text-xs text-[var(--muted-foreground)]">{p.signatorySource === "company" ? "the company's signatory" : "this branch's own"}</span>}
+                </div>
+                <div>{b.missing.length === 0 ? <StatusBadge label="Ready" variant="success" /> : <StatusBadge label="Not ready" variant="warning" />}</div>
+                <div className="md:justify-self-end">
+                  <Button variant="link" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : b.branchId)}>{isOpen ? "Close" : canManage ? "Customise" : "View"}</Button>
+                </div>
+              </div>
+              {isOpen && (
+                <div className="px-4 sm:px-5 pb-4">
+                  <LetterheadCard head={b} target={b.branchId!} scope={scope} canManage={canManage} onChanged={onChanged} as="div" />
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
+  );
+}
+
+function LetterheadCard({ head, target, scope, canManage, onChanged, as = "section" }: { head: Letterhead; target: string; scope: PortalScope; canManage: boolean; onChanged: () => void; as?: "section" | "div" }) {
   const isBranch = head.scope === "branch";
   const p = head.printed;
   const ownSigner = !!(head.signatoryName || head.signatoryTitle || head.signature);
 
   return (
-    <Card as="li" className="space-y-5">
+    <Card as={as} className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-semibold text-[var(--foreground)]">{isBranch ? head.branchName : "Company letterhead"}</h2>
