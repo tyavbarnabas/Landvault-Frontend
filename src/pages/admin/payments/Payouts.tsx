@@ -13,7 +13,8 @@
 // Laid out from the Figma money-screen proposal: four figures, the ready
 // sales as a table, a tab of its own for payouts left waiting for their code
 // (otherwise only findable in History), and History as a table with status
-// chips — each payout named by its company, from the tenant directory.
+// chips — each payout named by its company (the payout's own companyName;
+// the tenant directory only for a backend that doesn't send it yet).
 
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -76,8 +77,10 @@ export default function Payouts() {
   const tab = (TAB_IDS.find((t) => t === params.get("tab")) ?? "ready") as Tab;
   const ready = useFetch(() => fetchReadyPayouts(), []);
   const history = useFetch(() => fetchPayoutHistory("all"), []);
-  // A payout carries only its company's id; the name comes from the tenant directory.
-  const tenants = useFetch(() => (canSeeCompanies ? fetchTenants({}, { limit: 1000 }) : Promise.resolve(null)), [canSeeCompanies]);
+  // Each payout carries its company's name. A backend that doesn't send it yet
+  // leaves it undefined; only then are names looked up in the tenant directory.
+  const needDirectory = canSeeCompanies && (history.data ?? []).some((p) => p.companyName === undefined);
+  const tenants = useFetch(() => (needDirectory ? fetchTenants({}, { limit: 1000 }) : Promise.resolve(null)), [needDirectory]);
   const names = new Map<string, string>();
   for (const t of tenants.data?.items ?? []) names.set(t.id, t.displayName);
   for (const r of ready.data ?? []) if (r.companyName) names.set(r.tenantId, r.companyName);
@@ -239,7 +242,7 @@ function Awaiting({ list, payouts, names, onChanged }: { list: UseFetchResult<Pa
   if (!payouts.length) return <Card padding="sm"><EmptyState title="Nothing waiting for a code" description="A payout started but not finished — no code entered, not cancelled — waits here until it's sent or cancelled." /></Card>;
   return (
     <DisclosureTable columns={PAYOUT_COLUMNS} grid={PAYOUT_GRID} label="Payouts waiting for a code">
-      {payouts.map((p) => <PayoutRow key={p.id} payout={p} company={names.get(p.tenantId)} onChanged={onChanged} />)}
+      {payouts.map((p) => <PayoutRow key={p.id} payout={p} company={payoutCompany(p, names)} onChanged={onChanged} />)}
     </DisclosureTable>
   );
 }
@@ -264,17 +267,25 @@ function History({ list, names, onChanged }: { list: UseFetchResult<Payout[]>; n
         options={[{ id: "all" as const, label: "All", count: all.length }, ...present.map((s) => ({ id: s, label: FILTER_LABEL[s], count: all.filter((p) => p.status === s).length }))]} />
       {shown.length === 0 ? <Card padding="sm"><EmptyState title="None" description="No payouts with this status." /></Card> : (
         <DisclosureTable columns={PAYOUT_COLUMNS} grid={PAYOUT_GRID} label="Payout history">
-          {shown.map((p) => <PayoutRow key={p.id} payout={p} company={names.get(p.tenantId)} onChanged={onChanged} />)}
+          {shown.map((p) => <PayoutRow key={p.id} payout={p} company={payoutCompany(p, names)} onChanged={onChanged} />)}
         </DisclosureTable>
       )}
     </>
   );
 }
 
-function PayoutRow({ payout: p, company, onChanged }: { payout: Payout; company: string | undefined; onChanged: (message?: string) => void }) {
+// The payout's own company name first; the directory only for a backend that
+// doesn't send one. Exported for tests.
+export function payoutCompany(p: Payout, directory: Map<string, string>): string {
+  if (p.companyName) return p.companyName;
+  if (p.companyName === null) return "Company name not on record";
+  return directory.get(p.tenantId) ?? "Company not shown";
+}
+
+function PayoutRow({ payout: p, company, onChanged }: { payout: Payout; company: string; onChanged: (message?: string) => void }) {
   const [otp, setOtp] = useState(false);
   const cells = [
-    <span className="font-semibold text-[var(--foreground)]">{company ?? "Company not shown"}</span>,
+    <span className="font-semibold text-[var(--foreground)]">{company}</span>,
     <>
       <span className="font-mono-data font-medium text-[var(--foreground)]">{money(p.amount, p.currency)}</span>
       <div className="text-xs text-[var(--muted-foreground)]">{p.partCount > 1 ? `Part ${p.partNumber} of ${p.partCount}` : "One transfer"}</div>

@@ -71,6 +71,9 @@ export interface Payout {
   id: string;
   transactionId: string;
   tenantId: string;
+  // The company's name, from the backend. Undefined from a backend that
+  // doesn't send it yet; null when no name is on record.
+  companyName?: string | null;
   amount: number;
   currency: string;
   partNumber: number;
@@ -227,9 +230,9 @@ const mock: { queue: FinanceQueueItem[]; late: LatePayment[]; payouts: Payout[] 
     },
   ],
   payouts: [
-    { id: "po-2", transactionId: "txn-demo-0", tenantId: "estintin-group", amount: 7_500_000, currency: "NGN", partNumber: 2, partCount: 2, status: "pending",
+    { id: "po-2", transactionId: "txn-demo-0", tenantId: "estintin-group", companyName: "Estintin Group", amount: 7_500_000, currency: "NGN", partNumber: 2, partCount: 2, status: "pending",
       reference: "PO-DEMO-2", gatewayMessage: null, bankName: "Guaranty Trust Bank", accountLast4: "1234", createdAt: "2026-10-05T10:02:00Z", transferredAt: null, reviewReason: null },
-    { id: "po-1", transactionId: "txn-demo-0", tenantId: "estintin-group", amount: 7_500_000, currency: "NGN", partNumber: 1, partCount: 2, status: "success",
+    { id: "po-1", transactionId: "txn-demo-0", tenantId: "estintin-group", companyName: "Estintin Group", amount: 7_500_000, currency: "NGN", partNumber: 1, partCount: 2, status: "success",
       reference: "PO-DEMO-1", gatewayMessage: null, bankName: "Guaranty Trust Bank", accountLast4: "1234", createdAt: "2026-10-05T10:00:00Z", transferredAt: "2026-10-05T10:01:00Z", reviewReason: null },
   ],
 };

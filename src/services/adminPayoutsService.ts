@@ -57,7 +57,7 @@ export async function sendPayout(transactionId: string): Promise<Payout> {
   if (inFlight(transactionId)) throw mockError("PAYOUT_IN_PROGRESS", "A payout for this sale is already in progress.");
   if (sale.blockers.length) throw mockError(sale.blockers[0], "This sale can't be paid out yet.");
   const payout: Payout = {
-    id: `po-${Date.now()}`, transactionId, tenantId: sale.tenantId, amount: sale.nextPartAmount, currency: sale.currency,
+    id: `po-${Date.now()}`, transactionId, tenantId: sale.tenantId, companyName: sale.companyName, amount: sale.nextPartAmount, currency: sale.currency,
     partNumber: sale.nextPart, partCount: sale.partCount ?? 1, status: "awaiting_otp", reference: `PO-${Date.now().toString(36).toUpperCase()}`,
     gatewayMessage: null, bankName: sale.payoutAccount?.bankName ?? null, accountLast4: sale.payoutAccount?.accountLast4 ?? null,
     createdAt: new Date().toISOString(), transferredAt: null, reviewReason: null,
@@ -249,7 +249,7 @@ const mock: { ready: ReadyPayout[]; payouts: Payout[]; due: RefundDue[]; refunds
       payoutAccount: null, blockers: ["NO_APPROVED_PAYOUT_ACCOUNT"], lastAttempt: null },
   ],
   payouts: [
-    { id: "po-old-1", transactionId: "txn-demo-9", tenantId: "estintin-group", amount: 4_000_000, currency: "NGN", partNumber: 1, partCount: 1,
+    { id: "po-old-1", transactionId: "txn-demo-9", tenantId: "estintin-group", companyName: "Estintin Group", amount: 4_000_000, currency: "NGN", partNumber: 1, partCount: 1,
       status: "failed", reference: "PO-DEMO-9", gatewayMessage: "Your balance is not enough to fulfil this request", bankName: "Guaranty Trust Bank",
       accountLast4: "1234", createdAt: "2026-10-06T09:00:00Z", transferredAt: null, reviewReason: null },
   ],
