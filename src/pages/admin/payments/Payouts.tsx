@@ -274,11 +274,12 @@ function History({ list, names, onChanged }: { list: UseFetchResult<Payout[]>; n
   );
 }
 
-// The payout's own company name first; the directory only for a backend that
-// doesn't send one. Exported for tests.
+// The payout's own company name (trading name, else registered name); null
+// means none on record, shown neutrally. The directory only for a backend that
+// doesn't send the field yet. Exported for tests.
 export function payoutCompany(p: Payout, directory: Map<string, string>): string {
   if (p.companyName) return p.companyName;
-  if (p.companyName === null) return "Company name not on record";
+  if (p.companyName === null) return "Company not shown";
   return directory.get(p.tenantId) ?? "Company not shown";
 }
 

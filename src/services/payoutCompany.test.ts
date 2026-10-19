@@ -16,9 +16,9 @@ describe("payoutCompany", () => {
     expect(payoutCompany({ ...base, companyName: "Estintin Group" }, new Map())).toBe("Estintin Group");
   });
 
-  it("says so when the backend has no name on record, rather than guessing", async () => {
+  it("stays neutral when the backend has no name on record, rather than guessing", async () => {
     const { payoutCompany } = await import("../pages/admin/payments/Payouts");
-    expect(payoutCompany({ ...base, companyName: null }, directory)).toBe("Company name not on record");
+    expect(payoutCompany({ ...base, companyName: null }, directory)).toBe("Company not shown");
   });
 
   it("falls back to the directory only when the backend doesn't send the field", async () => {
