@@ -7,6 +7,7 @@ import { useApp } from "../contexts/AppContext";
 import { landingRouteFor } from "../services/authService";
 import ErrorBoundary from "./ErrorBoundary";
 import PageLoading from "./PageLoading";
+import SiteFooter from "./marketplace/SiteFooter";
 
 export default function MarketplaceLayout({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, logout } = useApp();
@@ -22,8 +23,11 @@ export default function MarketplaceLayout({ children }: { children: React.ReactN
     <div className="min-h-full flex flex-col bg-[var(--background)]">
       <header className="h-14 border-b border-[var(--border)] bg-[var(--card)] flex items-center px-4 lg:px-6 gap-6 shrink-0">
         <Link to="/" className="font-display text-lg text-[var(--foreground)] tracking-tight shrink-0">HomeTrue</Link>
-        <nav className="flex items-center gap-4 flex-1">
+        <nav className="flex items-center gap-6 flex-1">
           <Link to="/marketplace" className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">Marketplace</Link>
+          {/* Public destinations that exist; on a phone they live in the footer. */}
+          <Link to="/verify" className="hidden md:inline text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">Verify a document</Link>
+          <Link to="/list-your-company" className="hidden md:inline text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">List your company</Link>
         </nav>
 
         {isAuthenticated ? (
@@ -52,6 +56,7 @@ export default function MarketplaceLayout({ children }: { children: React.ReactN
           <Suspense fallback={<PageLoading />}>{children}</Suspense>
         </ErrorBoundary>
       </main>
+      <SiteFooter />
     </div>
   );
 }

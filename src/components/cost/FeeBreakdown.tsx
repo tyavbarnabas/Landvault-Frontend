@@ -71,7 +71,9 @@ function FeeGroup({ title, fees, caption }: { title: string; fees: PublicFee[]; 
   );
 }
 
-export default function FeeBreakdown({ feeSchedule, tier }: { feeSchedule: PublicFee[]; tier: TierCommitment | null }) {
+// `bare`: no card of its own, for a page that puts the fees inside a larger
+// cost card (the estate page). Reservation keeps the card.
+export default function FeeBreakdown({ feeSchedule, tier, bare }: { feeSchedule: PublicFee[]; tier: TierCommitment | null; bare?: boolean }) {
   // One-off fees are everything in the schedule that isn't a yearly charge;
   // the recurring and optional lists come from the tier, which is where the
   // backend decides what sits outside the total.
@@ -80,7 +82,7 @@ export default function FeeBreakdown({ feeSchedule, tier }: { feeSchedule: Publi
   const optional = tier?.optionalFees ?? [];
 
   return (
-    <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+    <div className={bare ? "" : "bg-[var(--card)] border border-[var(--border)] rounded-xl p-5"}>
       {TRIGGER_ORDER.filter((t) => t !== "annual").map((trigger) => (
         <FeeGroup key={trigger} title={DUE_TRIGGER_LABELS[trigger]} fees={oneOff.filter((f) => f.dueTrigger === trigger)} />
       ))}

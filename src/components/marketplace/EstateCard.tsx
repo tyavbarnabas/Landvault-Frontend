@@ -86,7 +86,7 @@ export default function EstateCard({ listing, priceChangeSinceSaved }: EstateCar
           <span>·</span>
           <span>{titleLabel(listing.titleType, listing.titleStatus)}</span>
           <span>·</span>
-          <span>{plotsRemaining} plots left</span>
+          <span>{plotsRemaining} {plotsRemaining === 1 ? "plot" : "plots"} left</span>
         </div>
       </div>
     </Link>
