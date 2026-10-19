@@ -37,8 +37,15 @@ import { fetchDocuments } from "./documentsService";
 import { fetchWishlistListing, listingDisplayName, listingFromPrice, listingRoute } from "./marketplaceFeedService";
 import type { WishlistItem } from "./marketplaceService";
 import { isActivelyOwned } from "../pages/portfolio/Portfolio";
+import { fetchMyPurchases, type Purchase } from "./paymentsService";
+import { describePurchase, refundExpected } from "../lib/purchaseStatus";
+import { fetchListingById } from "./marketplaceService";
+import { fetchPlotById, plotLabel } from "./marketplacePlotsService";
 
-export type AttentionType = "payment_due" | "arrears" | "upgrade_delta_due" | "document_issued" | "price_change";
+export type AttentionType = "payment_due" | "arrears" | "upgrade_delta_due" | "document_issued" | "price_change" | "purchase";
+
+// Where a purchase still under way stands, for its badge and icon.
+export type PurchaseStage = "pay" | "payment_failed" | "verifying" | "under_review" | "refund";
 export type AttentionSeverity = "urgent" | "normal";
 
 export interface AttentionItem {
@@ -50,6 +57,10 @@ export interface AttentionItem {
   targetRoute: string;
   occurredAt?: string;
   dueAt?: string;
+  // Purchases only: the stage, and the verb when it isn't the type's default
+  // ("Continue payment", "Pay again").
+  stage?: PurchaseStage;
+  actionLabel?: string;
 }
 
 // A payment isn't something to act on until it's near. This is the window the
@@ -262,4 +273,54 @@ function sortByUrgency(ranked: RankedItem[]): AttentionItem[] {
       return 0;
     })
     .map((r) => r.item);
+}
+
+// ─── Purchases still under way ───────────────────────────────────────────────
+//
+// Until /api/me/attention exists, the dashboard's live attention list is the
+// buyer's own purchases that still need something: paying, the developer's
+// check, a late payment under review, or a refund on its way. Finished and
+// ended purchases aren't here; My purchases and Portfolio keep them.
+
+// Newest first from the server; an open purchase is always a recent one.
+const PURCHASE_SCAN_LIMIT = 50;
+
+export function purchaseStage(p: Purchase): PurchaseStage | null {
+  if (p.status === "pending_payment") return p.payment?.status === "failed" ? "payment_failed" : "pay";
+  if (p.status === "payment_received" || p.status === "awaiting_finance") return "verifying";
+  if (refundExpected(p) && p.payment?.refundStatus !== "processed") return "refund";
+  if (p.status === "abandoned" && p.payment?.underReview) return "under_review";
+  return null;
+}
+
+export async function fetchPurchaseAttention(): Promise<AttentionItem[]> {
+  const page = await fetchMyPurchases({ limit: PURCHASE_SCAN_LIMIT });
+  const open = page.items.map((p) => ({ p, stage: purchaseStage(p) })).filter((o): o is { p: Purchase; stage: PurchaseStage } => o.stage !== null);
+  if (open.length === 0) return [];
+
+  // The estate's name and the plot's label, so the row says which plot. A
+  // lookup that fails leaves the row with what it has, never a guess.
+  const estateIds = [...new Set(open.map(({ p }) => p.estateId))];
+  const names = new Map(await Promise.all(estateIds.map(async (id) =>
+    [id, (await fetchListingById(id).catch(() => undefined))?.name ?? null] as const)));
+  const labels = new Map(await Promise.all(open.map(async ({ p }) =>
+    [p.id, await fetchPlotById(p.estateId, p.plotId).then((plot) => (plot ? plotLabel(plot) : null)).catch(() => null)] as const)));
+
+  return open.map(({ p, stage }) => {
+    const state = describePurchase(p);
+    const name = names.get(p.estateId) ?? "Your purchase";
+    const label = labels.get(p.id);
+    return {
+      id: `purchase:${p.id}`,
+      type: "purchase" as const,
+      // Paying is the one with a clock on it: the hold ends.
+      severity: stage === "pay" || stage === "payment_failed" ? "urgent" as const : "normal" as const,
+      title: label ? `${name} — ${label}` : name,
+      detail: stage === "refund" && state.refund ? state.refund : state.body,
+      targetRoute: `/purchases/${p.id}`,
+      occurredAt: p.createdAt,
+      stage,
+      actionLabel: state.canPay ? state.payLabel : "View purchase",
+    };
+  });
 }

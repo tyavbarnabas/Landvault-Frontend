@@ -2,6 +2,7 @@
 // strings that were copy-pasted across pages, each with its own disabled
 // opacity and padding.
 
+import { Link, type LinkProps } from "react-router-dom";
 import { cx } from "./cx";
 
 export type ButtonVariant = "primary" | "secondary" | "danger" | "link" | "linkMuted" | "linkDanger";
@@ -25,20 +26,28 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   fullWidth?: boolean;
 }
 
-export default function Button({ variant = "primary", size = "md", fullWidth, type = "button", className, ...rest }: ButtonProps) {
+function buttonClass(variant: ButtonVariant, size: ButtonSize, fullWidth: boolean | undefined, className?: string): string {
   const boxed = !variant.startsWith("link");
-  return (
-    <button
-      type={type}
-      className={cx(
-        "text-sm transition-opacity disabled:opacity-50 disabled:cursor-not-allowed",
-        boxed && "inline-flex items-center justify-center rounded-md",
-        boxed && SIZE[size],
-        VARIANT[variant],
-        fullWidth && "w-full",
-        className,
-      )}
-      {...rest}
-    />
+  return cx(
+    "text-sm transition-opacity disabled:opacity-50 disabled:cursor-not-allowed",
+    boxed && "inline-flex items-center justify-center rounded-md",
+    boxed && SIZE[size],
+    VARIANT[variant],
+    fullWidth && "w-full",
+    className,
   );
+}
+
+export default function Button({ variant = "primary", size = "md", fullWidth, type = "button", className, ...rest }: ButtonProps) {
+  return <button type={type} className={buttonClass(variant, size, fullWidth, className)} {...rest} />;
+}
+
+// A router link that looks like a button: for a call to action that goes
+// somewhere ("Pay now" on the dashboard) rather than doing something here.
+export function LinkButton({ variant = "primary", size = "md", fullWidth, className, ...rest }: LinkProps & {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  fullWidth?: boolean;
+}) {
+  return <Link className={buttonClass(variant, size, fullWidth, className)} {...rest} />;
 }

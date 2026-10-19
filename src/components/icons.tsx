@@ -87,6 +87,9 @@ export function TrendingUpIcon(p: IconProps) {
 export function CreditCardIcon(p: IconProps) {
   return <Svg {...p}><rect width="20" height="14" x="2" y="5" rx="2" /><path d="M2 10h20" /></Svg>;
 }
+export function BriefcaseIcon(p: IconProps) {
+  return <Svg {...p}><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></Svg>;
+}
 export function CalendarIcon(p: IconProps) {
   return <Svg {...p}><rect width="18" height="18" x="3" y="4" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></Svg>;
 }

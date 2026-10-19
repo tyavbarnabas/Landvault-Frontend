@@ -1,74 +1,109 @@
-// The buyer dashboard's "what should I do?" strip. Every row has a verb and
-// one destination; nothing here is a statistic.
+// The buyer dashboard's "what should I do?" list, from the Figma dashboard
+// proposal: one row per item, with an icon, a status badge, what's going on,
+// and one button. Nothing here is a statistic.
 //
 // Distinct from AttentionPanel.tsx, which is the Super Admin console's
 // equivalent (counts of queued platform work, not a single person's to-do
 // list). Both share the same discipline: when there's nothing to do, say so
 // plainly rather than padding the space with numbers.
 
-import { Link } from "react-router-dom";
-import type { AttentionItem, AttentionType } from "../../services/attentionService";
+import Card from "../ui/Card";
+import Badge from "../ui/Badge";
+import { LinkButton } from "../ui/Button";
+import { cx } from "../ui/cx";
+import { TONE_FILL, type Tone } from "../ui/tones";
+import { AlertIcon, CheckIcon, ClockIcon, CreditCardIcon, FileCheckIcon, ReceiptIcon, ShieldCheckIcon, TrendingUpIcon, WalletIcon } from "../icons";
+import type { AttentionItem, AttentionType, PurchaseStage } from "../../services/attentionService";
 
-const ACTION_LABEL: Record<AttentionType, string> = {
-  arrears: "View options",
-  payment_due: "Pay now",
-  upgrade_delta_due: "Complete payment",
-  document_issued: "Open vault",
-  price_change: "View listing",
+interface Look {
+  badge: string;
+  tone: Tone;
+  icon: React.ReactNode;
+  action: string;
+}
+
+const PURCHASE_LOOK: Record<PurchaseStage, Omit<Look, "action">> = {
+  pay: { badge: "Awaiting payment", tone: "warning", icon: <CreditCardIcon size={20} /> },
+  payment_failed: { badge: "Payment didn't go through", tone: "error", icon: <CreditCardIcon size={20} /> },
+  verifying: { badge: "Being verified", tone: "info", icon: <ShieldCheckIcon size={20} /> },
+  under_review: { badge: "Under review", tone: "info", icon: <ShieldCheckIcon size={20} /> },
+  refund: { badge: "Refund", tone: "warning", icon: <ReceiptIcon size={20} /> },
 };
 
-// Urgent = money is owed or a deadline is running. Normal = worth knowing,
-// nothing is at stake today.
-const SEVERITY_STYLES = {
-  urgent: "bg-amber-50 border-amber-200",
-  normal: "bg-[var(--card)] border-[var(--border)]",
+const LOOK: Record<Exclude<AttentionType, "purchase">, (item: AttentionItem) => Look> = {
+  arrears: () => ({ badge: "Overdue", tone: "error", icon: <AlertIcon size={20} />, action: "View options" }),
+  payment_due: (item) => ({ badge: item.severity === "urgent" ? "Payment due" : "Due soon", tone: item.severity === "urgent" ? "warning" : "neutral", icon: <ClockIcon size={20} />, action: "Pay now" }),
+  upgrade_delta_due: () => ({ badge: "Payment due", tone: "warning", icon: <WalletIcon size={20} />, action: "Complete payment" }),
+  document_issued: () => ({ badge: "New", tone: "info", icon: <FileCheckIcon size={20} />, action: "Open vault" }),
+  price_change: () => ({ badge: "Price change", tone: "info", icon: <TrendingUpIcon size={20} />, action: "View listing" }),
+};
+
+function lookFor(item: AttentionItem): Look {
+  if (item.type === "purchase") {
+    const stage = PURCHASE_LOOK[item.stage ?? "verifying"];
+    return { ...stage, action: item.actionLabel ?? "View purchase" };
+  }
+  return LOOK[item.type](item);
+}
+
+// The icon tile's text colour, per tone.
+const TONE_TEXT: Record<Tone, string> = {
+  neutral: "text-[var(--muted-foreground)]",
+  info: "text-[var(--info-text)]",
+  warning: "text-[var(--warning-text)]",
+  success: "text-[var(--success-text)]",
+  error: "text-[var(--error-text)]",
 };
 
 function AttentionRow({ item }: { item: AttentionItem }) {
+  const look = lookFor(item);
+  // Money owed or a clock running gets the solid button; the rest a quiet one.
+  const primary = item.severity === "urgent";
   return (
-    <Link
-      to={item.targetRoute}
-      className={`flex items-center justify-between gap-4 px-4 py-3 rounded-lg border hover:border-[var(--accent)]/50 transition-colors ${SEVERITY_STYLES[item.severity]}`}
-    >
-      <div className="min-w-0">
-        <div className="text-sm font-medium text-[var(--foreground)]">{item.title}</div>
-        <div className="text-xs text-[var(--muted-foreground)] mt-0.5">{item.detail}</div>
+    <li className="py-4 first:pt-2 last:pb-0 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+      <div className="flex gap-3.5 flex-1 min-w-0">
+        <span className={cx("w-10 h-10 shrink-0 rounded-lg flex items-center justify-center", TONE_FILL[look.tone], TONE_TEXT[look.tone])}>{look.icon}</span>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-sm font-semibold text-[var(--foreground)] max-sm:order-2 max-sm:w-full">{item.title}</span>
+            <Badge label={look.badge} variant={look.tone} />
+          </div>
+          <p className="text-sm text-[var(--muted-foreground)] mt-1">{item.detail}</p>
+        </div>
       </div>
-      <span className="shrink-0 text-xs font-semibold text-[var(--accent)]">{ACTION_LABEL[item.type]} →</span>
-    </Link>
+      <LinkButton to={item.targetRoute} variant={primary ? "primary" : "secondary"} className="shrink-0 max-sm:w-full">{look.action}</LinkButton>
+    </li>
   );
 }
 
 export default function AttentionStrip({ items, loading, error }: { items: AttentionItem[]; loading: boolean; error: boolean }) {
+  // An empty dashboard is the correct result, not a gap to fill with
+  // statistics — see the rule at the top of Dashboard.tsx.
+  if (!loading && !error && items.length === 0) {
+    return (
+      <section aria-labelledby="attention-heading" className="flex items-center gap-3 rounded-xl bg-[var(--success-surface)] text-[var(--success-text)] px-4 sm:px-5 py-4">
+        <span className="w-9 h-9 shrink-0 rounded-lg bg-[var(--card)] flex items-center justify-center"><CheckIcon size={18} /></span>
+        <div>
+          <h2 id="attention-heading" className="text-sm font-semibold">You're all caught up</h2>
+          <p className="text-sm">Nothing needs your attention. Payments due, purchases in progress and new documents will show here.</p>
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <section aria-labelledby="attention-heading" className="mb-8">
-      <h2 id="attention-heading" className="text-sm font-semibold text-[var(--foreground)] mb-3">Needs your attention</h2>
-
-      {loading && <div className="text-sm text-[var(--muted-foreground)]">Checking…</div>}
-
-      {!loading && error && (
-        <div className="bg-[var(--card)] border border-[var(--border)] rounded-lg p-4 text-sm text-[var(--muted-foreground)]">
-          Couldn't check what needs your attention right now.
-        </div>
-      )}
-
-      {/* An empty dashboard is the correct result, not a gap to fill with
-          statistics — see the rule at the top of Dashboard.tsx. */}
-      {!loading && !error && items.length === 0 && (
-        <div className="flex items-center gap-2.5 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-emerald-600 shrink-0" aria-hidden="true">
-            <path d="M20 6 9 17l-5-5" />
-          </svg>
-          <span className="text-sm text-emerald-800 font-medium">You're all caught up.</span>
-          <Link to="/portfolio" className="ml-auto text-xs font-semibold text-emerald-800 hover:underline">View your portfolio →</Link>
-        </div>
-      )}
-
-      {!loading && !error && items.length > 0 && (
-        <div className="space-y-2">
+    <Card as="section" aria-labelledby="attention-heading">
+      <div className="flex items-center gap-2">
+        <h2 id="attention-heading" className="font-semibold text-[var(--foreground)]">Needs your attention</h2>
+        {!loading && !error && <Badge label={String(items.length)} variant="warning" />}
+      </div>
+      {loading && <p className="text-sm text-[var(--muted-foreground)] mt-3">Checking…</p>}
+      {!loading && error && <p className="text-sm text-[var(--muted-foreground)] mt-3">Couldn't check what needs your attention right now.</p>}
+      {!loading && !error && (
+        <ul className="divide-y divide-[var(--border)]">
           {items.map((item) => <AttentionRow key={item.id} item={item} />)}
-        </div>
+        </ul>
       )}
-    </section>
+    </Card>
   );
 }

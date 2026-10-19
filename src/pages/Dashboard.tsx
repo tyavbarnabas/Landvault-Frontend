@@ -25,19 +25,23 @@
 // statistics to look busy — the emptiness is the signal.
 
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
 import { useApp } from "../contexts/AppContext";
 import { formatAmount } from "../data/mockData";
 import { useFetch } from "../lib/useFetch";
 import { BACKEND_CONFIGURED, isLive, type ServiceKey } from "../lib/backends";
-import PurchaseList from "../components/purchases/PurchaseList";
-import { fetchOwnedPlots, fetchPortfolioSummary, installmentsAvailable } from "../services/portfolioService";
+import { fetchPortfolioSummary, type PortfolioSummary } from "../services/portfolioService";
 import { fetchDocuments } from "../services/documentsService";
-import { fetchAttentionItems } from "../services/attentionService";
-import { DocTypeChip } from "../components/documents/DocumentCard";
+import type { Document } from "../data/mockData";
+import { fetchAttentionItems, fetchPurchaseAttention } from "../services/attentionService";
+import { DOCUMENT_TYPE_LABELS, DocTypeChip, DocumentActions, plotLine } from "../components/documents/DocumentCard";
 import { formatDay } from "../lib/formatDate";
 import AttentionStrip from "../components/dashboard/AttentionStrip";
-import { urgencyRank, isActivelyOwned } from "./portfolio/Portfolio";
+import Card from "../components/ui/Card";
+import { LinkButton } from "../components/ui/Button";
+import TextLink from "../components/ui/TextLink";
+import { Loading } from "../components/ui/Page";
+import { BriefcaseIcon, CalendarIcon, ChevronRightIcon, MessageIcon, ShieldCheckIcon } from "../components/icons";
+import { Link } from "react-router-dom";
 
 // Per-viewer convenience only (never read back by anything but this screen),
 // so localStorage is the right home for it and every access is guarded — a
@@ -51,9 +55,6 @@ function readLastVisit(): string | undefined {
     return undefined;
   }
 }
-
-// Upcoming payments only need the most urgent few (sorted by the server).
-const UPCOMING_SCAN_LIMIT = 20;
 
 export default function Dashboard() {
   const { user, wishlist } = useApp();
@@ -79,149 +80,165 @@ export default function Dashboard() {
   const showAttention = show("attention");
   const showDocuments = show("documents");
   const showPortfolio = show("portfolio");
-  // Installment plans have no backend yet: live, every plot is outright and
-  // nothing is ever due.
-  const showUpcoming = showPortfolio && installmentsAvailable();
+  // Until /api/me/attention exists, purchases still under way are the live
+  // attention list (and join the demo one). Once it exists it covers them.
+  const purchaseItems = show("checkout") && !isLive("attention");
 
-  const attention = useFetch(
-    () => (showAttention ? fetchAttentionItems({ wishlist, documentsSince: lastVisitAt }) : Promise.resolve([])),
-    [wishlist, lastVisitAt, showAttention]);
+  const attention = useFetch(async () => {
+    const [general, purchases] = await Promise.all([
+      showAttention ? fetchAttentionItems({ wishlist, documentsSince: lastVisitAt }) : Promise.resolve([]),
+      purchaseItems ? fetchPurchaseAttention() : Promise.resolve([]),
+    ]);
+    // Paying for a held plot can't wait; everything else keeps its order.
+    return [...purchases.filter((i) => i.severity === "urgent"), ...general, ...purchases.filter((i) => i.severity !== "urgent")];
+  }, [wishlist, lastVisitAt, showAttention, purchaseItems]);
 
   const overview = useFetch(async () => {
-    const [summary, plotsPage, documentsPage] = await Promise.all([
+    const [summary, documentsPage] = await Promise.all([
       showPortfolio ? fetchPortfolioSummary() : Promise.resolve(null),
-      showUpcoming ? fetchOwnedPlots({ sort: "urgency", limit: UPCOMING_SCAN_LIMIT }) : Promise.resolve({ items: [] }),
-      showDocuments ? fetchDocuments({ limit: 3 }) : Promise.resolve({ items: [] }), // already newest-first
+      showDocuments ? fetchDocuments({ limit: 3 }) : Promise.resolve({ items: [] as Document[] }), // already newest-first
     ]);
-    return { summary, plots: plotsPage.items, documents: documentsPage.items };
+    return { summary, documents: documentsPage.items };
   });
 
-  const plots = overview.data?.plots ?? [];
-  const documents = overview.data?.documents ?? [];
-  const byCurrency = overview.data?.summary?.byCurrency ?? [];
-  const awaiting = overview.data?.summary?.awaitingVerification ?? 0;
-  const upcomingPayments = plots
-    .filter(isActivelyOwned)
-    .filter((p) => p.nextDueDate && p.nextDueAmount !== undefined)
-    .sort((a, b) => urgencyRank(a) - urgencyRank(b))
-    .slice(0, 3);
-
-  const live = isLive("checkout");
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="mb-8">
-        <h1 className="font-display text-3xl text-[var(--foreground)]">
-          Good {getGreeting()}, {user?.name.split(" ")[0]}.
-        </h1>
-        <p className="text-[var(--muted-foreground)] text-sm mt-1">
-          {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
-        </p>
+    <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="font-display text-3xl text-[var(--foreground)]">
+            Good {getGreeting()}, {user?.name.split(" ")[0]}.
+          </h1>
+          <p className="text-[var(--muted-foreground)] text-sm mt-1">
+            {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+          </p>
+        </div>
+        <LinkButton to="/marketplace" className="max-sm:hidden">Browse the marketplace</LinkButton>
       </div>
 
-      {showAttention && <AttentionStrip items={attention.data ?? []} loading={attention.loading} error={attention.error} />}
-
-      {/* One thin line, not a stat grid — the numbers themselves belong to
-          the portfolio, which owns the record. The server's totals, grouped
-          per currency actually held; never summed across currencies. */}
-      {showPortfolio && (
-        <div className="mb-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-y border-[var(--border)] py-3">
-          {overview.loading ? (
-            <span className="text-sm text-[var(--muted-foreground)]">Loading your portfolio…</span>
-          ) : byCurrency.length === 0 && awaiting === 0 ? (
-            <>
-              <span className="text-sm text-[var(--muted-foreground)]">You don't own any plots yet.</span>
-              <Link to="/marketplace" className="text-xs font-semibold text-[var(--accent)] hover:underline">Browse the marketplace →</Link>
-            </>
-          ) : (
-            <>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                {byCurrency.map((g) => (
-                  <span key={g.currency} className="text-sm text-[var(--foreground)]">
-                    {g.count} plot{g.count === 1 ? "" : "s"} · <span className="font-mono-data">{formatAmount(g.totalPaid, g.currency)}</span> paid of <span className="font-mono-data">{formatAmount(g.totalValue, g.currency)}</span>
-                  </span>
-                ))}
-                {awaiting > 0 && (
-                  <span className="text-sm text-[var(--muted-foreground)]">{awaiting} purchase{awaiting === 1 ? "" : "s"} awaiting verification</span>
-                )}
-              </div>
-              <Link to="/portfolio" className="text-xs font-semibold text-[var(--accent)] hover:underline">View your portfolio →</Link>
-            </>
-          )}
-        </div>
+      {(showAttention || purchaseItems) && (
+        <AttentionStrip items={attention.data ?? []} loading={attention.loading} error={!!attention.error} />
       )}
 
-      {live && (
-        // With a backend: the buyer's purchases too, including unpaid holds
-        // the portfolio leaves out.
-        <section className="mb-8" aria-labelledby="purchases-heading">
-          <div className="flex items-center justify-between mb-3">
-            <h2 id="purchases-heading" className="font-semibold text-sm">Your purchases</h2>
-            <Link to="/purchases" className="text-xs text-[var(--accent)] hover:underline">All purchases</Link>
-          </div>
-          <PurchaseList pageSize={5} showMore="link" density="compact" />
-        </section>
-      )}
-
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* Upcoming payments — real plots with a real next due date, ordered
-            by the same urgency rank Portfolio.tsx uses. Hidden live:
-            installment plans have no backend yet. */}
-        {showUpcoming && (
-        <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
-          <h3 className="font-semibold text-sm mb-4">Upcoming payments</h3>
-          {overview.loading ? (
-            <p className="text-sm text-[var(--muted-foreground)]">Loading…</p>
-          ) : upcomingPayments.length === 0 ? (
-            <p className="text-sm text-[var(--muted-foreground)]">No payments due right now.</p>
-          ) : (
-            <div className="space-y-3">
-              {upcomingPayments.map((plot) => (
-                <div key={plot.id} className="flex items-center justify-between gap-3 text-sm">
-                  <div className="min-w-0">
-                    <div className="font-medium truncate">{plot.estate} — {plot.plotLabel}</div>
-                    <div className="text-xs text-[var(--muted-foreground)] font-mono-data">Due {plot.nextDueDate}</div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="font-mono-data font-semibold">{plot.nextDueAmount !== undefined ? formatAmount(plot.nextDueAmount, plot.currency) : "—"}</div>
-                    <Link to={`/portfolio/${plot.id}`} className="text-xs text-[var(--accent)] hover:underline">Pay now</Link>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        )}
-
-        {/* Recent documents — only when the vault has a backend (or in demo mode).
-            Alone (live: no upcoming payments), it takes the full width, like
-            Your purchases above. */}
+      <div className={`grid gap-6 items-start ${showDocuments ? "lg:grid-cols-[minmax(0,1fr)_320px]" : ""}`}>
         {showDocuments && (
-        <div className={`bg-[var(--card)] rounded-xl border border-[var(--border)] p-5${showUpcoming ? "" : " lg:col-span-2"}`}>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-sm">Recent documents</h3>
-            <Link to="/documents" className="text-xs text-[var(--accent)] hover:underline">Vault</Link>
+          <div className="min-w-0 max-lg:order-2">
+            <RecentDocuments documents={overview.data?.documents ?? []} loading={overview.loading} />
           </div>
-          {overview.loading ? (
-            <p className="text-sm text-[var(--muted-foreground)]">Loading…</p>
-          ) : documents.length === 0 ? (
-            <p className="text-sm text-[var(--muted-foreground)]">No documents yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {documents.map((d) => (
-                <div key={d.id} className="flex items-center gap-3 text-sm py-1.5">
-                  <DocTypeChip type={d.type} size="sm" />
-                  <div className="flex-1 min-w-0">
-                    <div className="truncate text-xs font-medium text-[var(--foreground)]">{d.title}</div>
-                    <div className="text-xs text-[var(--muted-foreground)]">{formatDay(d.date)}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
         )}
+        <div className="space-y-6">
+          {showPortfolio && <PortfolioCard summary={overview.data?.summary ?? null} loading={overview.loading} />}
+          <QuickActions />
+        </div>
       </div>
     </div>
+  );
+}
+
+// The record in one card: how many plots, and what's paid of what they're
+// worth. The server's totals, per currency actually held; never summed
+// across currencies. The portfolio page has the rest.
+function PortfolioCard({ summary, loading }: { summary: PortfolioSummary | null; loading: boolean }) {
+  const groups = summary?.byCurrency ?? [];
+  const awaiting = summary?.awaitingVerification ?? 0;
+  const owned = groups.reduce((n, g) => n + g.count, 0);
+  return (
+    <Card as="section" aria-labelledby="portfolio-heading">
+      <div className="flex items-center justify-between mb-3">
+        <h2 id="portfolio-heading" className="font-semibold text-[var(--foreground)]">Your portfolio</h2>
+        <BriefcaseIcon size={18} className="text-[var(--muted-foreground)]" />
+      </div>
+      {loading ? <Loading /> : owned === 0 && awaiting === 0 ? (
+        <>
+          <p className="text-sm text-[var(--muted-foreground)] mb-3">You don't own any plots yet.</p>
+          <TextLink to="/marketplace" className="text-sm font-medium">Browse the marketplace →</TextLink>
+        </>
+      ) : (
+        <>
+          <div className="flex items-baseline gap-2 mb-3">
+            <span className="font-display text-4xl text-[var(--foreground)]">{owned}</span>
+            <span className="text-sm text-[var(--muted-foreground)]">plot{owned === 1 ? "" : "s"} owned</span>
+          </div>
+          <div className="space-y-4">
+            {groups.map((g) => {
+              const pct = g.totalValue > 0 ? Math.min(100, Math.round((g.totalPaid / g.totalValue) * 100)) : 0;
+              return (
+                <div key={g.currency}>
+                  <dl className="space-y-1.5 text-sm">
+                    <div className="flex justify-between gap-3"><dt className="text-[var(--muted-foreground)]">Paid</dt><dd className="font-mono-data text-[var(--foreground)]">{formatAmount(g.totalPaid, g.currency)}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-[var(--muted-foreground)]">Total value</dt><dd className="font-mono-data text-[var(--foreground)]">{formatAmount(g.totalValue, g.currency)}</dd></div>
+                  </dl>
+                  <div className="h-2 rounded-full bg-[var(--muted)] overflow-hidden mt-3" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`Paid in ${g.currency}`}>
+                    <div className="h-full bg-[var(--primary)]" style={{ width: `${pct}%` }} />
+                  </div>
+                  <p className="text-xs text-[var(--muted-foreground)] mt-2">{pct === 100 ? "Fully paid" : `${pct}% paid`}{groups.length > 1 ? ` · ${g.currency}` : ""}</p>
+                </div>
+              );
+            })}
+          </div>
+          {awaiting > 0 && <p className="text-sm text-[var(--muted-foreground)] mt-3">{awaiting} purchase{awaiting === 1 ? "" : "s"} awaiting verification</p>}
+          <TextLink to="/portfolio" className="inline-block text-sm font-medium mt-3">View portfolio →</TextLink>
+        </>
+      )}
+    </Card>
+  );
+}
+
+function RecentDocuments({ documents, loading }: { documents: Document[]; loading: boolean }) {
+  return (
+    <Card as="section" aria-labelledby="documents-heading">
+      <div className="flex items-center justify-between mb-1">
+        <h2 id="documents-heading" className="font-semibold text-[var(--foreground)]">Recent documents</h2>
+        <TextLink to="/documents" className="text-sm font-medium">Open vault →</TextLink>
+      </div>
+      {loading ? <div className="mt-3"><Loading /></div> : documents.length === 0 ? (
+        <p className="text-sm text-[var(--muted-foreground)] mt-3">No documents yet. Your receipts and letters appear here once a purchase is verified.</p>
+      ) : (
+        <ul className="divide-y divide-[var(--border)]">
+          {documents.map((d) => {
+            const plot = plotLine(d);
+            return (
+              <li key={d.id} className="flex items-center gap-3 py-3 last:pb-0">
+                <DocTypeChip type={d.type} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-[var(--foreground)] truncate">{d.number ? `${DOCUMENT_TYPE_LABELS[d.type]} ${d.number}` : d.title}</div>
+                  <div className="text-xs text-[var(--muted-foreground)] truncate">{[d.number ? plot : DOCUMENT_TYPE_LABELS[d.type], formatDay(d.date)].filter(Boolean).join(" · ")}</div>
+                </div>
+                <div className="shrink-0 max-sm:hidden"><DocumentActions doc={d} /></div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+// Things to do that the side navigation doesn't already offer as a page.
+const QUICK_ACTIONS: [React.ReactNode, string, string, string][] = [
+  [<CalendarIcon key="c" size={18} />, "Book a site inspection", "See the land before you buy", "/inspections/new"],
+  [<ShieldCheckIcon key="s" size={18} />, "Verify a document", "Check a HomeTrue receipt or letter is genuine", "/verify"],
+  [<MessageIcon key="m" size={18} />, "Get help", "Message HomeTrue support", "/support"],
+];
+
+function QuickActions() {
+  return (
+    <Card as="section" aria-labelledby="actions-heading">
+      <h2 id="actions-heading" className="font-semibold text-[var(--foreground)] mb-1">Quick actions</h2>
+      <ul className="divide-y divide-[var(--border)] max-lg:grid max-lg:grid-cols-3 max-lg:gap-2 max-lg:divide-y-0 max-lg:mt-3">
+        {QUICK_ACTIONS.map(([icon, title, hint, to]) => (
+          <li key={to}>
+            <Link to={to} className="group flex items-center gap-3 py-3 last:pb-0 max-lg:flex-col max-lg:text-center max-lg:gap-1.5 max-lg:p-3 max-lg:rounded-lg max-lg:border max-lg:border-[var(--border)] max-lg:h-full">
+              <span className="w-9 h-9 shrink-0 rounded-lg bg-[var(--secondary)] text-[var(--secondary-foreground)] flex items-center justify-center">{icon}</span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm font-medium text-[var(--foreground)] group-hover:underline">{title}</span>
+                <span className="block text-xs text-[var(--muted-foreground)] max-lg:hidden">{hint}</span>
+              </span>
+              <ChevronRightIcon size={16} className="text-[var(--muted-foreground)] max-lg:hidden" />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }
 

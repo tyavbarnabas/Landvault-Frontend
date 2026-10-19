@@ -595,3 +595,45 @@ describe("Super Admin refunds", () => {
     expect(refundStartedMessage(REFUND as never)).toMatch(/asked for an account/);
   });
 });
+
+describe("the dashboard's live attention list: purchases still under way", () => {
+  const purchase = (id: string, status: string, payment: Record<string, unknown> | null = null) => ({
+    id, reference: `LV-${id}`, estateId: "e1", plotId: "p1", reservationId: "r1", basePrice: 5_000_000, cornerPremiumPct: null,
+    totalPrice: 5_000_000, currency: "NGN", intent: "development", plan: "outright", installmentMonths: null, status,
+    createdAt: "2026-10-19T09:00:00Z", payment,
+  });
+  const plotDto = { id: "p1", plotNumber: "7", blockName: "Block A", availability: "UNAVAILABLE", isCorner: false, priceTierId: "t1", nominalSizeSqm: 500, actualAreaSqm: 500, hasBoundary: true };
+
+  it("lists paying, verifying and refunds by plot; leaves finished and ended purchases out", async () => {
+    respond({
+      "GET /api/checkout/transactions/mine?limit=50": { status: 200, body: { items: [
+        purchase("a", "pending_payment"),
+        purchase("b", "awaiting_finance"),
+        purchase("c", "verified"),
+        purchase("d", "abandoned"),
+        purchase("e", "rejected", { status: "succeeded", amountPaid: 5_000_000, refundStatus: "processing", underReview: false, reviewKind: null }),
+      ], total: 5, cursor: null, hasMore: false } },
+      "GET /api/marketplace/estates/e1": { status: 200, body: LISTING },
+      "GET /api/marketplace/estates/e1/plots?limit=500": { status: 200, body: { items: [plotDto], total: 1, cursor: null, hasMore: false } },
+    });
+    const { fetchPurchaseAttention } = await import("./attentionService");
+    const items = await fetchPurchaseAttention();
+    expect(items.map((i) => [i.id, i.stage, i.severity, i.targetRoute])).toEqual([
+      ["purchase:a", "pay", "urgent", "/purchases/a"],
+      ["purchase:b", "verifying", "normal", "/purchases/b"],
+      ["purchase:e", "refund", "normal", "/purchases/e"],
+    ]);
+    expect(items[0].title).toBe("Palm Grove — Block A, Plot 7");
+    expect(items[0].actionLabel).toBe("Pay now");
+    expect(items[2].detail).toBe("Your refund is on its way.");
+  });
+
+  it("says nothing when no purchase is open, and names the estate alone if the plot can't be found", async () => {
+    respond({
+      "GET /api/checkout/transactions/mine?limit=50": { status: 200, body: { items: [purchase("b", "payment_received")], total: 1, cursor: null, hasMore: false } },
+      "GET /api/marketplace/estates/e1": { status: 200, body: LISTING },
+    });
+    const { fetchPurchaseAttention } = await import("./attentionService");
+    expect((await fetchPurchaseAttention()).map((i) => i.title)).toEqual(["Palm Grove"]);
+  });
+});
