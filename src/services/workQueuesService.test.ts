@@ -16,6 +16,13 @@ describe("work queues", () => {
     expect(conflicts.urgent).toBe(conflicts.count! > 0);
   });
 
+  it("counts refunds not started and accounts buyers have given, waiting to be sent", async () => {
+    const refunds = (await fetchWorkQueues(ALL)).find((q) => q.kind === "refunds")!;
+    // Demo: two payments owed back, and one buyer's account waiting to be checked and sent.
+    expect(refunds.count).toBe(3);
+    expect(refunds.detail).toContain("1 ready to send");
+  });
+
   it("shows a role only the queues it can open", async () => {
     const queues = await fetchWorkQueues(["admin.dashboard.view", ADMIN_PAYOUTS_PERMISSION]);
     expect(queues.map((q) => q.group)).toEqual(["money", "money", "money"]);

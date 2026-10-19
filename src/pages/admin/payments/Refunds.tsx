@@ -7,188 +7,276 @@
 //   All   every refund, by status. A bank-transfer refund waits for the
 //         buyer's account (`needs-attention`); once given, the admin checks
 //         the bank's name for it against the buyer and sends it.
+//
+// Laid out from the Figma money-screen proposal: four figures, and one "To
+// do" tab with everything waiting on HomeTrue — refunds not started, and
+// accounts buyers have given that need checking and sending (before, those
+// were only under All refunds). The other stages are counted tabs.
 
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { formatInCurrency } from "../../../data/mockData";
 import { ApiError, ApiTransportError } from "../../../lib/apiClient";
 import { useFetch } from "../../../lib/useFetch";
+import { formatDay, formatDayTime } from "../../../lib/formatDate";
+import { withCount } from "../../../lib/useTabCounts";
 import LoadError from "../../../components/LoadError";
 import TabBar from "../../../components/ui/Tabs";
 import EmptyState from "../../../components/ui/EmptyState";
 import Dialog, { DialogActions } from "../../../components/ui/Dialog";
 import Page, { Loading } from "../../../components/ui/Page";
-import { InfoBox, ListCard } from "../../../components/ui/Card";
+import Card, { InfoBox } from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import Alert from "../../../components/ui/Alert";
-import { Select } from "../../../components/ui/Field";
+import Figure, { Figures } from "../../../components/ui/Figure";
+import DisclosureTable, { DisclosureRow, TableRow } from "../../../components/ui/DisclosureTable";
 import StatusBadge, { refundStatusBadge } from "../../../components/StatusBadge";
 import ProblemNote, { type MoneyProblem } from "../../../components/payments/ProblemNote";
+import { CheckIcon, ClockIcon, ReceiptIcon, TrendingUpIcon } from "../../../components/icons";
 import { paidWithLabel } from "../../../services/financeService";
 import {
-  fetchRefunds, fetchRefundsDue, sendRefundToAccount, startRefund, type AdminRefund, type RefundDue, type RefundFilter,
+  fetchRefunds, fetchRefundsDue, refundStage, sendRefundToAccount, startRefund,
+  type AdminRefund, type RefundDue, type RefundStage,
 } from "../../../services/adminPayoutsService";
 
-type Tab = "due" | "all";
-const TABS: { id: Tab; label: string }[] = [{ id: "due", label: "Refunds due" }, { id: "all", label: "All refunds" }];
+type Tab = "todo" | Exclude<RefundStage, "ready_to_send"> | "all";
+const TABS: { id: Tab; label: string }[] = [
+  { id: "todo", label: "To do" },
+  { id: "waiting_on_buyer", label: "Waiting on buyer" },
+  { id: "in_progress", label: "In progress" },
+  { id: "refunded", label: "Refunded" },
+  { id: "failed", label: "Failed" },
+  { id: "all", label: "All" },
+];
 const money = (n: number, c: string) => formatInCurrency(n, c);
-const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : null);
 const buyerOf = (r: { buyerName: string | null; buyerEmail: string | null }) => [r.buyerName, r.buyerEmail].filter(Boolean).join(" · ") || "Buyer not shown";
 
+function totals(items: { amount: number; currency: string }[]): string {
+  const by = new Map<string, number>();
+  for (const i of items) by.set(i.currency, (by.get(i.currency) ?? 0) + i.amount);
+  return by.size ? [...by].map(([c, n]) => money(n, c)).join(" + ") : money(0, "NGN");
+}
+
 export default function Refunds() {
-  const [tab, setTab] = useState<Tab>("due");
+  const [params, setParams] = useSearchParams();
+  const tab = (TABS.find((t) => t.id === params.get("tab"))?.id ?? "todo") as Tab;
+  const due = useFetch(() => fetchRefundsDue(), []);
+  const refunds = useFetch(() => fetchRefunds("all"), []);
+  // Held here: a row that's acted on leaves its list on refresh.
+  const [notice, setNotice] = useState("");
+  const refresh = (message: string) => { setNotice(message); due.refetch(); refunds.refetch(); };
+
+  const started = refunds.data ?? [];
+  const inStage = (st: RefundStage) => started.filter((r) => refundStage(r) === st);
+  const toSend = inStage("ready_to_send");
+  const count: Record<Tab, number | undefined> = {
+    todo: due.data && refunds.data ? due.data.length + toSend.length : undefined,
+    waiting_on_buyer: refunds.data ? inStage("waiting_on_buyer").length : undefined,
+    in_progress: refunds.data ? inStage("in_progress").length : undefined,
+    refunded: refunds.data ? inStage("refunded").length : undefined,
+    failed: refunds.data ? inStage("failed").length : undefined,
+    all: refunds.data?.length,
+  };
+
   return (
     <Page title="Refunds" description="Return buyers' money in full when a purchase is rejected or a late payment isn't allocated.">
-      <TabBar tabs={TABS} active={tab} onActivate={setTab} ariaLabel="Refunds" divider />
-      {tab === "due" ? <Due /> : <All />}
+      {due.data && refunds.data && (
+        <Figures>
+          <Figure label="Not started" icon={<ReceiptIcon size={14} />} mono value={totals(due.data)} sub={due.data.length ? `${due.data.length} payment${due.data.length === 1 ? "" : "s"} owed back` : "Nothing owed"} />
+          <Figure label="Ready to send" icon={<CheckIcon size={14} />} mono tone={toSend.length ? "warning" : "neutral"} value={totals(toSend)}
+            sub={toSend.length ? `${toSend.length} buyer${toSend.length === 1 ? "" : "s"} gave an account — check and send` : "No accounts waiting"} />
+          <Figure label="Waiting on buyers" icon={<ClockIcon size={14} />} value={String(count.waiting_on_buyer)} sub="Bank-transfer refunds without an account yet" />
+          <Figure label="In progress" icon={<TrendingUpIcon size={14} />} value={String(count.in_progress)} sub="With Paystack or the bank" />
+        </Figures>
+      )}
+      <TabBar tabs={TABS.map((t) => ({ id: t.id, label: withCount(t.label, count[t.id]) }))} active={tab}
+        onActivate={(t) => { setNotice(""); setParams(t === "todo" ? {} : { tab: t }, { replace: true }); }} ariaLabel="Refunds" divider />
+      <div id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`} className="space-y-3">
+        {notice && <Alert tone="info" role="status" className="font-medium">{notice}</Alert>}
+        {(due.loading && !due.data) || (refunds.loading && !refunds.data) ? <Loading />
+          : due.error ? <LoadError error={due.errorValue} what="refunds due" onRetry={due.refetch} />
+            : refunds.error ? <LoadError error={refunds.errorValue} what="refunds" onRetry={refunds.refetch} />
+              : tab === "todo" ? <ToDo due={due.data!} toSend={toSend} onDone={refresh} />
+                : <RefundList refunds={tab === "all" ? started : inStage(tab)} tab={tab} />}
+      </div>
     </Page>
   );
 }
 
-// ─── Refunds due ─────────────────────────────────────────────────────────────
+// ─── To do: everything waiting on HomeTrue ───────────────────────────────────
 
-function Due() {
-  const list = useFetch(() => fetchRefundsDue(), []);
-  const [notice, setNotice] = useState("");
-  const banner = notice && <Alert tone="info" role="status" className="font-medium mb-3">{notice}</Alert>;
-  if (list.loading && !list.data) return <Loading />;
-  if (list.error) return <LoadError error={list.errorValue} what="refunds due" onRetry={list.refetch} />;
-  if (!list.data?.length) return <>{banner}<EmptyState title="No refunds due" description="Payments owed back to buyers appear here." /></>;
+function ToDo({ due, toSend, onDone }: { due: RefundDue[]; toSend: AdminRefund[]; onDone: (message: string) => void }) {
+  if (!due.length && !toSend.length) {
+    return <Card padding="sm"><EmptyState title="Nothing to do" description="Payments owed back to buyers, and accounts buyers give for a refund, appear here." /></Card>;
+  }
   return (
-    <>
-      {banner}
-      <ul className="space-y-3">
-        {list.data.map((d) => <DueCard key={d.paymentId} due={d} onDone={(m) => { setNotice(m); list.refetch(); }} />)}
-      </ul>
-    </>
+    <div className="space-y-6">
+      {toSend.length > 0 && (
+        <section aria-labelledby="send-heading" className="space-y-3">
+          <h2 id="send-heading" className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Account given — check and send</h2>
+          <ul className="space-y-3">{toSend.map((r) => <SendCard key={r.id} refund={r} onDone={onDone} />)}</ul>
+        </section>
+      )}
+      {due.length > 0 && (
+        <section aria-labelledby="due-heading" className="space-y-3">
+          <h2 id="due-heading" className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Not started</h2>
+          <DisclosureTable columns={DUE_COLUMNS} grid={DUE_GRID} label="Refunds not started">
+            {due.map((d) => <DueRow key={d.paymentId} due={d} onDone={onDone} />)}
+          </DisclosureTable>
+        </section>
+      )}
+    </div>
   );
 }
 
-function DueCard({ due, onDone }: { due: RefundDue; onDone: (message: string) => void }) {
+const DUE_COLUMNS = ["Buyer", "Paid with", "Why it's owed", "Amount"];
+const DUE_GRID = "lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,2fr)_minmax(0,1fr)_auto]";
+
+function DueRow({ due, onDone }: { due: RefundDue; onDone: (message: string) => void }) {
   const [confirm, setConfirm] = useState(false);
   const paidWith = paidWithLabel(due.channel, due.last4);
+  const cells = [
+    <>
+      <div className="font-semibold text-[var(--foreground)]">{due.buyerName ?? "Buyer name not on record"}</div>
+      {due.buyerEmail && <div className="text-xs text-[var(--muted-foreground)]">{due.buyerEmail}</div>}
+    </>,
+    <>
+      <div className="text-sm text-[var(--foreground)] first-letter:uppercase">{paidWith ?? "—"}</div>
+      <div className="text-xs text-[var(--muted-foreground)]"><span className="font-mono-data">{due.paymentReference}</span>{due.paidAt ? ` · ${formatDay(due.paidAt)}` : ""}</div>
+    </>,
+    <span className="text-sm text-[var(--muted-foreground)]">{due.reason ?? "—"}</span>,
+    <span className="font-mono-data font-medium text-[var(--foreground)]">{money(due.amount, due.currency)}</span>,
+  ];
   return (
-    <ListCard className="space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="font-semibold text-[var(--foreground)]">{buyerOf(due)}</div>
-          <div className="text-xs text-[var(--muted-foreground)]">
-            <span className="font-mono-data">{due.paymentReference}</span>{due.paidAt ? ` · paid ${when(due.paidAt)}` : ""}{paidWith ? ` with ${paidWith}` : ""}
-          </div>
-        </div>
-        <div className="font-mono-data text-lg">{money(due.amount, due.currency)}</div>
-      </div>
-      {due.reason && <p className="text-sm text-[var(--foreground)]">{due.reason}</p>}
-      {due.channel === "bank_transfer" && (
-        <p className="text-xs text-[var(--muted-foreground)]">Paid by bank transfer: once started, the buyer is asked for an account in their name to receive it.</p>
+    <TableRow
+      grid={DUE_GRID}
+      cells={cells}
+      action={<Button onClick={() => setConfirm(true)}>Refund</Button>}
+      below={(due.channel === "bank_transfer" || due.lastAttempt || confirm) && (
+        <>
+          {due.channel === "bank_transfer" && (
+            <p className="text-xs text-[var(--muted-foreground)]">Paid by bank transfer: once started, the buyer is asked for an account in their name to receive it.</p>
+          )}
+          {due.lastAttempt && (
+            <p className="text-xs text-[var(--muted-foreground)]">
+              Last attempt: {refundStatusBadge(due.lastAttempt.status).label.toLowerCase()}{due.lastAttempt.gatewayMessage ? ` — Paystack: “${due.lastAttempt.gatewayMessage}”` : ""}
+            </p>
+          )}
+          {confirm && (
+            <ActionDialog title="Refund this payment?" confirmLabel={`Refund ${money(due.amount, due.currency)}`} onClose={() => setConfirm(false)}
+              action={() => startRefund(due.paymentReference)}
+              onDone={(r) => onDone(refundStartedMessage(r))}>
+              Returns the full <strong>{money(due.amount, due.currency)}</strong> to {buyerOf(due)}{paidWith ? `, back to the ${paidWith}` : ""}.
+            </ActionDialog>
+          )}
+        </>
       )}
-      {due.lastAttempt && (
-        <p className="text-xs text-[var(--muted-foreground)]">
-          Last attempt: {refundStatusBadge(due.lastAttempt.status).label.toLowerCase()}{due.lastAttempt.gatewayMessage ? ` — Paystack: “${due.lastAttempt.gatewayMessage}”` : ""}
-        </p>
-      )}
-      <Button onClick={() => setConfirm(true)}>Refund {money(due.amount, due.currency)}</Button>
-      {confirm && (
-        <ActionDialog title="Refund this payment?" confirmLabel={`Refund ${money(due.amount, due.currency)}`} onClose={() => setConfirm(false)}
-          action={() => startRefund(due.paymentReference)}
-          onDone={(r) => onDone(refundStartedMessage(r))}>
-          Returns the full <strong>{money(due.amount, due.currency)}</strong> to {buyerOf(due)}{paidWith ? `, back to the ${paidWith}` : ""}.
-        </ActionDialog>
-      )}
-    </ListCard>
+    />
   );
 }
 
 export function refundStartedMessage(r: AdminRefund): string {
   const amount = money(r.amount, r.currency);
   switch (r.status) {
-    case "needs-attention": return `Refund of ${amount} started. It was paid by bank transfer, so the buyer has been asked for an account — it appears under All refunds when they give one.`;
+    case "needs-attention": return `Refund of ${amount} started. It was paid by bank transfer, so the buyer has been asked for an account — it comes back to To do when they give one.`;
     case "processed": return `Refunded ${amount}.`;
     case "failed": return `The refund failed${r.gatewayMessage ? `: “${r.gatewayMessage}”` : "."} You can try again.`;
     default: return `Refund of ${amount} is on its way${r.expectedAt ? ` — expected by ${new Date(r.expectedAt).toLocaleDateString()}` : ""}.`;
   }
 }
 
-// ─── All refunds ─────────────────────────────────────────────────────────────
-
-const FILTERS: { id: RefundFilter; label: string }[] = [
-  { id: "all", label: "All" }, { id: "needs-attention", label: "Needs an account" }, { id: "processing", label: "Processing" },
-  { id: "pending", label: "Pending" }, { id: "sending", label: "Sending" }, { id: "processed", label: "Refunded" }, { id: "failed", label: "Failed" },
-];
-
-function All() {
-  const [filter, setFilter] = useState<RefundFilter>("all");
-  const list = useFetch(() => fetchRefunds(filter), [filter]);
+// A buyer gave an account for a bank-transfer refund: compare, then send.
+function SendCard({ refund: r, onDone }: { refund: AdminRefund; onDone: (message: string) => void }) {
+  const [confirm, setConfirm] = useState(false);
+  const account = r.account!;
   return (
-    <div className="space-y-4">
-      <label className="flex items-center gap-2 text-sm">
-        <span className="text-[var(--muted-foreground)]">Show</span>
-        <Select inputSize="sm" value={filter} onChange={(e) => setFilter(e.target.value as RefundFilter)}>
-          {FILTERS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-        </Select>
-      </label>
-      {list.loading && !list.data && <Loading />}
-      {list.error && <LoadError error={list.errorValue} what="refunds" onRetry={list.refetch} />}
-      {list.data && list.data.length === 0 && <EmptyState title="No refunds" description={filter === "all" ? "Refunds appear here once one is started." : "None with this status."} />}
-      {list.data && list.data.length > 0 && <ul className="space-y-3">{list.data.map((r) => <RefundRow key={r.id} refund={r} onChanged={list.refetch} />)}</ul>}
+    <Card as="li" className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-semibold text-[var(--foreground)]">{buyerOf(r)}</div>
+          <div className="text-xs text-[var(--muted-foreground)]">
+            {r.paymentReference ? <><span className="font-mono-data">{r.paymentReference}</span> · </> : null}started {formatDay(r.createdAt)}{r.reason ? ` · ${r.reason.toLowerCase()}` : ""}
+          </div>
+        </div>
+        <div className="font-mono-data font-medium text-lg text-[var(--foreground)]">{money(r.amount, r.currency)}</div>
+      </div>
+      <AccountCompare refund={r} />
+      {/* A warning, not a block: names are written many ways. */}
+      {r.accountNameMatchesBuyer === false && (
+        <Alert role="alert">The account name doesn't match the buyer exactly. Names are written many ways — send only if you've checked it's theirs.</Alert>
+      )}
+      <Button onClick={() => setConfirm(true)}>Send {money(r.amount, r.currency)} to this account</Button>
+      {confirm && (
+        <ActionDialog title="Send this refund?" confirmLabel={`Send ${money(r.amount, r.currency)}`} onClose={() => setConfirm(false)}
+          action={() => sendRefundToAccount(r.id)}
+          onDone={(updated) => onDone(refundStartedMessage(updated))}>
+          Sends <strong>{money(r.amount, r.currency)}</strong> to {account.bankName} · {account.accountNumber} ({account.accountName}).
+          {r.accountNameMatchesBuyer === false && <> <strong>The name doesn't match the buyer</strong> — send only if you've checked it's theirs.</>}
+        </ActionDialog>
+      )}
+    </Card>
+  );
+}
+
+function AccountCompare({ refund: r }: { refund: AdminRefund }) {
+  if (!r.account) return null;
+  return (
+    <div className="grid sm:grid-cols-2 gap-3 text-sm">
+      <InfoBox label="Buyer">
+        <div className="font-semibold">{r.buyerName ?? "Name not on record"}</div>
+        {r.buyerEmail && <div className="text-xs">{r.buyerEmail}</div>}
+      </InfoBox>
+      <InfoBox label="The bank says the account belongs to" tone="info">
+        <div className="font-semibold">{r.account.accountName}</div>
+        <div>{r.account.bankName} · <span className="font-mono-data">{r.account.accountNumber}</span></div>
+        <div className="text-xs text-[var(--muted-foreground)]">Given {formatDayTime(r.account.submittedAt)}{r.account.sentAt ? ` · sent ${formatDayTime(r.account.sentAt)}` : ""}</div>
+      </InfoBox>
     </div>
   );
 }
 
-function RefundRow({ refund: r, onChanged }: { refund: AdminRefund; onChanged: () => void }) {
-  const [confirm, setConfirm] = useState(false);
-  const [outcome, setOutcome] = useState("");
-  const badge = refundStatusBadge(r.status);
-  const awaitingSend = r.status === "needs-attention" && r.account && !r.account.sentAt;
+// ─── Every other stage: a table, each refund opening in place ────────────────
+
+const LIST_COLUMNS = ["Buyer", "Amount", "Payment", "Started", "Status"];
+const LIST_GRID = "lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.1fr)_16px]";
+const EMPTY: Record<Exclude<Tab, "todo">, string> = {
+  waiting_on_buyer: "Bank-transfer refunds wait here until the buyer gives an account.",
+  in_progress: "Refunds with Paystack or the bank appear here.",
+  refunded: "Finished refunds appear here.",
+  failed: "No refund has failed.",
+  all: "Refunds appear here once one is started.",
+};
+
+function RefundList({ refunds, tab }: { refunds: AdminRefund[]; tab: Exclude<Tab, "todo"> }) {
+  if (!refunds.length) return <Card padding="sm"><EmptyState title="None" description={EMPTY[tab]} /></Card>;
   return (
-    <ListCard className="space-y-3">
-      <div className="flex items-start gap-4">
-        <div className="flex-1 min-w-0">
-          <div className="font-semibold text-[var(--foreground)]">
-            <span className="font-mono-data">{money(r.amount, r.currency)}</span> <span className="font-normal">· {buyerOf(r)}</span>
-          </div>
-          <div className="text-xs text-[var(--muted-foreground)] mt-0.5">
-            {r.paymentReference ? <><span className="font-mono-data">{r.paymentReference}</span> · </> : null}
-            started {when(r.createdAt)}{r.expectedAt && r.status !== "processed" ? ` · expected by ${when(r.expectedAt)}` : ""}{r.refundedAt ? ` · refunded ${when(r.refundedAt)}` : ""}
-          </div>
-        </div>
-        <StatusBadge label={badge.label} variant={badge.variant} />
-      </div>
-      {r.reason && <p className="text-xs text-[var(--foreground)]">{r.reason}</p>}
-      {r.gatewayMessage && r.status === "failed" && <p className="text-xs text-[var(--error-text)]">Paystack: “{r.gatewayMessage}”</p>}
-
-      {r.status === "needs-attention" && !r.account && (
-        <Alert>Waiting for the buyer to give a bank account.</Alert>
-      )}
-      {r.account && (
-        <div className="grid sm:grid-cols-2 gap-3 text-sm">
-          <InfoBox label="Buyer">
-            <div className="font-semibold">{r.buyerName ?? "Name not on record"}</div>
-            {r.buyerEmail && <div className="text-xs">{r.buyerEmail}</div>}
-          </InfoBox>
-          <InfoBox label="The bank says the account belongs to" tone="info">
-            <div className="font-semibold">{r.account.accountName}</div>
-            <div>{r.account.bankName} · <span className="font-mono-data">{r.account.accountNumber}</span></div>
-            <div className="text-xs text-[var(--muted-foreground)]">Given {when(r.account.submittedAt)}{r.account.sentAt ? ` · sent ${when(r.account.sentAt)}` : ""}</div>
-          </InfoBox>
-        </div>
-      )}
-      {/* A warning, not a block: names are written many ways. */}
-      {r.accountNameMatchesBuyer === false && (
-        <Alert role="alert">The account name doesn't match the buyer.</Alert>
-      )}
-
-      {outcome ? <p className="text-sm font-medium" role="status">{outcome}</p> : awaitingSend && (
-        <Button onClick={() => setConfirm(true)}>Send the refund to this account</Button>
-      )}
-      {confirm && r.account && (
-        <ActionDialog title="Send this refund?" confirmLabel={`Send ${money(r.amount, r.currency)}`} onClose={() => setConfirm(false)}
-          action={() => sendRefundToAccount(r.id)}
-          onDone={(updated) => { setOutcome(refundStartedMessage(updated)); onChanged(); }}>
-          Sends <strong>{money(r.amount, r.currency)}</strong> to {r.account.bankName} · {r.account.accountNumber} ({r.account.accountName}).
-          {r.accountNameMatchesBuyer === false && <> <strong>The name doesn't match the buyer</strong> — send only if you've checked it's theirs.</>}
-        </ActionDialog>
-      )}
-    </ListCard>
+    <DisclosureTable columns={LIST_COLUMNS} grid={LIST_GRID} label="Refunds">
+      {refunds.map((r) => {
+        const stage = refundStage(r);
+        const cells = [
+          <>
+            <div className="font-semibold text-[var(--foreground)]">{r.buyerName ?? "Buyer name not on record"}</div>
+            {r.buyerEmail && <div className="text-xs text-[var(--muted-foreground)]">{r.buyerEmail}</div>}
+          </>,
+          <span className="font-mono-data font-medium text-[var(--foreground)]">{money(r.amount, r.currency)}</span>,
+          <span className="font-mono-data text-xs text-[var(--muted-foreground)]">{r.paymentReference ?? "—"}</span>,
+          <span className="text-sm text-[var(--muted-foreground)]"><span className="lg:hidden">Started </span>{formatDay(r.createdAt)}</span>,
+          stage === "ready_to_send" ? <StatusBadge label="Ready to send" variant="warning" /> : <StatusBadge {...refundStatusBadge(r.status)} />,
+        ];
+        return (
+          <DisclosureRow key={r.id} id={`refund-${r.id}`} grid={LIST_GRID} cells={cells}>
+            {r.reason && <p className="text-sm text-[var(--foreground)]">{r.reason}</p>}
+            <p className="text-xs text-[var(--muted-foreground)]">
+              Started {formatDayTime(r.createdAt)}{r.expectedAt && r.status !== "processed" ? ` · expected by ${formatDayTime(r.expectedAt)}` : ""}{r.refundedAt ? ` · refunded ${formatDayTime(r.refundedAt)}` : ""}
+            </p>
+            {r.gatewayMessage && r.status === "failed" && <p className="text-sm text-[var(--error-text)]">Paystack: “{r.gatewayMessage}”</p>}
+            {stage === "waiting_on_buyer" && <Alert>Waiting for the buyer to give a bank account.</Alert>}
+            {stage === "ready_to_send" && <Alert tone="info">The buyer has given an account. Check and send it from To do.</Alert>}
+            <AccountCompare refund={r} />
+          </DisclosureRow>
+        );
+      })}
+    </DisclosureTable>
   );
 }
 

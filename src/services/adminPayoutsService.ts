@@ -146,6 +146,18 @@ export interface AdminRefund {
 
 export type RefundFilter = "all" | RefundStatus;
 
+// Where a started refund stands, for the Refunds screen and the dashboard.
+// A bank-transfer refund waits for the buyer's account; once they give one,
+// it waits on HomeTrue to check the name and send it.
+export type RefundStage = "ready_to_send" | "waiting_on_buyer" | "in_progress" | "refunded" | "failed";
+
+export function refundStage(r: AdminRefund): RefundStage {
+  if (r.status === "processed") return "refunded";
+  if (r.status === "failed") return "failed";
+  if (r.status === "needs-attention") return !r.account ? "waiting_on_buyer" : r.account.sentAt ? "in_progress" : "ready_to_send";
+  return "in_progress";
+}
+
 export async function fetchRefundsDue(): Promise<RefundDue[]> {
   if (!isMock("adminPayouts")) return apiClient.get<RefundDue[]>("/api/admin/refunds/due");
   return mock.due.map((d) => ({ ...d, lastAttempt: mock.refunds.find((r) => r.paymentId === d.paymentId) ?? null }));
@@ -231,7 +243,7 @@ const mock: { ready: ReadyPayout[]; payouts: Payout[]; due: RefundDue[]; refunds
       estateName: "Lekki Gardens Phase 2", plotLabel: "Block A, Plot 14", amount: 15_000_000, currency: "NGN",
       amountOwed: 15_000_000, partCount: 2, partsPaid: 0, nextPart: 1, nextPartAmount: 7_500_000, verifiedAt: "2026-10-08T10:00:00Z",
       payoutAccount: GTB, blockers: [], lastAttempt: null },
-    { transactionId: "txn-demo-11", transactionReference: "LV-DEMO0011", tenantId: "northbridge", companyName: "Northbridge Estates",
+    { transactionId: "txn-demo-11", transactionReference: "LV-DEMO0011", tenantId: "northbridge-estates", companyName: "Northbridge Estates",
       estateName: "Northbridge Court", plotLabel: "Block C, Plot 2", amount: 6_000_000, currency: "NGN",
       amountOwed: 6_000_000, partCount: 1, partsPaid: 0, nextPart: 1, nextPartAmount: 6_000_000, verifiedAt: "2026-10-07T16:00:00Z",
       payoutAccount: null, blockers: ["NO_APPROVED_PAYOUT_ACCOUNT"], lastAttempt: null },

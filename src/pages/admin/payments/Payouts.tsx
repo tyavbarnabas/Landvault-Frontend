@@ -9,75 +9,153 @@
 //             the ready list with nothing to do about it.
 //
 // The admin never types an amount or an account. The backend decides both.
+//
+// Laid out from the Figma money-screen proposal: four figures, the ready
+// sales as a table, a tab of its own for payouts left waiting for their code
+// (otherwise only findable in History), and History as a table with status
+// chips — each payout named by its company, from the tenant directory.
 
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { formatInCurrency } from "../../../data/mockData";
 import { ApiError, ApiTransportError } from "../../../lib/apiClient";
-import { useFetch } from "../../../lib/useFetch";
+import { useFetch, type UseFetchResult } from "../../../lib/useFetch";
+import { formatDay, formatDayTime } from "../../../lib/formatDate";
+import { withCount } from "../../../lib/useTabCounts";
+import { useApp } from "../../../contexts/AppContext";
 import LoadError from "../../../components/LoadError";
 import TabBar from "../../../components/ui/Tabs";
 import EmptyState from "../../../components/ui/EmptyState";
 import Dialog from "../../../components/ui/Dialog";
 import Page, { Loading } from "../../../components/ui/Page";
-import { ListCard } from "../../../components/ui/Card";
+import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
+import TextLink from "../../../components/ui/TextLink";
 import Alert from "../../../components/ui/Alert";
-import { Field, Input, Select } from "../../../components/ui/Field";
+import Figure, { Figures } from "../../../components/ui/Figure";
+import FilterChips from "../../../components/ui/FilterChips";
+import DisclosureTable, { TableRow } from "../../../components/ui/DisclosureTable";
+import { Field, Input } from "../../../components/ui/Field";
 import StatusBadge, { payoutStatusBadge } from "../../../components/StatusBadge";
 import ProblemNote, { type MoneyProblem } from "../../../components/payments/ProblemNote";
-import type { Payout } from "../../../services/financeService";
-import type { PayoutBlocker } from "../../../services/paymentTypes";
+import { AlertIcon, DownloadIcon, WalletIcon } from "../../../components/icons";
+import { failedPayouts, type Payout } from "../../../services/financeService";
+import { fetchTenants } from "../../../services/tenantsService";
+import type { PayoutBlocker, PayoutStatus } from "../../../services/paymentTypes";
 import {
   cancelPayout, fetchPayoutHistory, fetchReadyPayouts, resendPayoutOtp, sendPayout, submitPayoutOtp,
-  type PayoutFilter, type ReadyPayout,
+  type ReadyPayout,
 } from "../../../services/adminPayoutsService";
 
-type Tab = "ready" | "history";
-const TABS: { id: Tab; label: string }[] = [{ id: "ready", label: "Ready to pay out" }, { id: "history", label: "History" }];
+type Tab = "ready" | "awaiting" | "history";
+const TAB_IDS: Tab[] = ["ready", "awaiting", "history"];
 const money = (n: number, c: string) => formatInCurrency(n, c);
-const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : null);
+
+// Totals per currency, never added across currencies.
+function totals(items: { amount: number; currency: string }[]): string {
+  const by = new Map<string, number>();
+  for (const i of items) by.set(i.currency, (by.get(i.currency) ?? 0) + i.amount);
+  return by.size ? [...by].map(([c, n]) => money(n, c)).join(" + ") : money(0, "NGN");
+}
 
 const BLOCKER_TEXT: Record<PayoutBlocker, string> = {
   NO_APPROVED_PAYOUT_ACCOUNT: "The company has no approved payout account.",
   COMPANY_NOT_ACTIVE: "The company is suspended — payouts are on hold.",
   CURRENCY_NOT_SUPPORTED: "This sale isn't in naira, so it can't be paid out yet.",
 };
+const BLOCKER_SHORT: Record<PayoutBlocker, string> = {
+  NO_APPROVED_PAYOUT_ACCOUNT: "No approved account",
+  COMPANY_NOT_ACTIVE: "Company suspended",
+  CURRENCY_NOT_SUPPORTED: "Not in naira",
+};
 
 export default function Payouts() {
-  const [tab, setTab] = useState<Tab>("ready");
+  const { user } = useApp();
+  const canSeeCompanies = (user?.permissions ?? []).includes("admin.tenants.view");
+  const [params, setParams] = useSearchParams();
+  const tab = (TAB_IDS.find((t) => t === params.get("tab")) ?? "ready") as Tab;
+  const ready = useFetch(() => fetchReadyPayouts(), []);
+  const history = useFetch(() => fetchPayoutHistory("all"), []);
+  // A payout carries only its company's id; the name comes from the tenant directory.
+  const tenants = useFetch(() => (canSeeCompanies ? fetchTenants({}, { limit: 1000 }) : Promise.resolve(null)), [canSeeCompanies]);
+  const names = new Map<string, string>();
+  for (const t of tenants.data?.items ?? []) names.set(t.id, t.displayName);
+  for (const r of ready.data ?? []) if (r.companyName) names.set(r.tenantId, r.companyName);
+
+  // Held here, not on a row: a sale whose payout is in flight leaves the
+  // ready list on refresh, and its row — with any message on it — goes too.
+  const [notice, setNotice] = useState("");
+  const refresh = (message?: string) => { setNotice(message ?? ""); ready.refetch(); history.refetch(); };
+  const awaiting = (history.data ?? []).filter((p) => p.status === "awaiting_otp");
+
+  const counts: Record<Tab, number | undefined> = { ready: ready.data?.length, awaiting: history.data ? awaiting.length : undefined, history: history.data?.length };
+  const tabs = [
+    { id: "ready" as const, label: withCount("Ready to pay out", counts.ready) },
+    { id: "awaiting" as const, label: withCount("Awaiting code", counts.awaiting) },
+    { id: "history" as const, label: withCount("History", counts.history) },
+  ];
+
   return (
     <Page title="Payouts" description="Send verified sales' proceeds to developers' approved accounts. Each transfer needs Paystack's code.">
-      <TabBar tabs={TABS} active={tab} onActivate={setTab} ariaLabel="Payouts" divider />
-      {tab === "ready" ? <Ready /> : <History />}
+      {ready.data && history.data && <PayoutFigures ready={ready.data} history={history.data} awaiting={awaiting} />}
+      <TabBar tabs={tabs} active={tab} onActivate={(t) => { setNotice(""); setParams(t === "ready" ? {} : { tab: t }, { replace: true }); }} ariaLabel="Payouts" divider />
+      <div id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`} className="space-y-3">
+        {notice && <Alert tone="info" role="status" className="font-medium">{notice}</Alert>}
+        {tab === "ready" && <Ready list={ready} canSeeCompanies={canSeeCompanies} onChanged={refresh} />}
+        {tab === "awaiting" && <Awaiting list={history} payouts={awaiting} names={names} onChanged={refresh} />}
+        {tab === "history" && <History list={history} names={names} onChanged={refresh} />}
+      </div>
     </Page>
+  );
+}
+
+// A sale whose payout is waiting for its code is off the ready list, so the
+// figures say so rather than reading as if the money were no longer owed.
+function PayoutFigures({ ready, history, awaiting }: { ready: ReadyPayout[]; history: Payout[]; awaiting: Payout[] }) {
+  const owed = ready.map((r) => ({ amount: r.amountOwed ?? r.amount, currency: r.currency }));
+  const sendable = ready.filter((r) => !r.blockers.length);
+  const next = sendable.map((r) => ({ amount: r.nextPartAmount ?? r.amountOwed ?? r.amount, currency: r.currency }));
+  const blocked = ready.filter((r) => r.blockers.length);
+  const failed = failedPayouts(history);
+  const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+  const one = sendable.length === 1 ? sendable[0] : null;
+  const waitingNote = awaiting.length ? `${plural(awaiting.length, "payout")} waiting for ${awaiting.length === 1 ? "its" : "their"} code` : null;
+  return (
+    <Figures>
+      <Figure label="Owed to developers" icon={<DownloadIcon size={14} />} mono value={totals(owed)} sub={[ready.length ? plural(ready.length, "verified sale") : waitingNote ? null : "Nothing owed", waitingNote ? `plus ${waitingNote}` : null].filter(Boolean).join(" · ")} />
+      <Figure label="Ready to send now" icon={<WalletIcon size={14} />} mono value={totals(next)}
+        sub={one ? `${one.companyName ?? "One company"}${one.partCount && one.partCount > 1 ? ` · part ${one.nextPart} of ${one.partCount}` : ""}` : sendable.length ? `${sendable.length} sales, next transfer each` : waitingNote ? `Finish the ${plural(awaiting.length, "payout")} waiting for a code` : "Nothing can be sent yet"} />
+      <Figure label="Blocked" icon={<AlertIcon size={14} />} tone={blocked.length ? "warning" : "neutral"} value={plural(blocked.length, "sale")}
+        sub={blocked.length === 1 ? `${blocked[0].companyName ?? "A company"}: ${BLOCKER_SHORT[blocked[0].blockers[0]]?.toLowerCase() ?? "can't be paid yet"}` : blocked.length ? "See each sale for why" : "Nothing blocked"} />
+      <Figure label="Failed" icon={<AlertIcon size={14} />} tone={failed.length ? "error" : "neutral"} value={plural(failed.length, "payout")}
+        sub={failed.length ? `${totals(failed)} not sent — see History` : "No failed transfers"} />
+    </Figures>
   );
 }
 
 // ─── Ready to pay out ────────────────────────────────────────────────────────
 
-function Ready() {
-  const list = useFetch(() => fetchReadyPayouts(), []);
-  // Held here, not on the card: a sale whose payout is in flight leaves the
-  // list on refresh, and its card — with any message on it — goes too.
-  const [notice, setNotice] = useState("");
-  const banner = notice && <Alert tone="info" role="status" className="font-medium mb-3">{notice}</Alert>;
+const READY_COLUMNS = ["Company", "Sale", "Owed", "Next transfer", "To account"];
+const READY_GRID = "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)_10rem]";
+
+function Ready({ list, canSeeCompanies, onChanged }: { list: UseFetchResult<ReadyPayout[]>; canSeeCompanies: boolean; onChanged: (message?: string) => void }) {
   if (list.loading && !list.data) return <Loading />;
   if (list.error) return <LoadError error={list.errorValue} what="sales ready to pay out" onRetry={list.refetch} />;
-  if (!list.data?.length) return <>{banner}<EmptyState title="Nothing to pay out" description="Verified sales that are owed money appear here." /></>;
+  if (!list.data?.length) return <Card padding="sm"><EmptyState title="Nothing to pay out" description="Verified sales that are owed money appear here." /></Card>;
   return (
-    <>
-      {banner}
-      <ul className="space-y-3">{list.data.map((s) => <ReadyCard key={s.transactionId} sale={s} onChanged={(message) => { setNotice(message ?? ""); list.refetch(); }} />)}</ul>
-    </>
+    <DisclosureTable columns={READY_COLUMNS} grid={READY_GRID} label="Sales ready to pay out">
+      {list.data.map((s) => <ReadyRow key={s.transactionId} sale={s} canSeeCompanies={canSeeCompanies} onChanged={onChanged} />)}
+    </DisclosureTable>
   );
 }
 
-function ReadyCard({ sale, onChanged }: { sale: ReadyPayout; onChanged: (message?: string) => void }) {
+function ReadyRow({ sale, canSeeCompanies, onChanged }: { sale: ReadyPayout; canSeeCompanies: boolean; onChanged: (message?: string) => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<PayoutProblem | null>(null);
   const [otpFor, setOtpFor] = useState<Payout | null>(null);
   const blocked = sale.blockers.length > 0;
   const parts = sale.partCount !== null && sale.nextPart !== null && sale.nextPartAmount !== null && sale.amountOwed !== null;
+  const many = parts && sale.partCount! > 1;
 
   const payOut = async () => {
     setBusy(true);
@@ -93,105 +171,136 @@ function ReadyCard({ sale, onChanged }: { sale: ReadyPayout; onChanged: (message
     }
   };
 
-  return (
-    <ListCard className="space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="font-semibold text-[var(--foreground)]">{sale.companyName ?? "Company name not on record"}</div>
-          <div className="text-xs text-[var(--muted-foreground)]">
-            {sale.estateName} — {sale.plotLabel} · <span className="font-mono-data">{sale.transactionReference}</span> · verified {when(sale.verifiedAt)}
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="font-mono-data text-lg">{money(sale.amount, sale.currency)}</div>
-          <div className="text-xs text-[var(--muted-foreground)]">sale price</div>
-        </div>
+  const cells = [
+    <span className="font-semibold text-[var(--foreground)]">{sale.companyName ?? "Company name not on record"}</span>,
+    <>
+      <div className="text-sm text-[var(--foreground)]">{sale.estateName}</div>
+      <div className="text-xs text-[var(--muted-foreground)]">{sale.plotLabel} · <span className="font-mono-data">{sale.transactionReference}</span></div>
+      <div className="text-xs text-[var(--muted-foreground)]">Verified {formatDay(sale.verifiedAt)}</div>
+    </>,
+    <>
+      <span className="lg:hidden text-xs text-[var(--muted-foreground)]">Owed </span>
+      <span className="font-mono-data font-medium text-[var(--foreground)]">{money(sale.amountOwed ?? sale.amount, sale.currency)}</span>
+      {sale.amountOwed !== null && sale.amountOwed !== sale.amount && <div className="text-xs text-[var(--muted-foreground)]">of {money(sale.amount, sale.currency)}</div>}
+    </>,
+    parts ? (
+      <>
+        <span className="lg:hidden text-xs text-[var(--muted-foreground)]">Next </span>
+        <span className="font-mono-data font-medium text-[var(--foreground)]">{money(sale.nextPartAmount!, sale.currency)}</span>
+        <div className="text-xs text-[var(--muted-foreground)]">{many ? `Part ${sale.nextPart} of ${sale.partCount}` : "One transfer"}</div>
+      </>
+    ) : <span className="text-sm text-[var(--muted-foreground)]">—</span>,
+    blocked ? (
+      <div className="space-y-1">
+        <div className="flex flex-wrap gap-1">{sale.blockers.map((b) => <StatusBadge key={b} label={BLOCKER_SHORT[b] ?? b} variant="warning" />)}</div>
+        <div className="text-xs text-[var(--muted-foreground)]">{sale.blockers.map((b) => BLOCKER_TEXT[b] ?? b).join(" ")}</div>
+        {canSeeCompanies && <TextLink to={`/admin/tenants/${sale.tenantId}`} className="text-xs">Open company →</TextLink>}
       </div>
+    ) : sale.payoutAccount ? (
+      <>
+        <div className="text-sm text-[var(--foreground)]">{sale.payoutAccount.bankName} ••{sale.payoutAccount.accountLast4}</div>
+        <div className="text-xs text-[var(--muted-foreground)]">{sale.payoutAccount.accountName}</div>
+      </>
+    ) : <span className="text-sm text-[var(--muted-foreground)]">No payout account</span>,
+  ];
 
-      {parts && (
-        <p className="text-sm">
-          {money(sale.amountOwed!, sale.currency)} owed{sale.partCount! > 1 ? <> · part {sale.nextPart} of {sale.partCount}: <strong className="font-mono-data">{money(sale.nextPartAmount!, sale.currency)}</strong></> : null}
-        </p>
-      )}
-      <p className="text-sm text-[var(--muted-foreground)]">
-        {sale.payoutAccount ? <>To {sale.payoutAccount.bankName} ending {sale.payoutAccount.accountLast4} ({sale.payoutAccount.accountName})</> : "No payout account"}
-      </p>
-
-      {blocked && (
-        <Alert>
-          <ul className="space-y-1">{sale.blockers.map((b) => <li key={b}>{BLOCKER_TEXT[b] ?? b}</li>)}</ul>
-        </Alert>
-      )}
-      {sale.lastAttempt && (
-        <p className="text-xs text-[var(--muted-foreground)]">
-          Last attempt: {payoutStatusBadge(sale.lastAttempt.status).label.toLowerCase()}{sale.lastAttempt.gatewayMessage ? ` — Paystack: “${sale.lastAttempt.gatewayMessage}”` : ""}
-        </p>
-      )}
-
-      {error && <ProblemNote problem={error} />}
-
-      <Button onClick={payOut} disabled={blocked || busy}>
-        {busy ? "Starting the transfer…" : parts && sale.partCount! > 1 ? `Pay out part ${sale.nextPart} of ${sale.partCount}` : "Pay out"}
-      </Button>
-
-      {otpFor && <OtpDialog payout={otpFor} onClose={(message) => { setOtpFor(null); onChanged(message); }} />}
-    </ListCard>
-  );
-}
-
-// ─── History ─────────────────────────────────────────────────────────────────
-
-const FILTERS: { id: PayoutFilter; label: string }[] = [
-  { id: "all", label: "All" }, { id: "awaiting_otp", label: "Awaiting code" }, { id: "pending", label: "With the bank" },
-  { id: "success", label: "Paid" }, { id: "failed", label: "Failed" }, { id: "reversed", label: "Reversed" }, { id: "cancelled", label: "Cancelled" },
-];
-
-function History() {
-  const [filter, setFilter] = useState<PayoutFilter>("all");
-  const list = useFetch(() => fetchPayoutHistory(filter), [filter]);
   return (
-    <div className="space-y-4">
-      <label className="flex items-center gap-2 text-sm">
-        <span className="text-[var(--muted-foreground)]">Show</span>
-        <Select inputSize="sm" value={filter} onChange={(e) => setFilter(e.target.value as PayoutFilter)}>
-          {FILTERS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-        </Select>
-      </label>
-      {list.loading && !list.data && <Loading />}
-      {list.error && <LoadError error={list.errorValue} what="payout history" onRetry={list.refetch} />}
-      {list.data && list.data.length === 0 && <EmptyState title="No payouts" description={filter === "all" ? "Payouts appear here once one is sent." : "None with this status."} />}
-      {list.data && list.data.length > 0 && <ul className="space-y-3">{list.data.map((p) => <HistoryRow key={p.id} payout={p} onChanged={list.refetch} />)}</ul>}
-    </div>
-  );
-}
-
-function HistoryRow({ payout: p, onChanged }: { payout: Payout; onChanged: () => void }) {
-  const [otp, setOtp] = useState(false);
-  const badge = payoutStatusBadge(p.status);
-  return (
-    <ListCard alert={!!p.reviewReason}>
-      <div className="flex items-start gap-4">
-        <div className="flex-1 min-w-0 space-y-1.5">
-          <div>
-            <div className="font-semibold text-[var(--foreground)]">
-              <span className="font-mono-data">{money(p.amount, p.currency)}</span>
-              {p.partCount > 1 && <span className="text-xs font-normal text-[var(--muted-foreground)]"> · part {p.partNumber} of {p.partCount}</span>}
-            </div>
-            <div className="text-xs text-[var(--muted-foreground)] mt-0.5">
-              {p.bankName && p.accountLast4 ? `${p.bankName} ending ${p.accountLast4} · ` : p.bankName ? `${p.bankName} · ` : ""}
-              started {when(p.createdAt)}{p.transferredAt ? ` · transferred ${when(p.transferredAt)}` : ""} · <span className="font-mono-data">{p.reference}</span>
-            </div>
-          </div>
-          {p.gatewayMessage && (p.status === "failed" || p.status === "reversed") && <p className="text-xs text-[var(--error-text)]">Paystack: “{p.gatewayMessage}”</p>}
-          {p.reviewReason && <p className="text-sm text-[var(--error-text)] font-semibold">Under review: {p.reviewReason}</p>}
-          {p.status === "awaiting_otp" && (
-            <Button variant="link" onClick={() => setOtp(true)}>Enter code or cancel</Button>
+    <TableRow
+      grid={READY_GRID}
+      cells={cells}
+      action={
+        <Button onClick={payOut} disabled={blocked || busy}>
+          {busy ? "Starting…" : many ? `Pay out part ${sale.nextPart}` : "Pay out"}
+        </Button>
+      }
+      below={(sale.lastAttempt || error || otpFor) && (
+        <>
+          {sale.lastAttempt && (
+            <p className="text-xs text-[var(--muted-foreground)]">
+              Last attempt: {payoutStatusBadge(sale.lastAttempt.status).label.toLowerCase()}{sale.lastAttempt.gatewayMessage ? ` — Paystack: “${sale.lastAttempt.gatewayMessage}”` : ""}
+            </p>
           )}
-        </div>
-        <StatusBadge label={badge.label} variant={badge.variant} />
-      </div>
-      {otp && <OtpDialog payout={p} onClose={() => { setOtp(false); onChanged(); }} />}
-    </ListCard>
+          {error && <ProblemNote problem={error} />}
+          {otpFor && <OtpDialog payout={otpFor} onClose={(message) => { setOtpFor(null); onChanged(message); }} />}
+        </>
+      )}
+    />
+  );
+}
+
+// ─── Awaiting code, and history ──────────────────────────────────────────────
+
+const PAYOUT_COLUMNS = ["Company", "Amount", "Account", "Started", "Reference", "Status"];
+const PAYOUT_GRID = "lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1.1fr)_auto]";
+
+function Awaiting({ list, payouts, names, onChanged }: { list: UseFetchResult<Payout[]>; payouts: Payout[]; names: Map<string, string>; onChanged: (message?: string) => void }) {
+  if (list.loading && !list.data) return <Loading />;
+  if (list.error) return <LoadError error={list.errorValue} what="payouts waiting for a code" onRetry={list.refetch} />;
+  if (!payouts.length) return <Card padding="sm"><EmptyState title="Nothing waiting for a code" description="A payout started but not finished — no code entered, not cancelled — waits here until it's sent or cancelled." /></Card>;
+  return (
+    <DisclosureTable columns={PAYOUT_COLUMNS} grid={PAYOUT_GRID} label="Payouts waiting for a code">
+      {payouts.map((p) => <PayoutRow key={p.id} payout={p} company={names.get(p.tenantId)} onChanged={onChanged} />)}
+    </DisclosureTable>
+  );
+}
+
+type HistoryFilter = "all" | PayoutStatus;
+const FILTER_LABEL: Record<PayoutStatus, string> = {
+  awaiting_otp: "Awaiting code", sending: "Sending", pending: "With the bank", success: "Paid", failed: "Failed", reversed: "Reversed", cancelled: "Cancelled",
+};
+
+function History({ list, names, onChanged }: { list: UseFetchResult<Payout[]>; names: Map<string, string>; onChanged: (message?: string) => void }) {
+  const [filter, setFilter] = useState<HistoryFilter>("all");
+  if (list.loading && !list.data) return <Loading />;
+  if (list.error) return <LoadError error={list.errorValue} what="payout history" onRetry={list.refetch} />;
+  const all = list.data ?? [];
+  if (!all.length) return <Card padding="sm"><EmptyState title="No payouts yet" description="Payouts appear here once one is sent." /></Card>;
+  // Only the statuses that occur, so the chips stay short.
+  const present = (Object.keys(FILTER_LABEL) as PayoutStatus[]).filter((s) => all.some((p) => p.status === s));
+  const shown = filter === "all" ? all : all.filter((p) => p.status === filter);
+  return (
+    <>
+      <FilterChips ariaLabel="Payouts by status" value={filter} onChange={setFilter}
+        options={[{ id: "all" as const, label: "All", count: all.length }, ...present.map((s) => ({ id: s, label: FILTER_LABEL[s], count: all.filter((p) => p.status === s).length }))]} />
+      {shown.length === 0 ? <Card padding="sm"><EmptyState title="None" description="No payouts with this status." /></Card> : (
+        <DisclosureTable columns={PAYOUT_COLUMNS} grid={PAYOUT_GRID} label="Payout history">
+          {shown.map((p) => <PayoutRow key={p.id} payout={p} company={names.get(p.tenantId)} onChanged={onChanged} />)}
+        </DisclosureTable>
+      )}
+    </>
+  );
+}
+
+function PayoutRow({ payout: p, company, onChanged }: { payout: Payout; company: string | undefined; onChanged: (message?: string) => void }) {
+  const [otp, setOtp] = useState(false);
+  const cells = [
+    <span className="font-semibold text-[var(--foreground)]">{company ?? "Company not shown"}</span>,
+    <>
+      <span className="font-mono-data font-medium text-[var(--foreground)]">{money(p.amount, p.currency)}</span>
+      <div className="text-xs text-[var(--muted-foreground)]">{p.partCount > 1 ? `Part ${p.partNumber} of ${p.partCount}` : "One transfer"}</div>
+    </>,
+    <span className="text-sm text-[var(--foreground)]">{p.bankName ? `${p.bankName}${p.accountLast4 ? ` ••${p.accountLast4}` : ""}` : "—"}</span>,
+    <>
+      <span className="text-sm text-[var(--muted-foreground)]"><span className="lg:hidden">Started </span>{formatDayTime(p.createdAt)}</span>
+      {p.transferredAt && <div className="text-xs text-[var(--muted-foreground)]">Sent {formatDayTime(p.transferredAt)}</div>}
+    </>,
+    <span className="font-mono-data text-xs text-[var(--muted-foreground)] break-all">{p.reference}</span>,
+    <StatusBadge {...payoutStatusBadge(p.status)} />,
+  ];
+  const failedNote = p.gatewayMessage && (p.status === "failed" || p.status === "reversed");
+  return (
+    <TableRow
+      grid={PAYOUT_GRID}
+      cells={cells}
+      action={p.status === "awaiting_otp" ? <Button variant="secondary" onClick={() => setOtp(true)}>Enter code or cancel</Button> : undefined}
+      below={(failedNote || p.reviewReason || otp) && (
+        <>
+          {failedNote && <p className="text-xs text-[var(--error-text)]">Paystack: “{p.gatewayMessage}”</p>}
+          {p.reviewReason && <Alert tone="error" role="alert">Under review: {p.reviewReason}</Alert>}
+          {otp && <OtpDialog payout={p} onClose={(message) => { setOtp(false); onChanged(message); }} />}
+        </>
+      )}
+    />
   );
 }
 
@@ -218,7 +327,7 @@ function OtpDialog({ payout, onClose }: { payout: Payout; onClose: (message?: st
   };
 
   // Closing without a decision leaves the transfer waiting for its code.
-  const close = () => onClose(busy ? undefined : "This payout is waiting for its code. Finish or cancel it from History.");
+  const close = () => onClose(busy ? undefined : "This payout is waiting for its code. Finish or cancel it under Awaiting code.");
 
   return (
     <Dialog title="Enter Paystack's code" onClose={close}>
@@ -276,7 +385,7 @@ export function payoutProblem(err: unknown): PayoutProblem {
     case "PAYOUT_OUTCOME_UNKNOWN": return { message: "Paystack didn't answer. It's safe to press Pay out again — it can't pay twice." };
     case "PAYMENT_PROVIDER_REFUSED": return { message: `Paystack refused the transfer${message ? `: “${message}”` : "."} It's recorded as failed; you can try again.` };
     case "PAYMENT_PROVIDER_UNAVAILABLE": return { message: "Paystack isn't responding right now. Try again in a moment." };
-    case "PAYOUT_IN_PROGRESS": return { message: "A payout for this sale is already in progress. Finish or cancel it from History." };
+    case "PAYOUT_IN_PROGRESS": return { message: "A payout for this sale is already in progress. Finish or cancel it under Awaiting code." };
     case "SALE_ALREADY_PAID": return { message: "This sale has already been paid in full." };
     case "PAYOUT_NOT_AWAITING_OTP": return { message: "This payout isn't waiting for a code any more — check History." };
     case "COMPANY_NOT_ACTIVE": return { message: "The company is suspended, so payouts are on hold." };

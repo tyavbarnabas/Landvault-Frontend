@@ -6,72 +6,127 @@
 // what's known about the company: the bank's name for the account, the account
 // declared at onboarding, and the account payouts go to today. Mismatches are
 // WARNINGS — a person decides, and must be able to approve a legitimate change.
+//
+// Laid out from the Figma money-screen proposal: counted tabs by status and a
+// table, each account opening to the comparison; a waiting one opens by itself.
 
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ApiError, ApiTransportError } from "../../../lib/apiClient";
 import { useFetch } from "../../../lib/useFetch";
+import { formatDay } from "../../../lib/formatDate";
+import { withCount } from "../../../lib/useTabCounts";
 import LoadError from "../../../components/LoadError";
 import TabBar from "../../../components/ui/Tabs";
 import EmptyState from "../../../components/ui/EmptyState";
 import Dialog, { DialogActions } from "../../../components/ui/Dialog";
 import Page, { Loading } from "../../../components/ui/Page";
-import { InfoBox, ListCard } from "../../../components/ui/Card";
+import Card, { InfoBox } from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import Alert from "../../../components/ui/Alert";
+import DisclosureTable, { DisclosureRow } from "../../../components/ui/DisclosureTable";
 import { ErrorText, Field, Textarea, describedBy } from "../../../components/ui/Field";
 import StatusBadge, { settlementAccountBadge } from "../../../components/StatusBadge";
 import { REASON_MAX } from "../../../services/financeService";
+import type { SettlementAccountStatus } from "../../../services/paymentTypes";
 import {
   approveSettlementAccount, fetchSettlementReviews, rejectSettlementAccount,
-  type ReviewFilter, type SettlementAccount, type SettlementAccountReview,
+  type SettlementAccount, type SettlementAccountReview,
 } from "../../../services/settlementService";
 
-const TABS: { id: ReviewFilter; label: string }[] = [
+type Tab = SettlementAccountStatus | "all";
+const TABS: { id: Tab; label: string }[] = [
   { id: "pending", label: "Waiting for review" },
+  { id: "approved", label: "Approved" },
+  { id: "rejected", label: "Rejected" },
+  { id: "superseded", label: "Replaced" },
+  { id: "withdrawn", label: "Withdrawn" },
   { id: "all", label: "All" },
 ];
-const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : null);
+
+const COLUMNS = ["Company", "Account", "Submitted", "Decided", "Status", "Checks"];
+const GRID = "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,2fr)_7rem_7rem_minmax(0,1fr)_minmax(0,1.3fr)_16px]";
+
+const companyOf = (r: SettlementAccountReview) => r.tradingName ?? r.registeredName ?? "Company name not on record";
 
 export default function PayoutAccounts() {
-  const [filter, setFilter] = useState<ReviewFilter>("pending");
-  const list = useFetch(() => fetchSettlementReviews(filter), [filter]);
+  const [params, setParams] = useSearchParams();
+  const tab = (TABS.find((t) => t.id === params.get("tab"))?.id ?? "pending") as Tab;
+  // One read of every account; the tabs narrow it here. The server only filters pending/all.
+  const list = useFetch(() => fetchSettlementReviews("all"), []);
+  const all = list.data ?? [];
+  const count = (t: Tab) => (list.data ? (t === "all" ? all.length : all.filter((r) => r.account.status === t).length) : undefined);
+  // Waiting: oldest first (first come, first reviewed). Everything else: newest first.
+  const shown = all.filter((r) => tab === "all" || r.account.status === tab)
+    .sort((a, b) => (tab === "pending" ? 1 : -1) * a.account.submittedAt.localeCompare(b.account.submittedAt));
+
   return (
     <Page title="Payout accounts" description="Bank accounts companies want their sale proceeds paid into. Nothing is paid to an account until it's approved here.">
-      <TabBar tabs={TABS} active={filter} onActivate={setFilter} ariaLabel="Payout accounts by status" divider />
-      {list.loading && !list.data && <Loading />}
-      {list.error && <LoadError error={list.errorValue} what="payout accounts" onRetry={list.refetch} />}
-      {list.data && list.data.length === 0 && (
-        <EmptyState title={filter === "pending" ? "Nothing waiting for review" : "No payout accounts yet"}
-          description={filter === "pending" ? "Accounts companies submit appear here, oldest first." : "Accounts appear here once a company submits one."} />
-      )}
-      {list.data && list.data.length > 0 && (
-        <ul className="space-y-3">{list.data.map((r) => <ReviewCard key={r.account.id} review={r} onDecided={list.refetch} />)}</ul>
-      )}
+      <TabBar tabs={TABS.map((t) => ({ id: t.id, label: withCount(t.label, count(t.id)) }))} active={tab}
+        onActivate={(t) => setParams(t === "pending" ? {} : { tab: t }, { replace: true })} ariaLabel="Payout accounts by status" divider />
+      <div id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
+        {list.loading && !list.data && <Loading />}
+        {list.error && <LoadError error={list.errorValue} what="payout accounts" onRetry={list.refetch} />}
+        {list.data && shown.length === 0 && (
+          <Card padding="sm">
+            <EmptyState title={tab === "pending" ? "Nothing waiting for review" : "None"}
+              description={tab === "pending" ? "Accounts companies submit appear here, oldest first." : "No accounts with this status."} />
+          </Card>
+        )}
+        {shown.length > 0 && (
+          <DisclosureTable columns={COLUMNS} grid={GRID} label="Payout accounts">
+            {shown.map((r) => <AccountRow key={r.account.id} review={r} onDecided={list.refetch} />)}
+          </DisclosureTable>
+        )}
+      </div>
     </Page>
   );
 }
 
-function ReviewCard({ review, onDecided }: { review: SettlementAccountReview; onDecided: () => void }) {
+// What's worth a second look, in a word or two. Warnings, never blockers.
+function Checks({ review: r }: { review: SettlementAccountReview }) {
+  const notes: [string, "ok" | "warn" | "none"][] = [];
+  if (!r.nameMatchesCompany) notes.push(["Name isn't the company's", "warn"]);
+  if (r.matchesOnboardingAccount === true) notes.push(["Matches onboarding", "ok"]);
+  else if (r.matchesOnboardingAccount === false) notes.push(["Not the onboarding account", "warn"]);
+  else notes.push(["Nothing declared at onboarding", "none"]);
+  return (
+    <ul className="text-xs space-y-0.5">
+      {notes.map(([text, tone]) => (
+        <li key={text} className={tone === "ok" ? "text-[var(--success-text)]" : tone === "warn" ? "text-[var(--warning-text)]" : "text-[var(--muted-foreground)]"}>{text}</li>
+      ))}
+    </ul>
+  );
+}
+
+function AccountRow({ review, onDecided }: { review: SettlementAccountReview; onDecided: () => void }) {
   const [dialog, setDialog] = useState<"approve" | "reject" | null>(null);
   const [outcome, setOutcome] = useState<string | null>(null);
-  const company = review.tradingName ?? review.registeredName ?? "Company name not on record";
+  const company = companyOf(review);
   const a = review.account;
   const pending = a.status === "pending";
 
-  return (
-    <ListCard className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="font-semibold text-[var(--foreground)]">{company}</div>
-          {review.registeredName && review.registeredName !== company && <div className="text-xs text-[var(--muted-foreground)]">Registered as {review.registeredName}</div>}
-        </div>
-        <StatusBadge {...settlementAccountBadge(a.status)} />
-      </div>
+  const cells = [
+    <>
+      <div className="font-semibold text-[var(--foreground)]">{company}</div>
+      {review.registeredName && review.registeredName !== company && <div className="text-xs text-[var(--muted-foreground)]">{review.registeredName}</div>}
+    </>,
+    <>
+      <div className="text-sm font-medium text-[var(--foreground)]">{a.accountName}</div>
+      <div className="text-xs text-[var(--muted-foreground)]">{a.bankName} · <span className="font-mono-data">{a.accountNumber}</span></div>
+    </>,
+    <span className="text-sm text-[var(--muted-foreground)]"><span className="lg:hidden">Submitted </span>{formatDay(a.submittedAt)}</span>,
+    <span className="text-sm text-[var(--muted-foreground)]"><span className="lg:hidden">Decided </span>{a.decidedAt ? formatDay(a.decidedAt) : "—"}</span>,
+    <StatusBadge {...settlementAccountBadge(a.status)} />,
+    <Checks review={review} />,
+  ];
 
+  return (
+    <DisclosureRow id={`account-${a.id}`} grid={GRID} cells={cells} defaultOpen={pending}>
       <div className="grid md:grid-cols-3 gap-3 text-sm">
-        <AccountBox title="Submitted" account={a} note={`Submitted ${day(a.submittedAt)}`} highlight />
+        <AccountBox title="Submitted" account={a} note={`Submitted ${formatDay(a.submittedAt)}`} highlight />
         <OnboardingBox review={review} />
-        <AccountBox title="Payouts go here today" account={review.currentApproved} empty="No approved account yet." />
+        <AccountBox title="Payouts go here today" account={review.currentApproved} empty={a.status === "approved" ? "This account." : "No approved account yet."} />
       </div>
 
       {/* Warnings, never blockers. */}
@@ -82,12 +137,12 @@ function ReviewCard({ review, onDecided }: { review: SettlementAccountReview; on
         <Alert role="alert">Different from the account declared at onboarding.</Alert>
       )}
 
-      {a.decisionNote && <p className="text-xs text-[var(--muted-foreground)]">Decision note: “{a.decisionNote}”</p>}
+      {a.decisionNote && <p className="text-sm text-[var(--muted-foreground)]">Decision note: “{a.decisionNote}”</p>}
 
       {outcome ? <p className="text-sm font-medium" role="status">{outcome}</p> : pending && (
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3 pt-4 border-t border-[var(--border)]">
           <Button onClick={() => setDialog("approve")}>Approve</Button>
-          <Button variant="secondary" onClick={() => setDialog("reject")}>Reject</Button>
+          <Button variant="danger" onClick={() => setDialog("reject")}>Reject</Button>
         </div>
       )}
 
@@ -107,7 +162,7 @@ function ReviewCard({ review, onDecided }: { review: SettlementAccountReview; on
           The company's Executive Directors see your reason. {review.currentApproved ? "Payouts keep going to the current approved account." : ""}
         </DecisionDialog>
       )}
-    </ListCard>
+    </DisclosureRow>
   );
 }
 

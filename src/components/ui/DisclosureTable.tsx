@@ -3,8 +3,10 @@
 // the queue scans as a table, and the full item — documents, compare view,
 // the decision — opens under its own row instead of every item being a tall card.
 //
-// `grid` is the columns from lg up, without the chevron column (added here);
-// below lg each row stacks. Pass it as one literal class string so Tailwind sees it.
+// `grid` is the columns from lg up, plus one last unlabelled column: the
+// chevron for a DisclosureRow, or the action for a plain TableRow (a queue
+// whose rows carry a button, like payouts ready to send). Below lg each row
+// stacks. Pass it as one literal class string so Tailwind sees it.
 
 import { useState } from "react";
 import Card from "./Card";
@@ -55,6 +57,25 @@ export function DisclosureRow({ id, grid, cells, defaultOpen = false, children }
           {children}
         </div>
       )}
+    </li>
+  );
+}
+
+// A row that doesn't open: its cells, an action in the last column, and
+// anything that needs the full width underneath (a blocker, Paystack's words).
+export function TableRow({ grid, cells, action, below }: {
+  grid: string;
+  cells: React.ReactNode[];
+  action?: React.ReactNode;
+  below?: React.ReactNode;
+}) {
+  return (
+    <li>
+      <div className={cx("px-4 sm:px-5 py-3.5 flex flex-col gap-1 lg:grid lg:gap-4 lg:items-center", grid)}>
+        {cells.map((c, i) => <div key={i} className="min-w-0">{c}</div>)}
+        <div className="mt-2 lg:mt-0 lg:justify-self-end">{action}</div>
+      </div>
+      {below && <div className="px-4 sm:px-5 pb-4 space-y-2">{below}</div>}
     </li>
   );
 }

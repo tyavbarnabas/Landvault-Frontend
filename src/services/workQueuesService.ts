@@ -5,7 +5,7 @@
 
 import { formatInCurrency } from "../data/mockData";
 import { ADMIN_PAYOUTS_PERMISSION, DOCUMENTS_REVIEW_PERMISSION, TITLE_REVIEW_PERMISSION } from "./authService";
-import { fetchReadyPayouts, fetchRefundsDue } from "./adminPayoutsService";
+import { fetchReadyPayouts, fetchRefunds, fetchRefundsDue, refundStage } from "./adminPayoutsService";
 import { fetchSettlementReviews } from "./settlementService";
 import { fetchOnboardingRequests } from "./onboardingRequestsService";
 import { fetchTenants } from "./tenantsService";
@@ -59,11 +59,14 @@ export async function fetchWorkQueues(permissions: string[]): Promise<WorkQueue[
       },
     },
     {
-      kind: "refunds", group: "money", label: "Refunds due", href: "/admin/refunds", on: has(ADMIN_PAYOUTS_PERMISSION),
+      kind: "refunds", group: "money", label: "Refunds to do", href: "/admin/refunds", on: has(ADMIN_PAYOUTS_PERMISSION),
       load: async () => {
-        const list = await fetchRefundsDue();
-        const who = list.length === 1 ? ` to ${list[0].buyerName ?? list[0].buyerEmail ?? "the buyer"}` : "";
-        return { count: list.length, detail: list.length ? `${totals(list)}${who}` : "Nothing owed" };
+        // Not started, plus accounts buyers have given that need checking and sending.
+        const [due, started] = await Promise.all([fetchRefundsDue(), fetchRefunds("needs-attention")]);
+        const send = started.filter((r) => refundStage(r) === "ready_to_send");
+        const all = [...due, ...send];
+        const who = all.length === 1 ? ` to ${all[0].buyerName ?? all[0].buyerEmail ?? "the buyer"}` : "";
+        return { count: all.length, detail: all.length ? `${totals(all)}${who}${send.length ? ` · ${send.length} ready to send` : ""}` : "Nothing owed" };
       },
     },
     {
