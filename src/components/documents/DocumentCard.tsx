@@ -1,46 +1,76 @@
-// Reusable document row — shared by Vault.tsx and PlotView.tsx's documents
-// tab. Centralizes the type labels/icons so a new document type only needs to
-// be added here. Live documents come with their files (PDF, and the same pages
-// as one JPEG for WhatsApp); the demo ones have none, so they show no buttons.
+// A document's pieces — type, plot, downloads — shared by the vault (table on
+// desktop, cards on a phone, from the Figma "Vault — Proposed") and the plot
+// page's documents tab. Live documents come with their files (PDF, and every
+// page stacked into one JPEG for WhatsApp); the demo ones have none, so they
+// show no buttons.
 
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { Document } from "../../data/mockData";
-import { ListCard } from "../ui/Card";
-import Button from "../ui/Button";
-import { ErrorText } from "../ui/Field";
 import { formatDay } from "../../lib/formatDate";
+import Badge from "../ui/Badge";
 import { canShareFiles, fetchDocumentFile, saveFile, shareFile, type DocumentFormat } from "../../services/documentsService";
+import { DownloadIcon, FileCheckIcon, FileTextIcon, ImageIcon, ReceiptIcon, ShareIcon, ShieldCheckIcon } from "../icons";
 
 export const DOCUMENT_TYPE_LABELS: Record<Document["type"], string> = {
-  receipt: "Receipt",
-  offer_letter: "Offer Letter",
-  allocation_letter: "Allocation Letter",
-  deed_of_assignment: "Deed of Assignment",
-  poa_draft: "POA Draft",
+  receipt: "Payment receipt",
+  offer_letter: "Offer letter",
+  allocation_letter: "Allocation letter",
+  deed_of_assignment: "Deed of assignment",
+  poa_draft: "POA draft",
 };
 
-export const DOCUMENT_TYPE_ICONS: Record<Document["type"], string> = {
-  receipt: "🧾",
-  offer_letter: "📝",
-  allocation_letter: "📄",
-  deed_of_assignment: "📜",
-  poa_draft: "🔏",
-};
+export function DocTypeIcon({ type, size = 18 }: { type: Document["type"]; size?: number }) {
+  if (type === "receipt") return <ReceiptIcon size={size} />;
+  if (type === "allocation_letter") return <FileCheckIcon size={size} />;
+  return <FileTextIcon size={size} />;
+}
 
-// The printed code without its dashes — the form the verify page's URL uses.
+export function DocTypeChip({ type, size = "md" }: { type: Document["type"]; size?: "sm" | "md" }) {
+  return (
+    <span className={`shrink-0 flex items-center justify-center rounded-lg bg-[var(--secondary)] text-[var(--secondary-foreground)] ${size === "sm" ? "w-8 h-8" : "w-9 h-9"}`}>
+      <DocTypeIcon type={type} size={size === "sm" ? 16 : 18} />
+    </span>
+  );
+}
+
+// The code without its dashes — the form the verify page's URL uses.
 export function verifyPath(qrCode: string): string {
   return `/verify/${qrCode.replace(/-/g, "")}`;
 }
 
-interface DocumentCardProps {
-  doc: Document;
+// What the document is about. The backend titles every document
+// "<Type> <number> — <plot>, <estate>"; the part after the dash is the plot.
+export function plotLine(doc: Pick<Document, "title">): string | null {
+  const i = doc.title.indexOf(" — ");
+  return i >= 0 ? doc.title.slice(i + 3) : null;
 }
 
-export default function DocumentCard({ doc }: DocumentCardProps) {
+// The portfolio entry it belongs to: the transaction id opens it live (it
+// keeps working after finance verifies); demo documents carry the plot id.
+export function plotHref(doc: Pick<Document, "transactionId" | "plotId">): string | null {
+  const id = doc.transactionId ?? doc.plotId;
+  return id ? `/portfolio/${id}` : null;
+}
+
+export function DocStatus({ doc }: { doc: Document }) {
+  if (doc.status !== "valid") return <Badge label={doc.status === "void" ? "Void" : "Superseded"} variant="error" />;
+  return <Badge label="Valid" variant="success" />;
+}
+
+export function VerifyLink({ code, short }: { code: string; short?: boolean }) {
+  return (
+    <Link to={verifyPath(code)} className="inline-flex items-center gap-1 text-xs font-medium text-[var(--accent)] hover:underline">
+      <ShieldCheckIcon size={13} />{short ? "Check" : "Check it's genuine"}
+    </Link>
+  );
+}
+
+// Downloads (and the share sheet) with the bearer token — never a plain link.
+export function DocumentActions({ doc, share, stretch }: { doc: Document; share?: boolean; stretch?: boolean }) {
   const [busy, setBusy] = useState<DocumentFormat | "share" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const hasFiles = !!doc.pdfUrl && !!doc.number;
+  if (!doc.pdfUrl || !doc.number) return null;
 
   const run = async (kind: DocumentFormat | "share") => {
     setBusy(kind);
@@ -55,51 +85,60 @@ export default function DocumentCard({ doc }: DocumentCardProps) {
       setBusy(null);
     }
   };
-
+  const btn = `inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-md border border-[var(--border)] bg-[var(--card)] text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted)] disabled:opacity-50 ${stretch ? "flex-1" : ""}`;
   return (
-    <ListCard density="compact" className="flex flex-col sm:flex-row sm:items-center gap-4">
-      <div className="flex items-start gap-4 flex-1 min-w-0">
-        <div className="w-10 h-10 rounded-lg bg-[var(--muted)] flex items-center justify-center text-xl shrink-0" aria-hidden="true">
-          {DOCUMENT_TYPE_ICONS[doc.type]}
-        </div>
+    <div className={stretch ? "w-full" : ""}>
+      <div className={`flex gap-2 ${stretch ? "" : "justify-end"}`}>
+        <button type="button" className={btn} disabled={busy !== null} onClick={() => run("pdf")} aria-label={`Download ${doc.number} as PDF`}>
+          <DownloadIcon size={14} />{busy === "pdf" ? "…" : "PDF"}
+        </button>
+        {doc.jpegUrl && (
+          <button type="button" className={btn} disabled={busy !== null} onClick={() => run("jpeg")} aria-label={`Download ${doc.number} as an image`}>
+            <ImageIcon size={14} />{busy === "jpeg" ? "…" : "Image"}
+          </button>
+        )}
+        {share && doc.jpegUrl && canShareFiles() && (
+          <button type="button" className={btn} disabled={busy !== null} onClick={() => run("share")} aria-label={`Share ${doc.number}`}>
+            <ShareIcon size={14} />{busy === "share" ? "…" : "Share"}
+          </button>
+        )}
+      </div>
+      {error && <p role="alert" className="text-xs text-[var(--error-text)] mt-1.5">{error}</p>}
+    </div>
+  );
+}
+
+// One document as a card: the phone vault and the plot page's documents tab.
+export default function DocumentCard({ doc }: { doc: Document }) {
+  const plot = plotLine(doc);
+  const href = plotHref(doc);
+  return (
+    <li className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 space-y-3">
+      <div className="flex items-center gap-3">
+        <DocTypeChip type={doc.type} />
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm text-[var(--foreground)] mb-0.5">{doc.title}</div>
-          <div className="flex flex-wrap gap-x-2 gap-y-0.5 items-center text-xs text-[var(--muted-foreground)]">
-            {doc.number && <span className="font-mono-data">{doc.number}</span>}
-            {doc.number && <span aria-hidden="true">·</span>}
-            <span>Issued {formatDay(doc.date)}</span>
-            {doc.size && <><span aria-hidden="true">·</span><span>{doc.size}</span></>}
-            {doc.status !== "valid" && <><span aria-hidden="true">·</span><span className="font-medium text-[var(--error-text)] capitalize">{doc.status}</span></>}
-          </div>
-          <div className="text-xs text-[var(--muted-foreground)] mt-0.5">
-            Verification code <span className="font-mono-data text-[var(--foreground)]">{doc.qrCode}</span>
-            {" · "}
-            <Link to={verifyPath(doc.qrCode)} className="text-[var(--accent)] hover:underline">Check it's genuine</Link>
-          </div>
-          {/* The money did arrive, so the receipt stays valid — this is a note, not an error. */}
-          {doc.refundedAt && (
-            <div className="text-xs text-[var(--muted-foreground)] mt-1">Refunded on {formatDay(doc.refundedAt)}. The receipt still shows the payment was made.</div>
-          )}
-          {error && <ErrorText className="mt-1">{error}</ErrorText>}
+          <div className="text-sm font-semibold text-[var(--foreground)]">{DOCUMENT_TYPE_LABELS[doc.type]}</div>
+          {doc.number && <div className="text-xs font-mono-data text-[var(--muted-foreground)]">{doc.number}</div>}
+        </div>
+        <DocStatus doc={doc} />
+      </div>
+      <div className="space-y-1">
+        {plot ? (
+          href ? <Link to={href} className="block text-sm text-[var(--foreground)] hover:underline">{plot}</Link> : <div className="text-sm text-[var(--foreground)]">{plot}</div>
+        ) : (
+          <div className="text-sm text-[var(--foreground)]">{doc.title}</div>
+        )}
+        <div className="text-xs text-[var(--muted-foreground)]">
+          Issued {formatDay(doc.date)}
+          {/* The money did arrive, so the receipt stays valid — a note, not an error. */}
+          {doc.refundedAt && ` · Refunded ${formatDay(doc.refundedAt)}`}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="font-mono-data text-xs text-[var(--foreground)]">{doc.qrCode}</span>
+          <VerifyLink code={doc.qrCode} short />
         </div>
       </div>
-      {hasFiles && (
-        <div className="flex flex-wrap sm:flex-col gap-2 shrink-0">
-          <Button variant="secondary" onClick={() => run("pdf")} disabled={busy !== null}>
-            {busy === "pdf" ? "Downloading…" : "Download PDF"}
-          </Button>
-          {doc.jpegUrl && (
-            <Button variant="secondary" onClick={() => run("jpeg")} disabled={busy !== null}>
-              {busy === "jpeg" ? "Downloading…" : "Download image"}
-            </Button>
-          )}
-          {doc.jpegUrl && canShareFiles() && (
-            <Button variant="secondary" onClick={() => run("share")} disabled={busy !== null}>
-              {busy === "share" ? "Opening…" : "Share"}
-            </Button>
-          )}
-        </div>
-      )}
-    </ListCard>
+      <DocumentActions doc={doc} share stretch />
+    </li>
   );
 }

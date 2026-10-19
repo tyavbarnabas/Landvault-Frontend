@@ -34,7 +34,7 @@ import PurchaseList from "../components/purchases/PurchaseList";
 import { fetchOwnedPlots, fetchPortfolioSummary, installmentsAvailable } from "../services/portfolioService";
 import { fetchDocuments } from "../services/documentsService";
 import { fetchAttentionItems } from "../services/attentionService";
-import { DOCUMENT_TYPE_ICONS } from "../components/documents/DocumentCard";
+import { DocTypeChip } from "../components/documents/DocumentCard";
 import { formatDay } from "../lib/formatDate";
 import AttentionStrip from "../components/dashboard/AttentionStrip";
 import { urgencyRank, isActivelyOwned } from "./portfolio/Portfolio";
@@ -209,7 +209,7 @@ export default function Dashboard() {
             <div className="space-y-2">
               {documents.map((d) => (
                 <div key={d.id} className="flex items-center gap-3 text-sm py-1.5">
-                  <span className="text-base" aria-hidden="true">{DOCUMENT_TYPE_ICONS[d.type]}</span>
+                  <DocTypeChip type={d.type} size="sm" />
                   <div className="flex-1 min-w-0">
                     <div className="truncate text-xs font-medium text-[var(--foreground)]">{d.title}</div>
                     <div className="text-xs text-[var(--muted-foreground)]">{formatDay(d.date)}</div>

@@ -76,6 +76,22 @@ export function MenuIcon(p: IconProps) {
   return <Svg {...p}><path d="M4 6h16M4 12h16M4 18h16" /></Svg>;
 }
 
+export function SearchIcon(p: IconProps) {
+  return <Svg {...p}><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></Svg>;
+}
+export function DownloadIcon(p: IconProps) {
+  return <Svg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></Svg>;
+}
+export function ImageIcon(p: IconProps) {
+  return <Svg {...p}><rect width="18" height="18" x="3" y="3" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" /></Svg>;
+}
+export function ReceiptIcon(p: IconProps) {
+  return <Svg {...p}><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" /><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 17.5v-11" /></Svg>;
+}
+export function FileCheckIcon(p: IconProps) {
+  return <Svg {...p}><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4M9 15l2 2 4-4" /></Svg>;
+}
+
 // An amenity's icon from its wording — the developer types amenities freely,
 // so this matches on words and falls back to a tick.
 export function AmenityIcon({ amenity, ...p }: IconProps & { amenity: string }) {
