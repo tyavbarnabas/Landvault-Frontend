@@ -63,6 +63,12 @@ interface AppContextValue {
 // restored from the refresh cookie on load, or there isn't one.
 const DEFAULT_USER: User = MOCK_CLIENT_USER;
 
+// Prices are declared in naira, and HomeTrue is a Nigerian marketplace: a
+// visitor who isn't signed in sees naira until they pick another currency.
+// Never the demo buyer's preference (GBP) — that leaked onto the public
+// estate pages as pound prices.
+export const VISITOR_CURRENCY: Currency = "NGN";
+
 // Mock mode only. With no backend there's no refresh cookie to restore a
 // session from, so the signed-in user lived only in memory — and ANY reload
 // (Chrome's Memory Saver waking a slept tab, a dev-server full reload, F5)
@@ -128,6 +134,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSessionProblem(null);
     } else if (event.kind === "signed_out") {
       setUser(null);
+      setCurrencyState(VISITOR_CURRENCY);
       setSignOutNotice(signOutReason(event.code));
     } else {
       setSessionProblem(event.problem);
@@ -135,7 +142,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }), []);
   const [savedPlots, setSavedPlots] = useState<string[]>(["peaceland:2-7", "sunrise-gardens:5-3"]);
   const [wishlist, setWishlist] = useState<WishlistItem[]>([]);
-  const [currency, setCurrencyState] = useState<Currency>(() => user?.currency ?? DEFAULT_USER.currency);
+  const [currency, setCurrencyState] = useState<Currency>(() => user?.currency ?? VISITOR_CURRENCY);
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   useEffect(() => {
@@ -172,6 +179,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // token follow under the cross-tab lock (see apiClient.logoutSession).
   const logout = () => {
     setUser(null);
+    // The next person on this device is a visitor, not the last user.
+    setCurrencyState(VISITOR_CURRENCY);
     void logoutRequest();
   };
 
