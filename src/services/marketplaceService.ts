@@ -180,6 +180,18 @@ export function matchesTitleFilter(listing: Pick<Estate, "titleType" | "titleSta
   return listing.titleType === titleType && isTitleVerified(listing);
 }
 
+// "Mowe, Ogun" — the estate's area, city and state with repeats dropped
+// (an estate whose city and state share a name would otherwise read
+// "Mowe, Ogun, Ogun"), and blanks skipped.
+export function listingPlace(listing: Pick<Estate, "area" | "city" | "state">): string {
+  const parts: string[] = [];
+  for (const part of [listing.area, listing.city, listing.state]) {
+    const p = part?.trim();
+    if (p && !parts.some((q) => q.toLowerCase() === p.toLowerCase())) parts.push(p);
+  }
+  return parts.join(", ");
+}
+
 export function landCheckLabel(lastVerifiedDate: string | null | undefined): string {
   return lastVerifiedDate ? `Land checked ${lastVerifiedDate}` : "Land not checked yet";
 }

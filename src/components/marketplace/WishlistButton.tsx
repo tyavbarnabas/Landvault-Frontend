@@ -14,13 +14,16 @@ interface WishlistButtonProps {
   listingType: WishlistItem["listingType"];
   fromPrice: number;
   className?: string;
+  // Visible text beside the heart, e.g. "Save estate" — the whole button is
+  // then the click target, and the text says "Saved" once it is.
+  label?: string;
 }
 
 // Optimistic (local state, no network round-trip to wait for). When the
 // visitor isn't signed in, stashes the intent and routes through signup with
 // a returnUrl — Register.tsx completes the toggle once signup succeeds and
 // sends them right back here. See AppContext's toggleWishlistItem.
-export default function WishlistButton({ listingId, listingType, fromPrice, className }: WishlistButtonProps) {
+export default function WishlistButton({ listingId, listingType, fromPrice, className, label }: WishlistButtonProps) {
   const { isAuthenticated, isWishlisted, toggleWishlistItem } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
@@ -42,13 +45,14 @@ export default function WishlistButton({ listingId, listingType, fromPrice, clas
     <button
       type="button"
       aria-pressed={wishlisted}
-      aria-label={wishlisted ? "Remove from wishlist" : "Save to wishlist"}
+      aria-label={label ? undefined : wishlisted ? "Remove from wishlist" : "Save to wishlist"}
       onClick={handleClick}
       className={className ?? "w-8 h-8 flex items-center justify-center rounded-full bg-white/90 backdrop-blur hover:bg-white shadow-sm transition-colors"}
     >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill={wishlisted ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" className={wishlisted ? "text-red-500" : "text-[var(--muted-foreground)]"}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill={wishlisted ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" aria-hidden="true" className={wishlisted ? "text-[var(--error)]" : label ? "" : "text-[var(--muted-foreground)]"}>
         <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8Z" />
       </svg>
+      {label && <span>{wishlisted ? "Saved" : label}</span>}
     </button>
   );
 }

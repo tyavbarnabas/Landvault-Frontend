@@ -18,15 +18,18 @@ import { fetchListingMap, fetchTierPlots, plotLabel, priceForPlot, type ListingP
 import type { Listing } from "../../services/marketplaceService";
 import EstateBoundaryMap from "../map/EstateBoundaryMap";
 import LoadError from "../LoadError";
+import { tokenColor } from "../../lib/tokenColor";
 
 const PAGE_SIZE = 20;
 
-export default function LivePlotPicker({ listing, selectedSizeSqm, onSelectSizeSqm, selectedPlotId, onSelectPlot }: {
+export default function LivePlotPicker({ listing, selectedSizeSqm, onSelectSizeSqm, selectedPlotId, onSelectPlot, hideSizes }: {
   listing: Listing;
   selectedSizeSqm: number | null;
   onSelectSizeSqm: (sqm: number) => void;
   selectedPlotId: string | undefined;
   onSelectPlot: (plot: ListingPlot | null) => void;
+  // The page shows its own size cards above (MarketplacePlotSelection).
+  hideSizes?: boolean;
 }) {
   const map = useFetch(() => fetchListingMap(listing.id), [listing.id]);
   const tier = listing.priceTiers.find((t) => t.sizeSqm === selectedSizeSqm) ?? null;
@@ -59,7 +62,7 @@ export default function LivePlotPicker({ listing, selectedSizeSqm, onSelectSizeS
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Plot size">
+      {!hideSizes && <div className="flex flex-wrap gap-2" role="group" aria-label="Plot size">
         {listing.priceTiers.map((t) => (
           <button key={t.id} type="button" onClick={() => onSelectSizeSqm(t.sizeSqm)} disabled={t.availability === "sold_out"}
             aria-pressed={t.sizeSqm === selectedSizeSqm}
@@ -67,7 +70,7 @@ export default function LivePlotPicker({ listing, selectedSizeSqm, onSelectSizeS
             {t.sizeSqm ? `${t.sizeSqm} sqm` : "Unit"} · {formatInCurrency(t.price, t.currency)}{t.availability === "sold_out" ? " · sold out" : ""}
           </button>
         ))}
-      </div>
+      </div>}
 
       {map.error ? <LoadError error={map.errorValue} what="the estate map" onRetry={map.refetch} />
         : map.data && map.data.features.length > 0 && (
@@ -75,13 +78,13 @@ export default function LivePlotPicker({ listing, selectedSizeSqm, onSelectSizeS
             boundary={map.data as never}
             label={`${listing.name}: plots on satellite imagery`}
             styleForFeature={(props) => props.kind !== "plot"
-              ? { color: "#f59e0b", weight: 2, fillOpacity: 0.05 }
+              ? { color: tokenColor("--warning"), weight: 2, fillOpacity: 0.05 }
               : props.id === selectedPlotId
-                ? { color: "#2563EB", weight: 3, fillOpacity: 0.6 }
+                ? { color: tokenColor("--info"), weight: 3, fillOpacity: 0.6 }
                 : String(props.availability).toUpperCase() === "AVAILABLE"
-                  ? { color: "#16A34A", weight: 1, fillOpacity: 0.45 }
-                  : { color: "#64748B", weight: 1, fillOpacity: 0.35 }}
-            legend={[{ color: "#16A34A", label: "Available" }, { color: "#64748B", label: "Not available" }, { color: "#2563EB", label: "Selected" }]}
+                  ? { color: tokenColor("--success"), weight: 1, fillOpacity: 0.45 }
+                  : { color: tokenColor("--muted-foreground"), weight: 1, fillOpacity: 0.35 }}
+            legend={[{ color: tokenColor("--success"), label: "Available" }, { color: tokenColor("--muted-foreground"), label: "Not available" }, { color: tokenColor("--info"), label: "Selected" }]}
           />
         )}
 

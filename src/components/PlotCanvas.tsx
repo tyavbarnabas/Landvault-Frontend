@@ -50,6 +50,11 @@ interface PlotCanvasProps {
   // gated behind CAPABILITIES.agisOverlay regardless (fabricated data — see
   // agisService.ts).
   showAgisControls?: boolean;
+  // Replaces the built-in "120 plots · 68 available · drag to pan" line.
+  caption?: React.ReactNode;
+  // The tooltip's price currency; the buyer's display currency by default.
+  // The marketplace passes the estate's own (naira), matching its plot panel.
+  priceCurrency?: Parameters<typeof formatAmount>[1];
 }
 
 
@@ -97,9 +102,10 @@ export default function PlotCanvas(props: PlotCanvasProps) {
 
 function PlotCanvasInner({
   estateId, plots, tiers, cornerPremiumPct, selectedPlotId, onSelectPlot,
-  selectedSizeSqm = null, onSelectSizeSqm, mode = "select", showAgisControls = false,
+  selectedSizeSqm = null, onSelectSizeSqm, mode = "select", showAgisControls = false, caption, priceCurrency,
 }: PlotCanvasProps) {
-  const { savedPlots, currency } = useApp();
+  const { savedPlots, currency: displayCurrency } = useApp();
+  const currency = priceCurrency ?? displayCurrency;
   // The AGIS overlay is fabricated (see agisService.ts) — never shown unless
   // the capability is explicitly turned on, regardless of what the caller
   // requests via showAgisControls.
@@ -367,8 +373,8 @@ function PlotCanvasInner({
       })()}
 
       {/* Footer */}
-      <div className="mt-2 text-xs text-[var(--muted-foreground)] font-mono-data">
-        {plots.length} plots · {availableCount} available{selectedSizeSqm != null ? ` · filtered to ${selectedSizeSqm} sqm` : ""} · drag to pan, Ctrl/⌘+scroll or the zoom buttons to zoom
+      <div className={`mt-2 text-xs text-[var(--muted-foreground)]${caption ? "" : " font-mono-data"}`}>
+        {caption ?? <>{plots.length} plots · {availableCount} available{selectedSizeSqm != null ? ` · filtered to ${selectedSizeSqm} sqm` : ""} · drag to pan, Ctrl/⌘+scroll or the zoom buttons to zoom</>}
       </div>
     </div>
   );

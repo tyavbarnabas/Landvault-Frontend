@@ -224,8 +224,10 @@ export default function MarketplaceCheckout() {
   };
 
   const deposit = depositFor(plan, totalPrice);
-  const steps = ["Review", ...(kycWasNeeded ? ["Verify identity"] : []), "Purchase details", "Payment"];
-  const stepIndex = step === "confirm" ? 0 : step === "kyc" ? 1 : step === "details" ? steps.length - 2 : steps.length - 1;
+  // The journey starts on the plot map (MarketplacePlotSelection shows the same
+  // steps), so choosing a plot is step 1 and already done here.
+  const steps = ["Choose a plot", "Review", ...(kycWasNeeded ? ["Verify identity"] : []), "Purchase details", "Payment"];
+  const stepIndex = step === "confirm" ? 1 : step === "kyc" ? 2 : step === "details" ? steps.length - 2 : steps.length - 1;
   const heading: Record<string, [string, string]> = {
     confirm: ["Review your plot", "Check the plot and its full cost. Nothing is charged here."],
     kyc: ["Verify your identity", "We check who you are before we hold a plot for you. It's needed once."],

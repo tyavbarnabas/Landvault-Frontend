@@ -266,7 +266,7 @@ function AppRoutes() {
 
       {/* Marketplace checkout — no sidebar, same convention as /checkout */}
       {/* Paystack sends the buyer back here; it verifies, it never assumes. */}
-      <Route path="/payments/return" element={<PrivateRoute><Suspense fallback={<PageLoading />}><PaymentReturn /></Suspense></PrivateRoute>} />
+      <Route path="/payments/return" element={<MarketplaceLayout><PrivateRoute><Suspense fallback={<PageLoading />}><PaymentReturn /></Suspense></PrivateRoute></MarketplaceLayout>} />
       <Route path="/purchases" element={<AppPage><Suspense fallback={<PageLoading />}><MyPurchases /></Suspense></AppPage>} />
       <Route path="/purchases/:id" element={<AppPage><Suspense fallback={<PageLoading />}><PurchaseDetail /></Suspense></AppPage>} />
       <Route path="/marketplace/checkout/:listingId/:plotId" element={<PrivateRoute><Suspense fallback={<PageLoading />}><MarketplaceCheckout /></Suspense></PrivateRoute>} />

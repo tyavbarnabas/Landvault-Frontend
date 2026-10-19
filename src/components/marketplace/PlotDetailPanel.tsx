@@ -9,19 +9,23 @@
 // mockData.ts's Plot.projectedROI). See landvault-catalogue-unification-plan
 // in project memory.
 //
-// Superseded, on purpose: the old internal panel's "Save plot" (per-plot)
-// button is gone — Wishlist (per-estate, below) is now the one bookmarking
-// mechanism on both surfaces, not two different-grained ones.
+// Laid out from the Figma buyer-path proposal: the price first, in the
+// estate's own currency (naira) with the buyer's display currency as an
+// approximation under it, then a short fact list, then the actions.
 
 import { useNavigate, useLocation } from "react-router-dom";
-import { formatAmount } from "../../data/mockData";
+import { formatAmount, formatInCurrency } from "../../data/mockData";
 import type { Listing } from "../../services/marketplaceService";
-import { pricePerSqm, fromPrice, titleLabel, landCheckLabel } from "../../services/marketplaceService";
+import { pricePerSqm, fromPrice, titleLabel } from "../../services/marketplaceService";
 import type { ListingPlot } from "../../services/marketplacePlotsService";
 import { plotLabel, priceForPlot } from "../../services/marketplacePlotsService";
 import { useApp } from "../../contexts/AppContext";
 import { stashPendingIntent } from "../../lib/pendingIntent";
-import VerifiedBadge from "./VerifiedBadge";
+import { formatDay } from "../../lib/formatDate";
+import Button from "../ui/Button";
+import Alert from "../ui/Alert";
+import Badge from "../ui/Badge";
+import { CalendarIcon, MessageIcon, XIcon } from "../icons";
 import WishlistButton from "./WishlistButton";
 
 interface PlotDetailPanelProps {
@@ -31,12 +35,17 @@ interface PlotDetailPanelProps {
   onOpenEnquiry?: () => void;
 }
 
+const FACING: Record<string, string> = {
+  N: "north", S: "south", E: "east", W: "west", NE: "north-east", NW: "north-west", SE: "south-east", SW: "south-west",
+};
+
 export default function PlotDetailPanel({ plot, listing, onClose, onOpenEnquiry }: PlotDetailPanelProps) {
   const { isAuthenticated, currency } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
 
   const tier = listing.priceTiers.find((t) => t.id === plot.tierId);
+  const priceCurrency = tier?.currency ?? "NGN";
   const { base, final } = priceForPlot(plot, listing.priceTiers, listing.cornerPremiumPct);
   const perSqm = tier ? pricePerSqm(tier) : 0;
 
@@ -63,112 +72,99 @@ export default function PlotDetailPanel({ plot, listing, onClose, onOpenEnquiry 
   };
 
   const isAvailable = plot.status === "available-dev" || plot.status === "available-inv";
+  // Live, the marketplace says only "unavailable" — reserved and sold are
+  // deliberately indistinguishable, so neither is claimed.
+  const status = isAvailable ? { label: "Available", variant: "success" as const }
+    : plot.publicAvailability === "unavailable" ? { label: "Not available", variant: "neutral" as const }
+      : plot.status === "sold" ? { label: "Sold", variant: "error" as const } : { label: "Reserved", variant: "warning" as const };
+  const facing = plot.orientation ? FACING[plot.orientation.toUpperCase()] : undefined;
+
+  const facts: [string, string][] = [
+    ["Surveyed area", plot.hasBoundary === false ? "Not surveyed yet" : `${plot.actualAreaSqm} sqm`],
+    ["Type", plot.isCorner ? `Corner plot (+${listing.cornerPremiumPct}%)` : "Standard"],
+    // Live plots carry no orientation; leave the row out rather than guess.
+    ...(plot.orientation ? [["Orientation", facing ? `Faces ${facing}` : plot.orientation] as [string, string]] : []),
+    ["Title", titleLabel(listing.titleType, listing.titleStatus)],
+    ["Land checked", listing.lastVerifiedDate ? formatDay(listing.lastVerifiedDate) : "Not checked yet"],
+  ];
 
   return (
-    <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] overflow-hidden">
-      <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between">
-        <h3 className="font-semibold text-sm flex items-center gap-2">
-          {plotLabel(plot)}
-          {plot.isCorner && <span className="text-[var(--accent)] text-xs">★ Corner</span>}
-        </h3>
-        {onClose && <button onClick={onClose} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-lg leading-none" aria-label="Close plot details">×</button>}
+    <section aria-labelledby="plot-heading" className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5 space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1.5">
+          <h2 id="plot-heading" className="font-display text-2xl text-[var(--foreground)]">{plotLabel(plot)}</h2>
+          <div className="flex flex-wrap gap-1.5">
+            <Badge label={status.label} variant={status.variant} />
+            {plot.isCorner && <Badge label="Corner" variant="info" />}
+          </div>
+        </div>
+        {onClose && (
+          <button type="button" onClick={onClose} className="p-1 -m-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)]" aria-label="Close plot details">
+            <XIcon size={18} />
+          </button>
+        )}
       </div>
 
-      <div className="p-5 space-y-4">
-        {!isAvailable && (
-          <div className="text-xs font-medium px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">
-            {/* Live, the marketplace says only "unavailable" — reserved and sold
-                are deliberately indistinguishable, so neither is claimed. */}
-            {plot.publicAvailability === "unavailable"
-              ? "This plot isn't available right now. Browse the available plots on the map."
-              : `This plot is ${plot.status === "sold" ? "already sold / allocated" : "currently reserved by another buyer"}. Browse similar available plots on the map.`}
+      <div>
+        <div className="font-mono-data font-medium text-2xl text-[var(--foreground)]">{formatInCurrency(final, priceCurrency)}</div>
+        {plot.isCorner && (
+          <div className="text-xs text-[var(--muted-foreground)] mt-0.5">
+            {formatInCurrency(base, priceCurrency)} + {listing.cornerPremiumPct}% corner premium
           </div>
         )}
-
-        <div className="grid grid-cols-2 gap-3">
-          {[
-            { label: "Nominal size", value: `${plot.sizeSqm} sqm` },
-            { label: "Actual surveyed area", value: plot.hasBoundary === false ? "Not surveyed yet" : `${plot.actualAreaSqm} sqm` },
-            { label: "Type", value: plot.isCorner ? "Corner piece ★" : "Standard" },
-            // Live plots carry no orientation; an empty cell says nothing false.
-            { label: "Orientation", value: plot.orientation || "—" },
-            { label: "Block reference", value: plotLabel(plot) },
-            { label: "Title", value: titleLabel(listing.titleType, listing.titleStatus) },
-          ].map((d) => (
-            <div key={d.label} className="bg-[var(--muted)] rounded-lg p-3">
-              <div className="text-xs text-[var(--muted-foreground)] mb-0.5">{d.label}</div>
-              <div className="text-sm font-medium">{d.value}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <VerifiedBadge />
-          <span className="text-xs text-[var(--muted-foreground)]">{landCheckLabel(listing.lastVerifiedDate)}</span>
-        </div>
-
-        <div className="pt-3 border-t border-[var(--border)]">
-          <div className="text-xs text-[var(--muted-foreground)] mb-0.5">Price</div>
-          {plot.isCorner ? (
-            <>
-              <div className="font-display text-2xl text-[var(--foreground)]">{formatAmount(final, currency)}</div>
-              <div className="text-xs text-[var(--accent)] mt-0.5">
-                {formatAmount(base, currency)} + {listing.cornerPremiumPct}% corner premium = {formatAmount(final, currency)}
-              </div>
-            </>
-          ) : (
-            <div className="font-display text-2xl text-[var(--foreground)]">{formatAmount(final, currency)}</div>
-          )}
-          <div className="text-xs text-[var(--muted-foreground)] mt-1">{formatAmount(perSqm, currency)}/sqm</div>
-        </div>
-
-        {plot.projectedROI && (
-          <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-            <div className="text-xs font-medium text-blue-900 mb-1">Investment projection (estimate)</div>
-            <div className="text-sm text-blue-800">~{plot.projectedROI}% capital appreciation over {plot.holdingYears} years.</div>
-            <div className="text-xs text-blue-600 mt-1">Not a guarantee of returns.</div>
-          </div>
+        <div className="text-xs text-[var(--muted-foreground)] mt-0.5">{formatInCurrency(perSqm, priceCurrency)}/sqm · {plot.sizeSqm} sqm plot</div>
+        {/* The estate prices in its own currency; the buyer's display currency
+            is only ever an approximation of it. */}
+        {currency !== priceCurrency && (
+          <div className="text-xs text-[var(--muted-foreground)] mt-0.5">≈ {formatAmount(final, currency)} in your display currency</div>
         )}
-
-        {plot.hasBoundary === false && (
-          // The backend's own rule: never present an unsurveyed plot like a surveyed one.
-          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900">
-            <span className="font-semibold">Boundary not surveyed yet.</span> This plot isn't on the map, its exact position in the estate isn't confirmed, and it isn't covered by HomeTrue's double-allocation check until it's surveyed. Ask the developer before you commit.
-          </div>
-        )}
-
-        {/* The four CTAs — Reserve and Book inspection carry equal visual weight */}
-        <div className="flex flex-col gap-2 pt-2">
-          <button
-            onClick={handleReserve}
-            disabled={!isAvailable}
-            className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Reserve this plot
-          </button>
-          <button
-            onClick={handleInspect}
-            className="w-full py-2.5 border-2 border-[var(--primary)] text-[var(--primary)] rounded-md text-sm font-semibold hover:bg-[var(--secondary)] transition-colors"
-          >
-            📅 Book an inspection
-          </button>
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={handleEnquire} className="py-2 text-sm rounded-md border border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors">
-              Enquire
-            </button>
-            <WishlistButton
-              listingId={listing.id}
-              listingType="primary"
-              fromPrice={fromPrice(listing)}
-              className="py-2 text-sm rounded-md border border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors flex items-center justify-center gap-1.5"
-            />
-          </div>
-        </div>
-
-        <p className="text-xs text-[var(--muted-foreground)] pt-1">
-          This plot stays open to other buyers until reserved — inspecting or enquiring doesn't hold it. Save the estate to your wishlist to track it in the meantime.
-        </p>
       </div>
-    </div>
+
+      <dl className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
+        {facts.map(([k, v]) => (
+          <div key={k} className="flex items-baseline justify-between gap-4 py-2 text-sm">
+            <dt className="text-[var(--muted-foreground)]">{k}</dt>
+            <dd className="font-medium text-[var(--foreground)] text-right">{v}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {!isAvailable && (
+        <Alert>
+          {plot.publicAvailability === "unavailable"
+            ? "This plot isn't available right now. Choose another available plot on the map."
+            : `This plot is ${plot.status === "sold" ? "already sold" : "reserved by another buyer"}. Choose another available plot on the map.`}
+        </Alert>
+      )}
+
+      {plot.hasBoundary === false && (
+        // The backend's own rule: never present an unsurveyed plot like a surveyed one.
+        <Alert>
+          <span className="font-semibold">Boundary not surveyed yet.</span> This plot isn't on the map, its exact position in the estate isn't confirmed, and it isn't covered by HomeTrue's double-allocation check until it's surveyed. Ask the developer before you commit.
+        </Alert>
+      )}
+
+      {plot.projectedROI && (
+        <Alert tone="info" title="Investment projection (estimate)">
+          ~{plot.projectedROI}% capital appreciation over {plot.holdingYears} years. Not a guarantee of returns.
+        </Alert>
+      )}
+
+      <div className="space-y-2">
+        <Button size="lg" fullWidth onClick={handleReserve} disabled={!isAvailable}>Reserve this plot</Button>
+        <Button size="lg" variant="secondary" fullWidth onClick={handleInspect} className="inline-flex items-center justify-center gap-2">
+          <CalendarIcon size={16} />Book an inspection
+        </Button>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-1">
+          <Button variant="link" onClick={handleEnquire} className="inline-flex items-center gap-1.5"><MessageIcon size={14} />Ask the developer</Button>
+          <WishlistButton listingId={listing.id} listingType="primary" fromPrice={fromPrice(listing)} label="Save estate"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--accent)] hover:underline" />
+        </div>
+      </div>
+
+      <p className="text-xs text-[var(--muted-foreground)]">
+        Stays open to other buyers until you reserve — inspecting or asking the developer doesn't hold it.
+      </p>
+    </section>
   );
 }

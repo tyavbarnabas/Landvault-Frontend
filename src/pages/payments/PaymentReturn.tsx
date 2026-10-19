@@ -5,21 +5,32 @@
 // Paystack. And even a confirmed payment means "received, being verified by
 // the developer", never "the plot is yours": that's the purchase page's call,
 // once finance verifies. This page never says it.
+//
+// Laid out from the Figma buyer-path proposal: inside the site header and
+// footer (it used to have neither), one outcome per card with an icon, the
+// amount and reference, and the purchase page's own timeline.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { formatInCurrency } from "../../data/mockData";
 import { ApiError, ApiTransportError } from "../../lib/apiClient";
-import { pollUntilSettled } from "../../lib/purchaseStatus";
+import { pollUntilSettled, purchaseTimeline } from "../../lib/purchaseStatus";
 import PayButton from "../../components/purchases/PayButton";
 import PurchaseStatusPanel from "../../components/purchases/PurchaseStatusPanel";
-import Page, { Loading } from "../../components/ui/Page";
-import Alert from "../../components/ui/Alert";
-import Button from "../../components/ui/Button";
-import TextLink from "../../components/ui/TextLink";
+import PurchaseTimeline from "../../components/purchases/PurchaseTimeline";
+import { Loading } from "../../components/ui/Page";
+import Card, { InfoBox } from "../../components/ui/Card";
+import Button, { LinkButton } from "../../components/ui/Button";
+import { cx } from "../../components/ui/cx";
+import { AlertIcon, CheckIcon, ClockIcon, InfoIcon } from "../../components/icons";
+import { paidWithLabel } from "../../services/financeService";
+import { fetchListingById } from "../../services/marketplaceService";
+import { fetchPlotById, plotLabel } from "../../services/marketplacePlotsService";
 import { fetchPurchase, verifyPayment, type Payment, type Purchase } from "../../services/paymentsService";
 
 type Problem = { kind: "not_found" } | { kind: "provider"; message: string } | { kind: "other"; message: string };
+// What the buyer bought, in words, for the status line. Display only.
+type Bought = { purchase: Purchase; what: string | null };
 
 export default function PaymentReturn() {
   const [params] = useSearchParams();
@@ -27,7 +38,6 @@ export default function PaymentReturn() {
   const reference = params.get("reference") ?? params.get("trxref");
 
   const [payment, setPayment] = useState<Payment | null>(null);
-  const [purchase, setPurchase] = useState<Purchase | null>(null);
   const [problem, setProblem] = useState<Problem | null>(reference ? null : { kind: "not_found" });
   const [polling, setPolling] = useState(false);
   const [gaveUp, setGaveUp] = useState(false);
@@ -68,86 +78,133 @@ export default function PaymentReturn() {
     return () => { run.current++; };
   }, [check]);
 
-  // Late money is reviewed by a person: the purchase says which way it's going.
+  // The purchase behind the payment: its progress for the timeline, its
+  // own words when a person is reviewing late money, and what was bought.
+  const [bought, setBought] = useState<Bought | null>(null);
   useEffect(() => {
-    if (payment?.underReview) fetchPurchase(payment.transactionId).then(setPurchase).catch(() => {});
-  }, [payment?.underReview, payment?.transactionId]);
+    if (!payment?.transactionId) return;
+    let cancelled = false;
+    (async () => {
+      const purchase = await fetchPurchase(payment.transactionId);
+      if (!purchase || cancelled) return;
+      const [listing, plot] = await Promise.all([
+        fetchListingById(purchase.estateId).catch(() => undefined),
+        fetchPlotById(purchase.estateId, purchase.plotId).catch(() => undefined),
+      ]);
+      if (!cancelled) setBought({ purchase, what: [listing?.name, plot ? plotLabel(plot) : null].filter(Boolean).join(", ") || null });
+    })().catch(() => {});
+    return () => { cancelled = true; };
+  }, [payment?.transactionId, payment?.status]);
 
   return (
-    <Page title="Your payment" width="sm" titleSize="md" className="py-12">
-      <div className="space-y-5">
+    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
       {problem?.kind === "not_found" && (
-        <Notice tone="warning" title="We couldn't find that payment">
-          If you've just paid, open your purchase from the marketplace to see where it stands.
-        </Notice>
+        <Status tone="neutral" icon={<InfoIcon size={22} />} title="We couldn't find that payment"
+          body="If you've just paid, your purchases list shows where it stands."
+          actions={<><LinkButton to="/purchases">Open My purchases</LinkButton><LinkButton to="/marketplace" variant="secondary">Back to the marketplace</LinkButton></>} />
       )}
       {problem && problem.kind !== "not_found" && (
-        <>
-          <Notice tone="warning" title="We couldn't check your payment">{problem.message}</Notice>
-          <Button variant="link" onClick={() => void check()}>Check again</Button>
-        </>
+        <Status tone="warning" icon={<AlertIcon size={22} />} title="We couldn't check your payment" body={problem.message}
+          actions={<Button onClick={() => void check()}>Check again</Button>} />
       )}
 
-      {!problem && !payment && <Loading label="Checking your payment with Paystack…" />}
+      {!problem && !payment && <Card><Loading label="Checking your payment with Paystack…" /></Card>}
 
-      {!problem && payment && <Outcome payment={payment} purchase={purchase} polling={polling} gaveUp={gaveUp} onCheckAgain={() => void check()} />}
-
-      {payment && (
-        <TextLink to={`/purchases/${payment.transactionId}`} className="inline-block text-sm">View your purchase →</TextLink>
-      )}
-      </div>
-    </Page>
+      {!problem && payment && <Outcome payment={payment} bought={bought} polling={polling} gaveUp={gaveUp} onCheckAgain={() => void check()} />}
+    </div>
   );
 }
 
-function Outcome({ payment, purchase, polling, gaveUp, onCheckAgain }: {
-  payment: Payment; purchase: Purchase | null; polling: boolean; gaveUp: boolean; onCheckAgain: () => void;
+function Outcome({ payment, bought, polling, gaveUp, onCheckAgain }: {
+  payment: Payment; bought: Bought | null; polling: boolean; gaveUp: boolean; onCheckAgain: () => void;
 }) {
   const amount = formatInCurrency(payment.amount, payment.currency);
+  const forWhat = bought?.what ? ` for ${bought.what}` : "";
+  const paidBy = paidWithLabel(payment.channel, null);
+  const facts = (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <InfoBox label="Amount"><span className="font-mono-data font-medium">{amount}</span></InfoBox>
+      <InfoBox label="Reference"><span className="font-mono-data break-all">{payment.reference}</span></InfoBox>
+      <InfoBox label="Paid by"><span className="first-letter:uppercase inline-block">{paidBy ?? "—"}</span></InfoBox>
+    </div>
+  );
+  // Secondary whenever the card has another main action (Pay again, Check again).
+  const purchaseLink = (variant: "primary" | "secondary" = "primary") => <LinkButton to={`/purchases/${payment.transactionId}`} variant={variant}>View your purchase</LinkButton>;
+  const back = <LinkButton to="/marketplace" variant="secondary">Back to the marketplace</LinkButton>;
+  const timeline = bought && (
+    <div>
+      <h2 className="text-sm font-semibold text-[var(--foreground)] mb-3">What happens next</h2>
+      <PurchaseTimeline steps={purchaseTimeline(bought.purchase)} />
+    </div>
+  );
 
   if (payment.underReview) {
     // Late money or a refund: the purchase's own words, never "owned".
-    return purchase ? <PurchaseStatusPanel purchase={purchase} />
-      : <Notice tone="info" title="We've received your payment">A person is reviewing it. Your purchase page says what happens next.</Notice>;
+    return (
+      <div className="space-y-4">
+        {bought ? <PurchaseStatusPanel purchase={bought.purchase} />
+          : <Status tone="info" icon={<InfoIcon size={22} />} title="We've received your payment" body="A person is reviewing it. Your purchase page says what happens next." />}
+        <div className="flex flex-wrap gap-3">{purchaseLink()}{back}</div>
+      </div>
+    );
   }
 
   switch (payment.status) {
     case "succeeded":
       return (
-        <Notice tone="info" title="Payment received — the developer is verifying it">
-          Paystack confirmed {amount}. The developer's finance team checks it before allocating the plot to you; your purchase page will show when they have.
-        </Notice>
+        <Status tone="success" icon={<CheckIcon size={22} />} title="Payment received"
+          body={`Paystack confirmed ${amount}${forWhat}. The developer's finance team now checks it before the plot is allocated to you.`}
+          actions={<>{purchaseLink()}{back}</>}>
+          {facts}
+          {timeline}
+        </Status>
       );
     case "initialized":
     case "abandoned":
       return (
-        <>
-          <Notice tone="neutral" title="Your payment is still being processed">
-            {polling ? "Bank transfers can take a few minutes. This page keeps checking." : "It hasn't come through yet. Bank transfers can take a few minutes."}
-          </Notice>
-          {gaveUp && !polling && (
-            <Button variant="link" onClick={onCheckAgain}>Check again</Button>
-          )}
-        </>
+        <Status tone="neutral" icon={<ClockIcon size={22} />} title="Your payment is still being processed"
+          body={polling ? "Bank transfers can take a few minutes. This page keeps checking." : "It hasn't come through yet. Bank transfers can take a few minutes."}
+          actions={<>{gaveUp && !polling && <Button onClick={onCheckAgain}>Check again</Button>}{purchaseLink(gaveUp && !polling ? "secondary" : "primary")}</>}>
+          {facts}
+        </Status>
       );
     case "failed":
       return (
-        <>
-          <Notice tone="warning" title="Your payment didn't go through">
-            {payment.gatewayResponse ? <>Paystack said: “{payment.gatewayResponse}”. </> : null}Nothing was taken.
-          </Notice>
-          <PayButton transactionId={payment.transactionId} label="Pay again" />
-        </>
+        <Status tone="error" icon={<AlertIcon size={22} />} title="Your payment didn't go through"
+          body={`${payment.gatewayResponse ? `Paystack said: “${payment.gatewayResponse}”. ` : ""}Nothing was taken.`}
+          actions={<><PayButton transactionId={payment.transactionId} label="Pay again" />{purchaseLink("secondary")}</>} />
       );
     case "mismatched":
       return (
-        <Notice tone="warning" title="We received a payment we need to review">
-          The amount didn't match what was agreed. Our team will contact you.
-        </Notice>
+        <Status tone="warning" icon={<AlertIcon size={22} />} title="We received a payment we need to review"
+          body="The amount didn't match what was agreed. Our team will contact you." actions={purchaseLink()}>
+          {facts}
+        </Status>
       );
   }
 }
 
-function Notice({ tone, title, children }: { tone: "info" | "warning" | "neutral"; title: string; children: React.ReactNode }) {
-  return <Alert tone={tone} title={title} role="status"><p>{children}</p></Alert>;
+const ICON_TONE = {
+  success: "bg-[var(--success-surface)] text-[var(--success-text)]",
+  warning: "bg-[var(--warning-surface)] text-[var(--warning-text)]",
+  error: "bg-[var(--error-surface)] text-[var(--error-text)]",
+  info: "bg-[var(--info-surface)] text-[var(--info-text)]",
+  neutral: "bg-[var(--muted)] text-[var(--muted-foreground)]",
+} as const;
+
+// One outcome, one card: an icon, a plain headline, what it means, and the way on.
+function Status({ tone, icon, title, body, actions, children }: {
+  tone: keyof typeof ICON_TONE; icon: React.ReactNode; title: string; body: string; actions?: React.ReactNode; children?: React.ReactNode;
+}) {
+  return (
+    <Card as="section" role="status" aria-labelledby="payment-status" className="space-y-5">
+      <span className={cx("w-12 h-12 rounded-full flex items-center justify-center", ICON_TONE[tone])} aria-hidden="true">{icon}</span>
+      <div>
+        <h1 id="payment-status" className="font-display text-3xl text-[var(--foreground)] mb-2">{title}</h1>
+        <p className="text-sm text-[var(--muted-foreground)]">{body}</p>
+      </div>
+      {children}
+      {actions && <div className="flex flex-wrap gap-3">{actions}</div>}
+    </Card>
+  );
 }
