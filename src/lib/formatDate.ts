@@ -12,3 +12,11 @@ export function formatDay(value: string): string {
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? value : LOCAL_DAY.format(d);
 }
+
+// An instant with its time, in the reader's zone: "16 Oct 2026, 17:28".
+const LOCAL_DAY_TIME = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+export function formatDayTime(value: string): string {
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? value : LOCAL_DAY_TIME.format(d);
+}

@@ -101,3 +101,45 @@ describe("when the purchase page shows a refund", () => {
     expect(refundExpected(purchase("awaiting_finance", { status: "succeeded", amountPaid: 15_000_000 }))).toBe(false);
   });
 });
+
+describe("My purchases: the badge, the tab and the progress", () => {
+  it("files and labels each status", async () => {
+    const { purchaseBadge, purchaseGroup } = await import("./purchaseStatus");
+    const rows = [
+      purchase("verified", { amountPaid: 15_000_000, paidAt: "2026-10-16T16:28:48Z", receiptNumber: "HT-RCT-2026-000010" }),
+      purchase("abandoned"),
+      purchase("rejected", { amountPaid: 15_000_000, refundStatus: "processed" }),
+      purchase("rejected", { amountPaid: 15_000_000, refundStatus: "processing" }),
+      purchase("pending_payment"),
+      purchase("pending_payment", { status: "failed" }),
+      purchase("awaiting_finance", { amountPaid: 15_000_000 }),
+      purchase("abandoned", { amountPaid: 15_000_000, underReview: true, reviewKind: "late_payment" }),
+    ];
+    expect(rows.map((r) => [purchaseGroup(r), purchaseBadge(r).label])).toEqual([
+      ["allocated", "Plot allocated"],
+      ["ended", "Reservation ended"],
+      ["ended", "Refunded"],
+      ["in_progress", "Refund on its way"],
+      ["in_progress", "Awaiting payment"],
+      ["in_progress", "Payment failed"],
+      ["in_progress", "Being verified"],
+      ["in_progress", "Under review"],
+    ]);
+    expect(purchaseBadge(rows[0]).note).toBe("Receipt HT-RCT-2026-000010");
+    expect(purchaseBadge(rows[1]).note).toBe("Nothing was charged");
+  });
+
+  it("shows how far it got, with only the times the API holds", async () => {
+    const { purchaseTimeline } = await import("./purchaseStatus");
+    const done = purchaseTimeline(purchase("verified", { amountPaid: 15_000_000, paidAt: "2026-10-16T16:28:48Z", receiptNumber: "HT-RCT-2026-000010" }));
+    expect(done.map((s) => [s.key, s.state, s.at])).toEqual([
+      ["reserved", "done", "2026-10-09T10:00:00Z"], ["paid", "done", "2026-10-16T16:28:48Z"], ["verified", "done", null], ["allocated", "done", null],
+    ]);
+    expect(done[1].note).toBe("₦15,000,000 confirmed by Paystack");
+    expect(purchaseTimeline(purchase("abandoned")).map((s) => [s.key, s.state])).toEqual([["reserved", "done"], ["ended", "failed"]]);
+    expect(purchaseTimeline(purchase("awaiting_finance", { amountPaid: 1 })).map((s) => s.state)).toEqual(["done", "done", "current", "upcoming"]);
+    expect(purchaseTimeline(purchase("rejected", { amountPaid: 1, refundStatus: "processed" })).map((s) => [s.key, s.state])).toEqual([
+      ["reserved", "done"], ["paid", "done"], ["verified", "failed"], ["refund", "done"],
+    ]);
+  });
+});

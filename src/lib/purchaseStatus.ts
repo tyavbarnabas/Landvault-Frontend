@@ -7,6 +7,7 @@
 // shown as owned either.
 
 import type { Purchase } from "../services/paymentsService";
+import { formatInCurrency } from "../data/mockData";
 import type { RefundStatus } from "../services/paymentTypes";
 
 export type PurchaseTone = "success" | "info" | "warning" | "neutral";
@@ -101,6 +102,102 @@ export function refundExpected(purchase: Purchase): boolean {
   const p = purchase.payment;
   if (!p || (p.amountPaid == null && p.status !== "succeeded")) return false;
   return p.refundStatus != null || p.reviewKind === "refund_due" || purchase.status === "rejected";
+}
+
+// ─── Where a purchase stands, in one word ────────────────────────────────────
+//
+// Still under way (paying, the developer's check, a late payment under
+// review, a refund on its way), or null once it's settled one way or the
+// other. The dashboard lists the open ones; My purchases files them.
+export type PurchaseStage = "pay" | "payment_failed" | "verifying" | "under_review" | "refund";
+
+export function purchaseStage(p: Purchase): PurchaseStage | null {
+  if (p.status === "pending_payment") return p.payment?.status === "failed" ? "payment_failed" : "pay";
+  if (p.status === "payment_received" || p.status === "awaiting_finance") return "verifying";
+  if (refundExpected(p) && p.payment?.refundStatus !== "processed") return "refund";
+  if (p.status === "abandoned" && p.payment?.underReview) return "under_review";
+  return null;
+}
+
+export type PurchaseGroup = "in_progress" | "allocated" | "ended";
+
+export function purchaseGroup(p: Purchase): PurchaseGroup {
+  if (purchaseStage(p)) return "in_progress";
+  return p.status === "verified" ? "allocated" : "ended";
+}
+
+// The list's badge: describePurchase's title, shortened, plus one line under
+// it (the receipt, or what happened to the money).
+export function purchaseBadge(p: Purchase): { label: string; tone: PurchaseTone | "error"; note: string | null } {
+  const stage = purchaseStage(p);
+  const refund = refundLine(p.payment?.refundStatus);
+  switch (stage) {
+    case "pay": return { label: "Awaiting payment", tone: "warning", note: describePurchase(p).payNote };
+    case "payment_failed": return { label: "Payment failed", tone: "error", note: "Nothing was taken. You can try again." };
+    case "verifying": return { label: "Being verified", tone: "info", note: p.payment?.receiptNumber ? `Receipt ${p.payment.receiptNumber}` : null };
+    case "under_review": return { label: "Under review", tone: "info", note: "Your payment arrived after the reservation ended." };
+    case "refund": return { label: p.payment?.refundStatus === "needs-attention" ? "Refund needs your details" : "Refund on its way", tone: "warning", note: refund };
+  }
+  if (p.status === "verified") return { label: "Plot allocated", tone: "success", note: p.payment?.receiptNumber ? `Receipt ${p.payment.receiptNumber}` : null };
+  if (p.payment?.refundStatus === "processed") {
+    return { label: "Refunded", tone: "neutral", note: p.status === "rejected" ? "The developer didn't accept the payment; refund paid" : "Your refund has been paid" };
+  }
+  if (p.status === "rejected") return { label: "Not accepted", tone: "warning", note: refund };
+  return { label: "Reservation ended", tone: "neutral", note: "Nothing was charged" };
+}
+
+// ─── How far it got ──────────────────────────────────────────────────────────
+//
+// The purchase page's progress: reserved → paid → verified → allocated, or
+// where it turned off that road (ended unpaid, not accepted, refunded). Only
+// the times the API holds are given; a step with none shows no date.
+
+export type StepState = "done" | "current" | "failed" | "upcoming";
+
+export interface TimelineStep {
+  key: string;
+  label: string;
+  at: string | null;
+  note: string | null;
+  state: StepState;
+}
+
+export function purchaseTimeline(p: Purchase): TimelineStep[] {
+  const pay = p.payment;
+  const paid = pay?.paidAt != null || pay?.amountPaid != null || ["payment_received", "awaiting_finance", "verified"].includes(p.status);
+  const paidNote = pay?.amountPaid != null ? `${formatInCurrency(pay.amountPaid, p.currency)} confirmed by Paystack` : null;
+  const steps: TimelineStep[] = [{ key: "reserved", label: "Reserved", at: p.createdAt, note: "Held for you while you pay", state: "done" }];
+
+  if (p.status === "abandoned" && !paid) {
+    steps.push({ key: "ended", label: "Reservation ended", at: null, note: "It ended before payment arrived. Nothing was charged.", state: "failed" });
+    return steps;
+  }
+  if (p.status === "pending_payment") {
+    const failed = pay?.status === "failed";
+    steps.push({ key: "paid", label: failed ? "Payment didn't go through" : "Waiting for your payment", at: null, note: failed ? "Nothing was taken. You can try again." : null, state: failed ? "failed" : "current" });
+  } else {
+    steps.push({ key: "paid", label: p.status === "abandoned" ? "Paid, after the reservation ended" : "Paid", at: pay?.paidAt ?? null, note: paidNote, state: "done" });
+  }
+
+  const refund = refundLine(pay?.refundStatus);
+  if (p.status === "rejected") {
+    steps.push({ key: "verified", label: "The developer didn't accept the payment", at: null, note: "The plot is back on sale.", state: "failed" });
+    steps.push({ key: "refund", label: pay?.refundStatus === "processed" ? "Refunded" : "Refund", at: null, note: refund, state: pay?.refundStatus === "processed" ? "done" : "current" });
+    return steps;
+  }
+  if (p.status === "abandoned") {
+    if (pay?.reviewKind === "refund_due" || pay?.refundStatus) {
+      steps.push({ key: "refund", label: pay?.refundStatus === "processed" ? "Refunded" : "Refund", at: null, note: refund ?? "Your money is being returned in full.", state: pay?.refundStatus === "processed" ? "done" : "current" });
+    } else {
+      steps.push({ key: "review", label: "Under review", at: null, note: "The developer is deciding: your plot or a full refund.", state: "current" });
+    }
+    return steps;
+  }
+
+  const verifying = p.status === "payment_received" || p.status === "awaiting_finance";
+  steps.push({ key: "verified", label: "Verified by the developer", at: null, note: verifying ? "Their finance team is checking the money arrived." : null, state: p.status === "verified" ? "done" : verifying ? "current" : "upcoming" });
+  steps.push({ key: "allocated", label: "Plot allocated", at: null, note: p.status === "verified" ? "The plot is yours." : null, state: p.status === "verified" ? "done" : "upcoming" });
+  return steps;
 }
 
 // ─── Waiting for a payment to settle ─────────────────────────────────────────

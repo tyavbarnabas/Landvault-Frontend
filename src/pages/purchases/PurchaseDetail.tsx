@@ -10,11 +10,14 @@ import LoadError from "../../components/LoadError";
 import PurchaseStatusPanel from "../../components/purchases/PurchaseStatusPanel";
 import RefundPanel from "../../components/purchases/RefundPanel";
 import ReceiptDownload from "../../components/documents/ReceiptDownload";
-import Page from "../../components/ui/Page";
+import Page, { Loading } from "../../components/ui/Page";
 import Card from "../../components/ui/Card";
-import Button from "../../components/ui/Button";
+import Button, { LinkButton } from "../../components/ui/Button";
+import Badge from "../../components/ui/Badge";
 import TextLink from "../../components/ui/TextLink";
-import { refundExpected } from "../../lib/purchaseStatus";
+import { purchaseBadge, purchaseTimeline, refundExpected, type StepState, type TimelineStep } from "../../lib/purchaseStatus";
+import { formatDay, formatDayTime } from "../../lib/formatDate";
+import { CheckIcon, ReceiptIcon, XIcon } from "../../components/icons";
 import { isAvailable } from "../../lib/backends";
 import { fetchPurchase } from "../../services/paymentsService";
 import { fetchListingById } from "../../services/marketplaceService";
@@ -34,14 +37,14 @@ export default function PurchaseDetail() {
     return { purchase, estateName: listing?.name ?? null, plot: plot ?? null };
   }, [id]);
 
-  if (loaded.loading && !loaded.data) return <div className="p-8 text-sm text-[var(--muted-foreground)]">Loading your purchase…</div>;
+  if (loaded.loading && !loaded.data) return <Page title="Your purchase" back={{ to: "/purchases", label: "My purchases" }}><Loading label="Loading your purchase…" /></Page>;
   if (loaded.error) return <LoadError error={loaded.errorValue} what="this purchase" onRetry={loaded.refetch} />;
   const { purchase, estateName, plot } = loaded.data!;
   if (!purchase) {
     return (
-      <div className="p-8 text-sm text-[var(--muted-foreground)]">
-        We couldn't find that purchase. <TextLink to="/marketplace">Back to the marketplace</TextLink>
-      </div>
+      <Page title="Purchase not found" back={{ to: "/purchases", label: "My purchases" }}>
+        <p className="text-sm text-[var(--muted-foreground)]">We couldn't find that purchase. <TextLink to="/purchases">See all your purchases</TextLink></p>
+      </Page>
     );
   }
 
@@ -51,60 +54,111 @@ export default function PurchaseDetail() {
   // Its transaction id keeps opening the plot after finance verifies it, when
   // the owned plot gets an id of its own.
   const inPortfolio = isAvailable("portfolio") && (purchase.status === "awaiting_finance" || purchase.status === "verified");
+  const badge = purchaseBadge(purchase);
+  const steps = purchaseTimeline(purchase);
+  const plan = purchase.plan === "outright" ? "Pay in full" : purchase.installmentMonths ? `Instalments over ${purchase.installmentMonths} months` : "Instalments";
   return (
-    <Page title={estateName ?? "Your purchase"} eyebrow={purchase.reference} titleSize="md" width="lg"
-      description={plot ? `${plotLabel(plot)}${plot.sizeSqm ? ` · ${plot.sizeSqm} sqm` : ""}` : undefined}>
-      <div className="space-y-6">
+    <Page width="xl" back={{ to: "/purchases", label: "My purchases" }} eyebrow={purchase.reference}
+      title={<span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">{plot ? plotLabel(plot) : estateName ?? "Your purchase"}<span className="font-[family-name:var(--font-body)] inline-flex"><Badge label={badge.label} variant={badge.tone} /></span></span>}
+      description={[plot ? estateName : null, plot?.sizeSqm ? `${plot.sizeSqm} sqm` : null, `reserved ${formatDay(purchase.createdAt)}`].filter(Boolean).join(" · ")}
+      actions={inPortfolio ? <LinkButton to={`/portfolio/${purchase.id}`} variant="secondary">View in portfolio</LinkButton> : undefined}>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
+        <div className="space-y-6 min-w-0">
+          <PurchaseStatusPanel purchase={purchase} refundShown={showRefund} />
+          {showRefund && p && <RefundPanel paymentReference={p.reference} />}
 
-      <PurchaseStatusPanel purchase={purchase} refundShown={showRefund} />
+          <Card as="section" aria-labelledby="progress-heading">
+            <h2 id="progress-heading" className="font-semibold text-[var(--foreground)] mb-4">Progress</h2>
+            <ol>
+              {steps.map((step, i) => <TimelineRow key={step.key} step={step} last={i === steps.length - 1} />)}
+            </ol>
+          </Card>
 
-      {showRefund && p && <RefundPanel paymentReference={p.reference} />}
+          <Card as="section" aria-labelledby="details-heading">
+            <h2 id="details-heading" className="font-semibold text-[var(--foreground)] mb-3">Purchase details</h2>
+            <dl className="space-y-2.5 text-sm">
+              {estateName && <Row label="Estate" value={estateName} />}
+              {plot && <Row label="Plot" value={`${plotLabel(plot)}${plot.sizeSqm ? ` · ${plot.sizeSqm} sqm` : ""}`} />}
+              <Row label="Agreed price" value={formatInCurrency(purchase.totalPrice, purchase.currency)} mono />
+              {purchase.cornerPremiumPct !== null && <Row label="Includes corner premium" value={`${purchase.cornerPremiumPct}%`} />}
+              <Row label="Payment plan" value={plan} />
+              <Row label="Use" value={purchase.intent === "investment" ? "To hold as an investment" : "To build on it (development)"} />
+            </dl>
+          </Card>
+        </div>
 
-      <Card as="dl" padding="md" className="text-sm grid grid-cols-2 gap-y-2">
-        <dt className="text-[var(--muted-foreground)]">Agreed price</dt>
-        <dd className="text-right font-mono-data">{formatInCurrency(purchase.totalPrice, purchase.currency)}</dd>
-        {purchase.cornerPremiumPct !== null && (
-          <>
-            <dt className="text-[var(--muted-foreground)]">Includes corner premium</dt>
-            <dd className="text-right">{purchase.cornerPremiumPct}%</dd>
-          </>
-        )}
-        <dt className="text-[var(--muted-foreground)]">Payment plan</dt>
-        <dd className="text-right capitalize">{purchase.plan}</dd>
-        {p?.amountPaid != null && (
-          <>
-            <dt className="text-[var(--muted-foreground)]">Paystack confirmed</dt>
-            <dd className="text-right font-mono-data">{formatInCurrency(p.amountPaid, purchase.currency)}</dd>
-          </>
-        )}
-        {p?.paidAt && (
-          <>
-            <dt className="text-[var(--muted-foreground)]">Paid on</dt>
-            <dd className="text-right">{new Date(p.paidAt).toLocaleString()}</dd>
-          </>
-        )}
-        {p && (
-          <>
-            <dt className="text-[var(--muted-foreground)]">Payment reference</dt>
-            <dd className="text-right font-mono-data text-xs break-all">{p.reference}</dd>
-          </>
-        )}
-        {p?.receiptId && p.receiptNumber && (
-          <>
-            <dt className="text-[var(--muted-foreground)]">Receipt</dt>
-            <dd className="text-right"><ReceiptDownload receiptId={p.receiptId} receiptNumber={p.receiptNumber} /></dd>
-          </>
-        )}
-      </Card>
-
-      <div className="flex justify-between text-sm">
-        <TextLink to="/marketplace" muted>← Marketplace</TextLink>
-        <div className="flex flex-wrap gap-4">
-          {inPortfolio && <TextLink to={`/portfolio/${purchase.id}`}>View in your portfolio →</TextLink>}
-          <Button variant="link" onClick={loaded.refetch}>Refresh status</Button>
+        <div className="space-y-6">
+          {p && (
+            <Card as="section" aria-labelledby="payment-heading">
+              <h2 id="payment-heading" className="font-semibold text-[var(--foreground)] mb-3">Payment</h2>
+              <dl className="space-y-2.5 text-sm">
+                {p.amountPaid != null && <Row label="Amount paid" value={formatInCurrency(p.amountPaid, purchase.currency)} mono />}
+                {p.paidAt && <Row label="Paid on" value={formatDayTime(p.paidAt)} />}
+                <Row label="Paid with" value="Paystack" />
+              </dl>
+              <div className="rounded-lg bg-[var(--muted)] px-3 py-2.5 mt-3">
+                <div className="text-xs text-[var(--muted-foreground)]">Payment reference</div>
+                <div className="font-mono-data text-xs text-[var(--foreground)] break-all">{p.reference}</div>
+              </div>
+              {p.receiptId && p.receiptNumber && (
+                <div className="flex items-center gap-3 border border-[var(--border)] rounded-lg px-3 py-2.5 mt-3">
+                  <span className="w-8 h-8 shrink-0 rounded-lg bg-[var(--secondary)] text-[var(--secondary-foreground)] flex items-center justify-center"><ReceiptIcon size={16} /></span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-[var(--foreground)]">Receipt</div>
+                    <ReceiptDownload receiptId={p.receiptId} receiptNumber={p.receiptNumber} />
+                  </div>
+                </div>
+              )}
+            </Card>
+          )}
+          <Card as="section" aria-labelledby="help-heading">
+            <h2 id="help-heading" className="font-semibold text-[var(--foreground)] mb-1">Need help?</h2>
+            <p className="text-sm text-[var(--muted-foreground)] mb-3">Quote <span className="font-mono-data">{purchase.reference}</span> when you contact support about this purchase.</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+              <TextLink to="/support" className="font-medium">Contact support →</TextLink>
+              <Button variant="link" onClick={loaded.refetch}>Refresh status</Button>
+            </div>
+          </Card>
         </div>
       </div>
-      </div>
     </Page>
+  );
+}
+
+function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <dt className="text-[var(--muted-foreground)]">{label}</dt>
+      <dd className={`text-right text-[var(--foreground)] ${mono ? "font-mono-data" : ""}`}>{value}</dd>
+    </div>
+  );
+}
+
+const DOT: Record<StepState, string> = {
+  done: "bg-[var(--primary)] text-[var(--primary-foreground)]",
+  current: "border-2 border-[var(--primary)] bg-[var(--card)]",
+  failed: "bg-[var(--muted)] text-[var(--muted-foreground)]",
+  upcoming: "border border-[var(--border)] bg-[var(--card)]",
+};
+
+function TimelineRow({ step, last }: { step: TimelineStep; last: boolean }) {
+  return (
+    <li className="flex gap-3.5" aria-current={step.state === "current" ? "step" : undefined}>
+      <div className="flex flex-col items-center">
+        <span className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center ${DOT[step.state]}`}>
+          {step.state === "done" && <CheckIcon size={12} />}
+          {step.state === "failed" && <XIcon size={12} />}
+          {step.state === "current" && <span className="w-2 h-2 rounded-full bg-[var(--primary)]" />}
+        </span>
+        {!last && <span className={`w-0.5 flex-1 min-h-6 ${step.state === "done" ? "bg-[var(--primary)]" : "bg-[var(--border)]"}`} />}
+      </div>
+      <div className={last ? "pb-0" : "pb-4"}>
+        <div className={`text-sm font-semibold ${step.state === "upcoming" ? "text-[var(--muted-foreground)]" : "text-[var(--foreground)]"}`}>{step.label}</div>
+        {(step.at || step.note) && (
+          <div className="text-sm text-[var(--muted-foreground)]">{[step.at ? formatDayTime(step.at) : null, step.note].filter(Boolean).join(" · ")}</div>
+        )}
+        {step.state === "upcoming" && !step.note && <span className="sr-only">Not yet</span>}
+      </div>
+    </li>
   );
 }

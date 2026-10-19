@@ -4,11 +4,14 @@
 
 import PurchaseList from "../../components/purchases/PurchaseList";
 import Page from "../../components/ui/Page";
+import { LinkButton } from "../../components/ui/Button";
+import { isAvailable } from "../../lib/backends";
 
 export default function MyPurchases() {
   return (
     <Page title="My purchases"
-      description="Every plot you've reserved and paid for, and where each one stands. A plot is yours once the developer verifies your payment.">
+      description="Every plot you've reserved or paid for. A plot is yours once the developer verifies your payment."
+      actions={isAvailable("portfolio") ? <LinkButton to="/portfolio" variant="secondary">View portfolio</LinkButton> : undefined}>
       <PurchaseList pageSize={20} />
     </Page>
   );

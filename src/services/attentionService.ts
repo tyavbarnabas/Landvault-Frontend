@@ -38,14 +38,14 @@ import { fetchWishlistListing, listingDisplayName, listingFromPrice, listingRout
 import type { WishlistItem } from "./marketplaceService";
 import { isActivelyOwned } from "../pages/portfolio/Portfolio";
 import { fetchMyPurchases, type Purchase } from "./paymentsService";
-import { describePurchase, refundExpected } from "../lib/purchaseStatus";
+import { describePurchase, purchaseStage, type PurchaseStage } from "../lib/purchaseStatus";
 import { fetchListingById } from "./marketplaceService";
 import { fetchPlotById, plotLabel } from "./marketplacePlotsService";
 
 export type AttentionType = "payment_due" | "arrears" | "upgrade_delta_due" | "document_issued" | "price_change" | "purchase";
 
-// Where a purchase still under way stands, for its badge and icon.
-export type PurchaseStage = "pay" | "payment_failed" | "verifying" | "under_review" | "refund";
+// Where a purchase still under way stands (lib/purchaseStatus.ts decides).
+export { purchaseStage, type PurchaseStage };
 export type AttentionSeverity = "urgent" | "normal";
 
 export interface AttentionItem {
@@ -285,13 +285,6 @@ function sortByUrgency(ranked: RankedItem[]): AttentionItem[] {
 // Newest first from the server; an open purchase is always a recent one.
 const PURCHASE_SCAN_LIMIT = 50;
 
-export function purchaseStage(p: Purchase): PurchaseStage | null {
-  if (p.status === "pending_payment") return p.payment?.status === "failed" ? "payment_failed" : "pay";
-  if (p.status === "payment_received" || p.status === "awaiting_finance") return "verifying";
-  if (refundExpected(p) && p.payment?.refundStatus !== "processed") return "refund";
-  if (p.status === "abandoned" && p.payment?.underReview) return "under_review";
-  return null;
-}
 
 export async function fetchPurchaseAttention(): Promise<AttentionItem[]> {
   const page = await fetchMyPurchases({ limit: PURCHASE_SCAN_LIMIT });
