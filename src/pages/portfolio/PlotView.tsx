@@ -1,7 +1,11 @@
+// One owned plot — /portfolio/:id (an owned-plot id, or the transaction id
+// while finance hasn't verified it yet). Redesigned from the Figma "Plot —
+// Proposed": one page of sections instead of tabs — ownership, documents,
+// details, payments — with title, payment and help on the side.
+
 import { useState, useEffect } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { formatAmount, FX_RATES, type OwnedPlot, type Document } from "../../data/mockData";
-import TabBar from "../../components/ui/Tabs";
 import {
   fetchOwnedPlotById, fetchInstallmentSchedule, submitInstallmentPayment, verifyInstallmentPayment, requestRestructure,
   installmentsAvailable, sizeText, type InstallmentSchedule, type PaymentRecord,
@@ -14,7 +18,11 @@ import { useFetch } from "../../lib/useFetch";
 import { fetchConstructionProgress, type ConstructionProgress } from "../../services/constructionService";
 import { CAPABILITIES } from "../../lib/capabilities";
 import { useApp } from "../../contexts/AppContext";
-import DocumentCard from "../../components/documents/DocumentCard";
+import { DOCUMENT_TYPE_LABELS, DocTypeChip, DocumentActions } from "../../components/documents/DocumentCard";
+import Badge from "../../components/ui/Badge";
+import Button from "../../components/ui/Button";
+import { formatDay } from "../../lib/formatDate";
+import { AlertIcon, BuildingIcon, CheckIcon, ChevronRightIcon, FileCheckIcon, MapPinIcon, MessageIcon, WalletIcon } from "../../components/icons";
 import ReceiptDownload from "../../components/documents/ReceiptDownload";
 import PlotStatusBadge from "../../components/portfolio/PlotStatusBadge";
 import ArrearsBanner from "../../components/portfolio/ArrearsBanner";
@@ -22,9 +30,7 @@ import PaymentSchedule from "../../components/portfolio/PaymentSchedule";
 import PaymentMethodSelector from "../../components/checkout/PaymentMethodSelector";
 import VerificationProgress, { type VerificationStageStatus } from "../../components/checkout/VerificationProgress";
 import { paymentMethodsForCountry, initiatePayment, type MarketplacePaymentMethod, type VirtualAccountDetails } from "../../services/marketplaceCheckoutService";
-import VerifiedBadge from "../../components/marketplace/VerifiedBadge";
 
-type Tab = "overview" | "payments" | "construction" | "documents";
 type PayStep = "form" | "verifying";
 
 interface PlotViewData {
@@ -35,7 +41,6 @@ interface PlotViewData {
 
 export default function PlotView() {
   const { id } = useParams();
-  const navigate = useNavigate();
   const { currency: displayCurrency, user } = useApp();
   const { data, loading, error: loadError, refetch, setData } = useFetch<PlotViewData>(async () => {
     if (!id) return { plot: null, docs: [], schedule: undefined };
@@ -47,7 +52,6 @@ export default function PlotView() {
     ]);
     return { plot: plotData ?? null, docs: docData, schedule: scheduleData };
   }, [id]);
-  const [tab, setTab] = useState<Tab>("overview");
   const [restructuring, setRestructuring] = useState(false);
 
   // Payment form state
@@ -177,27 +181,34 @@ export default function PlotView() {
     }
   };
 
-  const TABS: { id: Tab; label: string }[] = [
-    { id: "overview", label: "Overview" },
-    { id: "payments", label: "Payments" },
-    ...(CAPABILITIES.constructionTracking ? [{ id: "construction" as const, label: "Construction" }] : []),
-    { id: "documents", label: "Documents" },
-  ];
+  const docsLoaded = docsAvailable && isLive("documents");
+  const hasLetter = docs.some((d) => d.type === "allocation_letter");
+  const paidOff = plot.status === "completed" || (!pending && outstanding <= 0 && plot.paidAmount > 0);
+  const titleRow = titleState(plot.titleType, titleStatus);
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <nav className="text-xs text-[var(--muted-foreground)] mb-4 flex items-center gap-1.5">
-        <button onClick={() => navigate("/portfolio")} className="hover:text-[var(--foreground)]">Portfolio</button>
-        <span>/</span>
-        <span className="text-[var(--foreground)]">{plot.plotLabel}</span>
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
+      <nav aria-label="Breadcrumb" className="text-xs text-[var(--muted-foreground)] mb-4 flex items-center gap-1.5">
+        <Link to="/portfolio" className="hover:text-[var(--foreground)]">Portfolio</Link>
+        <ChevronRightIcon size={12} />
+        <span className="font-medium text-[var(--foreground)]" aria-current="page">{plot.plotLabel}</span>
       </nav>
 
-      <div className="flex flex-wrap items-start gap-4 mb-6">
-        <div className="flex-1 min-w-0">
-          <h1 className="font-display text-2xl text-[var(--foreground)]">{plot.estate}</h1>
-          <p className="text-sm text-[var(--muted-foreground)]">{[plot.plotLabel, sizeText(plot), plot.location].filter(Boolean).join(" · ")}</p>
+      <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
+        <div className="min-w-0">
+          <h1 className="font-display text-[28px] sm:text-4xl leading-tight text-[var(--foreground)]">{plot.plotLabel}</h1>
+          <p className="mt-1.5 flex items-start gap-1.5 text-sm text-[var(--muted-foreground)]">
+            <span className="mt-0.5"><MapPinIcon size={15} /></span>
+            {[plot.estate, sizeText(plot), plot.location].filter(Boolean).join(" · ")}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <PlotStatusBadge status={plot.status} />
+            {titleRow && <Badge label={titleRow.badge} variant={titleRow.tone} />}
+          </div>
         </div>
-        <PlotStatusBadge status={plot.status} />
+        <Link to={`/marketplace/${plot.estateId}`} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md border border-[var(--border)] bg-[var(--card)] text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)]">
+          View estate <ChevronRightIcon size={15} />
+        </Link>
       </div>
 
       {/* Paid, not yet verified: equity is 0 until finance signs off, so
@@ -229,286 +240,337 @@ export default function PlotView() {
         </div>
       )}
 
-      {/* Tab bar */}
-      <div className="border-b border-[var(--border)] mb-6">
-        <TabBar tabs={TABS} active={tab} onActivate={setTab} ariaLabel="Plot sections" />
-      </div>
-
-      {/* Overview tab */}
-      {tab === "overview" && (
-        <div id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" className={sidebar ? "grid lg:grid-cols-3 gap-6" : ""}>
-          <div className={sidebar ? "lg:col-span-2 space-y-5" : "space-y-5"}>
-            {/* Equity card */}
-            <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
-              <h3 className="font-semibold text-sm mb-4">Equity position</h3>
-              <div className="grid grid-cols-3 gap-4 mb-4">
-                <Stat label="Total price" value={formatAmount(plot.totalPrice, plot.currency)} />
-                <Stat label="Paid" value={formatAmount(plot.paidAmount, plot.currency)} green={!pending && plot.paidAmount > 0} />
-                <Stat label="Outstanding" value={formatAmount(outstanding, plot.currency)} />
-              </div>
-              <div className="mb-1.5 flex items-center justify-between text-xs">
-                <span className="text-[var(--muted-foreground)]" id="equity-label">Equity paid</span>
-                <span className="font-mono-data font-medium">{pct}%</span>
-              </div>
-              <div
-                className="h-3 bg-[var(--muted)] rounded-full overflow-hidden"
-                role="progressbar"
-                aria-labelledby="equity-label"
-                aria-valuenow={pct}
-                aria-valuemin={0}
-                aria-valuemax={100}
-              >
-                <div className="h-full bg-[var(--primary)] rounded-full transition-all" style={{ width: `${pct}%` }} />
-              </div>
-              {plot.installmentMonths && plot.installmentsPaid !== undefined && (
-                <div className="mt-2 text-xs text-[var(--muted-foreground)]">
-                  Installment {plot.installmentsPaid} of {plot.installmentMonths} paid · {plot.installmentMonths - plot.installmentsPaid} remaining
-                </div>
-              )}
-            </div>
-
-            {/* Installment schedule — fetched from the service layer, never
-                synthesized client-side (see portfolioService.ts). */}
-            {schedule && schedule.periods.length > 0 && (
-              <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
-                <h3 className="font-semibold text-sm mb-4">Installment schedule</h3>
-                <PaymentSchedule periods={schedule.periods} currency={plot.currency} nextPayablePeriodId={nextPeriod?.id} />
-              </div>
-            )}
-
-            {/* Plot details */}
-            <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
-              <h3 className="font-semibold text-sm mb-3">Plot details</h3>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                {[
-                  { label: "Estate", value: plot.estate },
-                  { label: "Reference", value: plot.plotLabel },
-                  { label: "Nominal size", value: sizeText(plot) ?? "No land area of its own" },
-                  { label: "Actual surveyed area", value: plot.actualSqm ? `${plot.actualSqm} sqm` : "Not yet surveyed" },
-                  { label: "Type", value: plot.isCorner ? "Corner piece ★" : "Standard" },
-                  { label: "Intent", value: plot.intent === "development" ? "Development" : "Investment" },
-                  { label: "Plan", value: plot.plan === "outright" ? "Outright" : `${plot.installmentMonths}-month ${plot.plan}` },
-                  { label: "Acquired", value: plot.acquiredDate ?? "When finance verifies" },
-                ].map((d) => (
-                  <div key={d.label} className="bg-[var(--muted)] rounded-lg p-3">
-                    <div className="text-xs text-[var(--muted-foreground)] mb-0.5">{d.label}</div>
-                    <div className="font-medium text-xs">{d.value}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Only when a premium was actually applied. */}
-              {plot.cornerPremiumPct !== undefined && plot.basePrice !== undefined && (
-                <div className="mt-3 text-xs text-[var(--accent)] bg-[var(--secondary)] rounded-lg p-3">
-                  {formatAmount(plot.basePrice, plot.currency)} + {plot.cornerPremiumPct}% corner premium = {formatAmount(plot.totalPrice, plot.currency)}
-                </div>
-              )}
-
-              {/* Never the title type alone: declared, verified or not confirmed. */}
-              <div className="mt-3 flex items-center gap-2">
-                <span className="text-xs text-[var(--muted-foreground)]">{titleLabel(plot.titleType, titleStatus)}</span>
-                {plot.titleType && titleStatus === "verified" && <VerifiedBadge label="Verified by HomeTrue" />}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
+        <div className="space-y-5 min-w-0">
+          {/* Ownership — a tick when it's paid and verified; the equity bar only
+              while there's still something to pay. */}
+          <Section>
+            <div className="flex items-center gap-3.5">
+              <span className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center ${paidOff ? "bg-[var(--success-surface)] text-[var(--success-text)]" : "bg-[var(--secondary)] text-[var(--secondary-foreground)]"}`}>
+                {paidOff ? <CheckIcon size={22} /> : <WalletIcon size={20} />}
+              </span>
+              <div>
+                <h2 className="text-lg font-semibold text-[var(--foreground)]">
+                  {pending ? "Paid — waiting for the developer's finance team" : paidOff ? "You own this plot" : "Paying for this plot"}
+                </h2>
+                <p className="text-sm text-[var(--muted-foreground)]">
+                  {pending ? "Your equity and acquired date show once finance confirms the payment."
+                    : paidOff ? "Paid in full and verified by the developer's finance team."
+                    : `${pct}% paid · ${formatAmount(outstanding, plot.currency)} to go`}
+                </p>
               </div>
             </div>
-          </div>
-
-          {/* Right sidebar */}
-          {sidebar && (
-          <div className="space-y-4">
-            {/* Make a payment */}
-            {canPay && nextPeriod && (
-              <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
-                <h3 className="font-semibold text-sm mb-4">Make a payment</h3>
-                {payStep === "form" ? (
-                  <form onSubmit={handlePaySubmit} className="space-y-3" noValidate>
-                    <div className="bg-[var(--muted)] rounded-lg p-3">
-                      <div className="text-xs text-[var(--muted-foreground)]">Next due</div>
-                      <div className="font-semibold font-mono-data">{formatAmount(nextPeriod.amount, plot.currency)}</div>
-                      <div className="text-xs font-mono-data text-[var(--muted-foreground)]">{nextPeriod.dueDate}</div>
-                    </div>
-
-                    <div>
-                      <label htmlFor="pay-amount" className="block text-xs font-medium text-[var(--muted-foreground)] mb-1">Amount ({plot.currency})</label>
-                      <input
-                        id="pay-amount"
-                        type="number"
-                        min="0.01"
-                        step="0.01"
-                        placeholder={String(nextPeriod.amount)}
-                        value={payAmount}
-                        onChange={(e) => setPayAmount(e.target.value)}
-                        aria-invalid={!!payError}
-                        aria-describedby={payError ? "pay-amount-error" : undefined}
-                        className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md bg-[var(--card)] font-mono-data"
-                      />
-                      {displayCurrency !== plot.currency && (
-                        // formatAmount() takes a raw NGN figure and converts via FX_RATES —
-                        // this amount is already in plot.currency, so undo that conversion
-                        // to NGN before handing it to formatAmount for the display currency.
-                        <p className="text-xs text-[var(--muted-foreground)] mt-1">
-                          Charged in {plot.currency} — the currency this plot is priced in. At today's rate, that's roughly{" "}
-                          {formatAmount((Number(payAmount) || nextPeriod.amount) / FX_RATES[plot.currency], displayCurrency)} in your display currency.
-                        </p>
-                      )}
-                    </div>
-
-                    <div>
-                      <span className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5" id="pay-method-label">Payment method</span>
-                      <PaymentMethodSelector methods={paymentMethodsForCountry(user?.country ?? "NG")} selected={payMethod} onSelect={handleSelectMethod} />
-                    </div>
-
-                    {(payMethod === "virtual_account" || payMethod === "wire") && (
-                      <div className="bg-[var(--muted)] rounded-lg p-3 font-mono-data text-xs">
-                        {virtualAccount ? (
-                          <>
-                            <div className="text-[var(--muted-foreground)] mb-1">Transfer to this account</div>
-                            <div className="font-semibold">{virtualAccount.bankName}</div>
-                            <div className="text-sm tracking-wider my-1">{virtualAccount.accountNumber}</div>
-                            <div className="text-[var(--muted-foreground)]">{virtualAccount.accountName}</div>
-                          </>
-                        ) : <div className="text-[var(--muted-foreground)]">Generating your dedicated account number…</div>}
-                      </div>
-                    )}
-
-                    {payError && <p id="pay-amount-error" role="alert" className="text-red-600 text-xs">{payError}</p>}
-
-                    <button
-                      type="submit"
-                      disabled={payLoading}
-                      className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium disabled:opacity-60 hover:opacity-90 transition-opacity"
-                    >
-                      {payLoading ? "Submitting…" : "Pay now"}
-                    </button>
-                  </form>
-                ) : (
-                  <div>
-                    <VerificationProgress
-                      status={verifyStatus}
-                      reference={pendingPayment?.receiptId ?? ""}
-                      amountDue={pendingPayment?.amount ?? 0}
-                      currency={plot.currency}
-                      rejectionReason={pendingPayment?.rejectionReason}
-                      finalStageLabel="Receipt issued"
-                      finalStageDetail="Your receipt lands in your vault and your equity updates automatically."
-                    />
-                    {(verifyStatus === "rejected" || verifyStatus === "verified") && (
-                      <button onClick={resetPaymentForm} className="mt-4 w-full py-2 text-sm border border-[var(--border)] rounded-md text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors">
-                        {verifyStatus === "rejected" ? "Try again" : "Make another payment"}
-                      </button>
-                    )}
+            <dl className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4 border-t border-[var(--border)]">
+              <Fact label="Paid" value={formatAmount(plot.paidAmount, plot.currency)} mono green={!pending && plot.paidAmount > 0} />
+              <Fact label={paidOff ? "Price" : "Outstanding"} value={formatAmount(paidOff ? plot.totalPrice : outstanding, plot.currency)} mono />
+              <Fact label="Plan" value={plot.plan === "outright" ? "Outright" : `${plot.installmentMonths}-month ${plot.plan}`} />
+              <Fact label="Acquired" value={plot.acquiredDate ? formatDay(plot.acquiredDate) : "When finance verifies"} />
+            </dl>
+            {!paidOff && !pending && (
+              <div className="mt-4">
+                <div className="mb-1.5 flex items-center justify-between text-xs">
+                  <span className="text-[var(--muted-foreground)]" id="equity-label">Equity paid</span>
+                  <span className="font-mono-data font-medium">{pct}%</span>
+                </div>
+                <div className="h-2.5 bg-[var(--muted)] rounded-full overflow-hidden" role="progressbar" aria-labelledby="equity-label" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+                  <div className="h-full bg-[var(--primary)] rounded-full transition-all" style={{ width: `${pct}%` }} />
+                </div>
+                {plot.installmentMonths && plot.installmentsPaid !== undefined && (
+                  <div className="mt-2 text-xs text-[var(--muted-foreground)]">
+                    Installment {plot.installmentsPaid} of {plot.installmentMonths} paid · {plot.installmentMonths - plot.installmentsPaid} remaining
                   </div>
                 )}
               </div>
             )}
+          </Section>
 
-            {/* Actions */}
-            {hasActions && (
-            <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
-              <h3 className="font-semibold text-sm mb-3">Actions</h3>
+          {/* Installment schedule — fetched from the service layer, never
+              synthesized client-side (see portfolioService.ts). */}
+          {schedule && schedule.periods.length > 0 && (
+            <Section title="Installment schedule">
+              <PaymentSchedule periods={schedule.periods} currency={plot.currency} nextPayablePeriodId={nextPeriod?.id} />
+            </Section>
+          )}
+
+          <Section title="Documents">
+            {docs.length === 0 && !docsLoaded ? (
+              <p className="text-sm text-[var(--muted-foreground)]">No documents yet. They'll appear here as they're issued.</p>
+            ) : (
+              <ul className="space-y-3">
+                {docs.map((doc) => (
+                  <li key={doc.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--border)] px-3.5 py-3">
+                    <DocTypeChip type={doc.type} />
+                    <div className="flex-1 min-w-[160px]">
+                      <div className="text-sm font-semibold text-[var(--foreground)]">{DOCUMENT_TYPE_LABELS[doc.type]}</div>
+                      <div className="text-xs text-[var(--muted-foreground)]">
+                        {doc.number && <span className="font-mono-data">{doc.number} · </span>}Issued {formatDay(doc.date)}{doc.refundedAt ? ` · Refunded ${formatDay(doc.refundedAt)}` : ""}
+                      </div>
+                    </div>
+                    <DocumentActions doc={doc} share />
+                  </li>
+                ))}
+                {/* Say what's missing rather than leave a gap. */}
+                {docsLoaded && !hasLetter && (
+                  <li className="flex items-center gap-3 rounded-lg border border-[var(--border)] px-3.5 py-3">
+                    <span className="w-9 h-9 shrink-0 rounded-lg bg-[var(--muted)] text-[var(--muted-foreground)] flex items-center justify-center"><FileCheckIcon size={18} /></span>
+                    <div>
+                      <div className="text-sm font-semibold text-[var(--muted-foreground)]">Allocation letter</div>
+                      <div className="text-xs text-[var(--muted-foreground)]">
+                        {pending ? "Issued when the developer's finance team verifies the sale." : "No allocation letter was issued for this sale."}
+                      </div>
+                    </div>
+                  </li>
+                )}
+              </ul>
+            )}
+          </Section>
+
+          <Section title="Plot details">
+            <dl className="grid sm:grid-cols-2 sm:gap-x-10 text-sm">
+              {[
+                ["Estate", plot.estate],
+                ["Reference", plot.plotLabel],
+                ["Nominal size", sizeText(plot) ?? "No land area of its own"],
+                ["Surveyed area", plot.actualSqm ? `${plot.actualSqm} sqm` : "Not yet surveyed"],
+                ["Type", plot.isCorner ? "Corner piece ★" : "Standard"],
+                ["Intent", plot.intent === "development" ? "Development" : "Investment"],
+                ["Plan", plot.plan === "outright" ? "Outright" : `${plot.installmentMonths}-month ${plot.plan}`],
+                ["Acquired", plot.acquiredDate ? formatDay(plot.acquiredDate) : "When finance verifies"],
+              ].map(([l, v]) => (
+                <div key={l} className="flex justify-between gap-4 py-2.5 border-b border-[var(--border)]">
+                  <dt className="text-[var(--muted-foreground)]">{l}</dt>
+                  <dd className="font-medium text-[var(--foreground)] text-right">{v}</dd>
+                </div>
+              ))}
+            </dl>
+            {/* Only when a premium was actually applied. */}
+            {plot.cornerPremiumPct !== undefined && plot.basePrice !== undefined && (
+              <div className="mt-3 text-xs text-[var(--secondary-foreground)] bg-[var(--secondary)] rounded-lg p-3">
+                {formatAmount(plot.basePrice, plot.currency)} + {plot.cornerPremiumPct}% corner premium = {formatAmount(plot.totalPrice, plot.currency)}
+              </div>
+            )}
+          </Section>
+
+          <Section title="Payments" subtitle={`Every payment is logged and can't be changed.${docsAvailable ? " Each one's receipt downloads from its number." : " Receipts aren't issued yet; quote the payment reference if you contact us."}`}>
+            <div className="overflow-x-auto -mx-5 sm:-mx-6">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[var(--muted)] text-left text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">
+                    <th scope="col" className="px-5 sm:px-6 py-2.5 font-medium">Date</th>
+                    <th scope="col" className="px-3 py-2.5 font-medium">Type</th>
+                    <th scope="col" className="px-3 py-2.5 font-medium text-right">Amount</th>
+                    <th scope="col" className="px-3 py-2.5 font-medium">Status</th>
+                    <th scope="col" className="px-5 sm:px-6 py-2.5 font-medium text-right">{docsAvailable ? "Receipt" : "Payment reference"}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border)]">
+                  {plot.payments.map((p) => (
+                    <tr key={p.id}>
+                      <td className="px-5 sm:px-6 py-3 whitespace-nowrap">{formatDay(p.date)}</td>
+                      <td className="px-3 py-3 capitalize">{p.type}</td>
+                      <td className="px-3 py-3 text-right font-mono-data font-medium whitespace-nowrap">{formatAmount(p.amount, plot.currency)}</td>
+                      <td className="px-3 py-3"><PaymentStatusPill status={p.status} /></td>
+                      <td className="px-5 sm:px-6 py-3 text-right">
+                        {receiptFor(p.receiptId) ? (
+                          <ReceiptDownload receiptId={p.receiptId!} receiptNumber={receiptFor(p.receiptId)!.number!} />
+                        ) : isLive("portfolio") ? (
+                          // A receipt is issued when Paystack confirms; none yet.
+                          <span className="text-xs text-[var(--muted-foreground)]">—</span>
+                        ) : (
+                          <span className="text-xs text-[var(--muted-foreground)] font-mono-data">{p.receiptId}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                {plot.payments.length > 1 && (
+                  <tfoot>
+                    <tr className="border-t border-[var(--border)] bg-[var(--muted)]">
+                      <td colSpan={2} className="px-5 sm:px-6 py-3 text-xs font-semibold">Total paid</td>
+                      <td className="px-3 py-3 text-right font-mono-data text-xs font-bold">{formatAmount(plot.paidAmount, plot.currency)}</td>
+                      <td colSpan={2} />
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </Section>
+
+          {/* Construction — capability-gated, no fabricated data */}
+          {CAPABILITIES.constructionTracking && (
+            <Section title="Construction"><ConstructionTab estateId={plot.estateId} /></Section>
+          )}
+        </div>
+
+        <aside className="space-y-5">
+          {/* Make a payment */}
+          {canPay && nextPeriod && (
+            <Section title="Make a payment">
+              {payStep === "form" ? (
+                <form onSubmit={handlePaySubmit} className="space-y-3" noValidate>
+                  <div className="bg-[var(--muted)] rounded-lg p-3">
+                    <div className="text-xs text-[var(--muted-foreground)]">Next due</div>
+                    <div className="font-semibold font-mono-data">{formatAmount(nextPeriod.amount, plot.currency)}</div>
+                    <div className="text-xs text-[var(--muted-foreground)]">{formatDay(nextPeriod.dueDate)}</div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="pay-amount" className="block text-xs font-medium text-[var(--muted-foreground)] mb-1">Amount ({plot.currency})</label>
+                    <input
+                      id="pay-amount"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      placeholder={String(nextPeriod.amount)}
+                      value={payAmount}
+                      onChange={(e) => setPayAmount(e.target.value)}
+                      aria-invalid={!!payError}
+                      aria-describedby={payError ? "pay-amount-error" : undefined}
+                      className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-md bg-[var(--card)] font-mono-data"
+                    />
+                    {displayCurrency !== plot.currency && (
+                      // formatAmount() takes a raw NGN figure and converts via FX_RATES —
+                      // this amount is already in plot.currency, so undo that conversion
+                      // to NGN before handing it to formatAmount for the display currency.
+                      <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                        Charged in {plot.currency} — the currency this plot is priced in. At today's rate, that's roughly{" "}
+                        {formatAmount((Number(payAmount) || nextPeriod.amount) / FX_RATES[plot.currency], displayCurrency)} in your display currency.
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <span className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5" id="pay-method-label">Payment method</span>
+                    <PaymentMethodSelector methods={paymentMethodsForCountry(user?.country ?? "NG")} selected={payMethod} onSelect={handleSelectMethod} />
+                  </div>
+
+                  {(payMethod === "virtual_account" || payMethod === "wire") && (
+                    <div className="bg-[var(--muted)] rounded-lg p-3 font-mono-data text-xs">
+                      {virtualAccount ? (
+                        <>
+                          <div className="text-[var(--muted-foreground)] mb-1">Transfer to this account</div>
+                          <div className="font-semibold">{virtualAccount.bankName}</div>
+                          <div className="text-sm tracking-wider my-1">{virtualAccount.accountNumber}</div>
+                          <div className="text-[var(--muted-foreground)]">{virtualAccount.accountName}</div>
+                        </>
+                      ) : <div className="text-[var(--muted-foreground)]">Generating your dedicated account number…</div>}
+                    </div>
+                  )}
+
+                  {payError && <p id="pay-amount-error" role="alert" className="text-[var(--error-text)] text-xs">{payError}</p>}
+
+                  <Button type="submit" fullWidth size="lg" disabled={payLoading}>{payLoading ? "Submitting…" : "Pay now"}</Button>
+                </form>
+              ) : (
+                <div>
+                  <VerificationProgress
+                    status={verifyStatus}
+                    reference={pendingPayment?.receiptId ?? ""}
+                    amountDue={pendingPayment?.amount ?? 0}
+                    currency={plot.currency}
+                    rejectionReason={pendingPayment?.rejectionReason}
+                    finalStageLabel="Receipt issued"
+                    finalStageDetail="Your receipt lands in your vault and your equity updates automatically."
+                  />
+                  {(verifyStatus === "rejected" || verifyStatus === "verified") && (
+                    <Button variant="secondary" fullWidth onClick={resetPaymentForm} className="mt-4">
+                      {verifyStatus === "rejected" ? "Try again" : "Make another payment"}
+                    </Button>
+                  )}
+                </div>
+              )}
+            </Section>
+          )}
+
+          {/* Title — never the title type alone: declared, verified or not confirmed. */}
+          <Section title="Title">
+            {titleRow ? (
+              <div className="flex gap-3">
+                <span className={`w-7 h-7 shrink-0 rounded-full flex items-center justify-center ${titleRow.chip}`}>{titleRow.tone === "success" ? <CheckIcon size={14} /> : <AlertIcon size={14} />}</span>
+                <div>
+                  <div className="text-sm font-semibold text-[var(--foreground)]">{titleRow.head}</div>
+                  <p className="text-xs text-[var(--muted-foreground)]">{titleRow.body}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-[var(--muted-foreground)]">{titleLabel(plot.titleType, titleStatus)}</p>
+            )}
+          </Section>
+
+          {/* Actions — upgrades, resale and disputes, where they have a backend. */}
+          {hasActions && (
+            <Section title="Actions">
               <div className="space-y-2">
                 {actions.upgrade && (plot.status === "upgrade_pending" && inFlightUpgrade ? (
-                  <Link to={`/upgrade/request/${inFlightUpgrade.id}`} className="flex items-center gap-2 w-full py-2 text-left text-sm text-amber-700 hover:text-amber-800 border border-amber-200 bg-amber-50 rounded-md px-3 transition-colors">
-                    <span aria-hidden="true">🔁</span> View upgrade progress
+                  <Link to={`/upgrade/request/${inFlightUpgrade.id}`} className="flex items-center gap-2 w-full py-2 text-left text-sm text-[var(--warning-text)] border border-[var(--warning-border)] bg-[var(--warning-surface)] rounded-md px-3">
+                    View upgrade progress
                   </Link>
                 ) : (
-                  <Link to={`/upgrade/${plot.id}`} className="flex items-center gap-2 w-full py-2 text-left text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] border border-[var(--border)] rounded-md px-3 transition-colors">
-                    <span aria-hidden="true">🔁</span> Upgrade or swap plot
-                  </Link>
+                  <ActionLink to={`/upgrade/${plot.id}`}>Upgrade or swap plot</ActionLink>
                 ))}
-                {actions.resale && (
-                  <Link to={`/resale/list/${plot.id}`} className="flex items-center gap-2 w-full py-2 text-left text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] border border-[var(--border)] rounded-md px-3 transition-colors">
-                    <span aria-hidden="true">🏷</span> List for resale
-                  </Link>
-                )}
-                {actions.dispute && (
-                <Link to={`/support?dispute=true&plot=${plot.id}`} className="flex items-center gap-2 w-full py-2 text-left text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] border border-[var(--border)] rounded-md px-3 transition-colors">
-                  <span aria-hidden="true">💬</span> Raise a dispute
-                </Link>
-                )}
+                {actions.resale && <ActionLink to={`/resale/list/${plot.id}`}>List for resale</ActionLink>}
+                {actions.dispute && <ActionLink to={`/support?dispute=true&plot=${plot.id}`}>Raise a dispute</ActionLink>}
               </div>
-            </div>
-            )}
-          </div>
+            </Section>
           )}
-        </div>
-      )}
 
-      {/* Payments tab */}
-      {tab === "payments" && (
-        <div id="panel-payments" role="tabpanel" aria-labelledby="tab-payments" className="bg-[var(--card)] rounded-xl border border-[var(--border)] overflow-hidden">
-          <div className="px-5 py-4 border-b border-[var(--border)]">
-            <h3 className="font-semibold text-sm">Payment history</h3>
-            <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-              Every payment is logged and immutable.{docsAvailable ? " Download a payment's receipt from its number." : " Receipts aren't issued yet; quote the payment reference if you contact us."}
-            </p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-[var(--muted)]">
-                  <th className="text-left px-4 py-2.5 text-xs font-medium text-[var(--muted-foreground)]">Date</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-medium text-[var(--muted-foreground)]">Type</th>
-                  <th className="text-right px-4 py-2.5 text-xs font-medium text-[var(--muted-foreground)]">Amount</th>
-                  <th className="text-center px-4 py-2.5 text-xs font-medium text-[var(--muted-foreground)]">Status</th>
-                  <th className="text-right px-4 py-2.5 text-xs font-medium text-[var(--muted-foreground)]">{docsAvailable ? "Receipt" : "Payment reference"}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {plot.payments.map((p) => (
-                  <tr key={p.id} className="border-t border-[var(--border)] hover:bg-[var(--muted)]/50">
-                    <td className="px-4 py-3 font-mono-data text-xs">{p.date}</td>
-                    <td className="px-4 py-3 text-xs capitalize">{p.type}</td>
-                    <td className="px-4 py-3 text-right font-mono-data text-xs font-medium">{formatAmount(p.amount, plot.currency)}</td>
-                    <td className="px-4 py-3 text-center">
-                      <PaymentStatusPill status={p.status} />
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {receiptFor(p.receiptId) ? (
-                        <ReceiptDownload receiptId={p.receiptId!} receiptNumber={receiptFor(p.receiptId)!.number!} />
-                      ) : isLive("portfolio") ? (
-                        // A receipt is issued when Paystack confirms; none yet.
-                        <span className="text-xs text-[var(--muted-foreground)]">—</span>
-                      ) : (
-                        <span className="text-xs text-[var(--muted-foreground)] font-mono-data">{p.receiptId}</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-[var(--border)] bg-[var(--muted)]">
-                  <td colSpan={2} className="px-4 py-3 text-xs font-semibold">Total paid</td>
-                  <td className="px-4 py-3 text-right font-mono-data text-xs font-bold">{formatAmount(plot.paidAmount, plot.currency)}</td>
-                  <td colSpan={2} />
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Construction tab — capability-gated, no fabricated data */}
-      {tab === "construction" && CAPABILITIES.constructionTracking && (
-        <div id="panel-construction" role="tabpanel" aria-labelledby="tab-construction">
-          <ConstructionTab estateId={plot.estateId} />
-        </div>
-      )}
-
-      {/* Documents tab */}
-      {tab === "documents" && (
-        <div id="panel-documents" role="tabpanel" aria-labelledby="tab-documents" className="space-y-3">
-          {docs.length === 0 ? (
-            <div className="text-center py-12 text-[var(--muted-foreground)]">
-              <div className="text-3xl mb-2" aria-hidden="true">📂</div>
-              No documents yet. They'll appear here as they're issued.
-            </div>
-          ) : (
-            <ul className="space-y-3">{docs.map((doc) => <DocumentCard key={doc.id} doc={doc} />)}</ul>
-          )}
-        </div>
-      )}
-
+          <Section title="Help with this plot">
+            <ul className="space-y-1">
+              <HelpLink to={`/marketplace/${plot.estateId}`} icon={<BuildingIcon size={18} />} head="View the estate page" sub="Fees, terms and the developer's details" />
+              <HelpLink to="/support" icon={<MessageIcon size={18} />} head="Contact support" sub="Questions about your plot or documents" />
+            </ul>
+          </Section>
+        </aside>
+      </div>
     </div>
+  );
+}
+
+// What HomeTrue's review of the title said. Rejected reads "not confirmed":
+// HomeTrue looked and couldn't confirm it.
+function titleState(titleType: OwnedPlot["titleType"], status: OwnedPlot["titleStatus"]) {
+  if (!titleType) return null;
+  if (status === "verified") return { tone: "success" as const, chip: "bg-[var(--success-surface)] text-[var(--success-text)]", badge: `${titleType} verified`, head: `${titleType} verified by HomeTrue`, body: "HomeTrue checked the title documents." };
+  if (status === "rejected") return { tone: "error" as const, chip: "bg-[var(--error-surface)] text-[var(--error-text)]", badge: "Title not confirmed", head: `${titleType} — not confirmed`, body: "HomeTrue reviewed the title documents and couldn't confirm them. Ask the developer what's outstanding." };
+  return { tone: "warning" as const, chip: "bg-[var(--warning-surface)] text-[var(--warning-text)]", badge: `${titleType} declared`, head: `${titleType} — declared by the developer`, body: "HomeTrue is checking the title documents." };
+}
+
+function Section({ title, subtitle, children }: { title?: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <section className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5 sm:p-6">
+      {title && <h2 className="text-[17px] font-semibold text-[var(--foreground)] mb-1">{title}</h2>}
+      {subtitle && <p className="text-xs text-[var(--muted-foreground)] mb-3">{subtitle}</p>}
+      {title && !subtitle && <div className="mb-3" />}
+      {children}
+    </section>
+  );
+}
+
+function Fact({ label, value, mono, green }: { label: string; value: string; mono?: boolean; green?: boolean }) {
+  return (
+    <div>
+      <dt className="text-xs text-[var(--muted-foreground)] mb-0.5">{label}</dt>
+      <dd className={`text-sm ${mono ? "font-mono-data font-medium" : "font-semibold"} ${green ? "text-[var(--success-text)]" : "text-[var(--foreground)]"}`}>{value}</dd>
+    </div>
+  );
+}
+
+function ActionLink({ to, children }: { to: string; children: React.ReactNode }) {
+  return <Link to={to} className="flex items-center justify-between w-full py-2 text-sm text-[var(--foreground)] border border-[var(--border)] rounded-md px-3 hover:bg-[var(--muted)]">{children}<ChevronRightIcon size={15} /></Link>;
+}
+
+function HelpLink({ to, icon, head, sub }: { to: string; icon: React.ReactNode; head: string; sub: string }) {
+  return (
+    <li>
+      <Link to={to} className="flex items-center gap-3 rounded-lg -mx-2 px-2 py-2 hover:bg-[var(--muted)]">
+        <span className="w-9 h-9 shrink-0 rounded-[10px] bg-[var(--secondary)] text-[var(--secondary-foreground)] flex items-center justify-center">{icon}</span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-sm font-semibold text-[var(--foreground)]">{head}</span>
+          <span className="block text-xs text-[var(--muted-foreground)]">{sub}</span>
+        </span>
+        <ChevronRightIcon size={16} />
+      </Link>
+    </li>
   );
 }
 
@@ -604,15 +666,6 @@ function ConstructionTab({ estateId }: { estateId: string }) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function Stat({ label, value, green }: { label: string; value: string; green?: boolean }) {
-  return (
-    <div>
-      <div className="text-xs text-[var(--muted-foreground)] mb-0.5">{label}</div>
-      <div className={`font-semibold font-mono-data text-sm ${green ? "text-[var(--success-text)]" : ""}`}>{value}</div>
     </div>
   );
 }
