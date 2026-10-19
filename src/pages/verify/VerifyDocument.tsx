@@ -28,7 +28,6 @@ export default function VerifyDocument() {
     <Page
       title="Check a HomeTrue document"
       description="Scan the QR code on a receipt or allocation letter, or type the code printed beside it."
-      width="sm"
     >
       <div className="space-y-6">
         {code && <Result key={code} code={code} />}
