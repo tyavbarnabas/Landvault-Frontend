@@ -205,7 +205,7 @@ function footprintToPolygon(footprint: GeoPoint[]): GeoJsonPolygon {
 
 // ─── Publication eligibility ────────────────────────────────────────────────
 
-// Mirrors the backend's `EstateEligibilityDto` field for field — ELEVEN
+// Mirrors the backend's `EstateEligibilityDto` field for field — TWELVE
 // booleans, carried on `EstateDetailDto.eligibility`. Every one is a fact the
 // server computed; none is inferred here.
 //
@@ -233,6 +233,11 @@ export interface EstateEligibility {
   // Storage step 2: at least one photo. Estates already published when this
   // arrived are exempt and report true.
   hasPhoto: boolean;
+  // Changeset 095: the allocation letter is approved and still current. No
+  // exemption for live estates: a listed estate without one would take money
+  // finance can't allocate. Changing the conditions, wording, letterhead or
+  // fees lapses it until the director approves again.
+  letterApproved: boolean;
   noBlockingConflict: boolean;
   // Current state: the conjunction of all of the above, and exactly what the
   // public feed filters on at read time.
@@ -261,6 +266,7 @@ export const ELIGIBILITY_CONDITIONS: { key: EligibilityConditionKey; label: stri
   { key: "hasBoundary", label: "Estate boundary added", reason: "This estate has no boundary, so it can't be checked against neighbouring land" },
   { key: "hasPlots", label: "At least one plot added", reason: "This estate has no plots for buyers to choose from" },
   { key: "hasPhoto", label: "Add at least one photo", reason: "This estate has no photos for buyers to see" },
+  { key: "letterApproved", label: "Allocation letter approved", reason: "This estate's allocation letter isn't approved, so finance couldn't allocate a plot buyers pay for" },
   // Never names the other party. Both sides of a boundary dispute believe
   // they are right, and the platform does not introduce them.
   { key: "noBlockingConflict", label: "No unresolved boundary conflict", reason: "This estate's boundary overlaps another registered boundary" },
@@ -269,7 +275,7 @@ export const ELIGIBILITY_CONDITIONS: { key: EligibilityConditionKey; label: stri
 // Conditions outside the company's immediate control.
 const HARD_BLOCKER_KEYS: EligibilityConditionKey[] = ["tenantVerified", "tenantEntitled", "tenantActive", "noBlockingConflict"];
 // Setup the company still has to finish itself.
-const OUTSTANDING_SETUP_KEYS: EligibilityConditionKey[] = ["feesDeclared", "refundTermsDeclared", "hasBoundary", "hasPlots", "hasPhoto"];
+const OUTSTANDING_SETUP_KEYS: EligibilityConditionKey[] = ["feesDeclared", "refundTermsDeclared", "hasBoundary", "hasPlots", "hasPhoto", "letterApproved"];
 
 export function conflictIsBlocking(eligibility: EstateEligibility): boolean {
   return !eligibility.noBlockingConflict;
@@ -305,6 +311,7 @@ export const PUBLICATION_REFUSAL_CONDITIONS: Record<string, EligibilityCondition
   PUBLICATION_BOUNDARY_MISSING: "hasBoundary",
   PUBLICATION_NO_PLOTS: "hasPlots",
   PUBLICATION_NO_PHOTO: "hasPhoto",
+  PUBLICATION_LETTER_NOT_APPROVED: "letterApproved",
   PUBLICATION_CONFLICT_OUTSTANDING: "noBlockingConflict",
 };
 
@@ -574,6 +581,9 @@ async function projectPortalEstate(estate: Estate): Promise<PortalEstate> {
     hasBoundary: estate.footprint.length >= 3,
     hasPlots: estate.plots.length > 0 || mockPortalPlotCount(estate.id) > 0,
     hasPhoto: mockHasPhoto(estate.id),
+    // Demo: the seeded estates come with approved letters; ones created in
+    // the session need the director's approval (lettersService's store).
+    letterApproved: mockLetterApproved(estate.id) ?? ESTATES.some((e) => e.id === estate.id),
     noBlockingConflict: !blockingConflict,
   };
 
@@ -1143,6 +1153,13 @@ export async function decideBoundaryChange(changeId: string, decision: "approve"
 let mockPlotsOutside: (estateId: string, boundary: GeoJsonPolygon) => string[] = () => [];
 export function registerMockPlotsOutsideCheck(check: (estateId: string, boundary: GeoJsonPolygon) => string[]): void {
   mockPlotsOutside = check;
+}
+
+// Mock mode only: whether an estate's letter is approved, from the letters
+// store. Registered by lettersService (which imports this module).
+let mockLetterApproved: (estateId: string) => boolean | undefined = () => undefined;
+export function registerMockLetterApprovedCheck(check: (estateId: string) => boolean | undefined): void {
+  mockLetterApproved = check;
 }
 
 // Mock mode only, for the Super Admin's state override: platform staff look

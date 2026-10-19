@@ -126,23 +126,23 @@ describe("portal disclosure and publication", () => {
     expect([...FEE_CURRENCIES].sort()).toEqual(["EUR", "GBP", "NGN", "USD"]);
   });
 
-  it("EstateEligibility has eleven fields, including hasBoundary, hasPlots, hasPhoto and noBlockingConflict", () => {
+  it("EstateEligibility has twelve fields, including hasBoundary, hasPlots, hasPhoto, letterApproved and noBlockingConflict", () => {
     const eligibility: EstateEligibility = {
       published: true, tenantVerified: true, tenantEntitled: true, tenantActive: true,
-      feesDeclared: true, refundTermsDeclared: true, hasBoundary: true, hasPlots: true, hasPhoto: true, noBlockingConflict: true, eligible: true,
+      feesDeclared: true, refundTermsDeclared: true, hasBoundary: true, hasPlots: true, hasPhoto: true, letterApproved: true, noBlockingConflict: true, eligible: true,
     };
-    expect(Object.keys(eligibility)).toHaveLength(11);
+    expect(Object.keys(eligibility)).toHaveLength(12);
     // In the backend's order — requirePublishable's, and so the refusal code's.
     expect(ELIGIBILITY_CONDITIONS.map((c) => c.key)).toEqual([
       "tenantVerified", "tenantEntitled", "tenantActive", "feesDeclared", "refundTermsDeclared",
-      "hasBoundary", "hasPlots", "hasPhoto", "noBlockingConflict",
+      "hasBoundary", "hasPlots", "hasPhoto", "letterApproved", "noBlockingConflict",
     ]);
   });
 
   it("PublicationRefused codes, exactly", () => {
     expect(Object.keys(PUBLICATION_REFUSAL_CONDITIONS).sort()).toEqual([
       "PUBLICATION_BOUNDARY_MISSING", "PUBLICATION_CONFLICT_OUTSTANDING", "PUBLICATION_ENTITLEMENT_MISSING",
-      "PUBLICATION_FEES_UNDECLARED", "PUBLICATION_NO_PHOTO", "PUBLICATION_NO_PLOTS", "PUBLICATION_REFUND_TERMS_UNDECLARED",
+      "PUBLICATION_FEES_UNDECLARED", "PUBLICATION_LETTER_NOT_APPROVED", "PUBLICATION_NO_PHOTO", "PUBLICATION_NO_PLOTS", "PUBLICATION_REFUND_TERMS_UNDECLARED",
       "PUBLICATION_TENANT_NOT_ACTIVE", "PUBLICATION_VERIFICATION_PENDING",
     ]);
   });

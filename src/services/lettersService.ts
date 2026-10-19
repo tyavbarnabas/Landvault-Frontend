@@ -22,7 +22,7 @@
 import { apiClient, ApiError } from "../lib/apiClient";
 import { isMock } from "../lib/backends";
 import { uploadFile, type UploadableType, type UploadTicket } from "../lib/uploadFile";
-import { findMockEstateForAdmin, type PortalScope } from "./portalEstatesService";
+import { findMockEstateForAdmin, registerMockLetterApprovedCheck, type PortalScope } from "./portalEstatesService";
 import { fetchBranches } from "./branchesService";
 import { fetchTenantByIdSync, tenantDisplayName } from "./tenantsService";
 
@@ -319,6 +319,7 @@ export async function withdrawLetterApproval(estateId: string, scope: PortalScop
   if (isMock("letters")) {
     mockRequireCompanyWide(scope);
     mockStore(scope.tenantId).approvals.delete(estateId);
+    mockStore(scope.tenantId).withdrawn.add(estateId);
     return mockApproval(scope, estateId);
   }
   return apiClient.post<LetterApproval>(`/api/portal/estates/${estateId}/letter-approval/withdraw`);
@@ -336,13 +337,25 @@ interface MockTenantStore {
   templates: Map<string, MockVersion<Omit<LetterTemplateVersion, "version" | "savedAt" | "reviewStatus" | "reviewNote" | "reviewedAt">>[]>;
   terms: Map<string, MockVersion<{ clauses: string[] }>[]>;
   approvals: Map<string, { versions: LetterVersions; at: string }>;
+  withdrawn: Set<string>;
 }
 
 const mockTenants = new Map<string, MockTenantStore>();
 const mockImageUrls = new Map<string, string>();
 
+// An estate this session has approved or withdrawn answers from the store;
+// any other keeps its seeded state. (Lapsing on a later change is shown on
+// the letter page, which re-derives it; the eligibility check is synchronous.)
+registerMockLetterApprovedCheck((estateId) => {
+  for (const store of mockTenants.values()) {
+    if (store.approvals.has(estateId)) return true;
+    if (store.withdrawn.has(estateId)) return false;
+  }
+  return undefined;
+});
+
 function mockStore(tenantId: string): MockTenantStore {
-  if (!mockTenants.has(tenantId)) mockTenants.set(tenantId, { letterheads: new Map(), templates: new Map(), terms: new Map(), approvals: new Map() });
+  if (!mockTenants.has(tenantId)) mockTenants.set(tenantId, { letterheads: new Map(), templates: new Map(), terms: new Map(), approvals: new Map(), withdrawn: new Set() });
   return mockTenants.get(tenantId)!;
 }
 
@@ -577,5 +590,6 @@ async function mockApprove(scope: PortalScope, estateId: string, previewed: Lett
   if (JSON.stringify(now.currentVersions) !== JSON.stringify(previewed)) refuse(409, "LETTER_SETUP_CHANGED", "The letter's setup changed since you previewed it. Preview it again.");
   if (now.blockers.length) refuse(409, "LETTER_NOT_READY", "The letter isn't ready to approve yet.");
   mockStore(scope.tenantId).approvals.set(estateId, { versions: previewed, at: new Date().toISOString() });
+  mockStore(scope.tenantId).withdrawn.delete(estateId);
   return mockApproval(scope, estateId);
 }

@@ -38,6 +38,10 @@ export interface FinanceQueueItem {
   // False when Paystack's amount differs from the agreed price — or there is
   // no confirmed payment. Verify is never offered then.
   amountsMatch: boolean;
+  // The estate's allocation letter is approved, so verifying issues the
+  // buyer's letter. False: verify is refused (LETTER_NOT_APPROVED) until the
+  // Executive Director approves it.
+  letterApproved: boolean;
 }
 
 // Money that arrived after the reservation ended (LatePaymentDto).
@@ -57,6 +61,8 @@ export interface LatePayment {
   // False: someone else has the plot now — refunding is the only option.
   plotAvailable: boolean;
   amountsMatch: boolean;
+  // As on the queue: allocating issues the letter, so it needs one approved.
+  letterApproved: boolean;
 }
 
 // One transfer of a sale's proceeds to the company (PayoutDto). A sale over
@@ -85,6 +91,11 @@ export interface Payout {
 export interface FinanceDecision {
   transactionId: string;
   status: "verified" | "rejected" | "refund_due";
+  // The buyer's allocation letter, issued in the same step as the sale. Null
+  // on a rejection or refund. Finance can't open it (it's the buyer's), so it
+  // is shown as a confirmation, never a link.
+  allocationLetterId: string | null;
+  allocationLetterNumber: string | null;
 }
 
 // "card ending 4081" / "account ending 7890" — never call a bank account a card.
@@ -111,16 +122,20 @@ export async function fetchFinanceQueue(): Promise<FinanceQueueItem[]> {
 // Sells the plot to the buyer. One way.
 export async function verifyPurchase(transactionId: string): Promise<FinanceDecision> {
   if (!isMock("finance")) return apiClient.post<FinanceDecision>(`/api/portal/finance/transactions/${transactionId}/verify`);
+  if (mock.queue.find((q) => q.transactionId === transactionId)?.letterApproved === false) {
+    throw mockError("LETTER_NOT_APPROVED", "This estate's allocation letter isn't approved. Nothing was changed.");
+  }
   const item = takeFromQueue(transactionId);
   if (!item.amountsMatch || !item.payment) throw mockError("PAYMENT_NOT_CONFIRMED", "The payment isn't confirmed for the agreed amount. Nothing was changed.");
-  return { transactionId, status: "verified" };
+  // Demo: no letter is drawn, so none is named.
+  return { transactionId, status: "verified", allocationLetterId: null, allocationLetterNumber: null };
 }
 
 // The plot goes back on sale and LandVault refunds the buyer in full.
 export async function rejectPurchase(transactionId: string, reason: string): Promise<FinanceDecision> {
   if (!isMock("finance")) return apiClient.post<FinanceDecision>(`/api/portal/finance/transactions/${transactionId}/reject`, { reason });
   takeFromQueue(transactionId);
-  return { transactionId, status: "rejected" };
+  return { transactionId, status: "rejected", allocationLetterId: null, allocationLetterNumber: null };
 }
 
 // ─── Late payments ───────────────────────────────────────────────────────────
@@ -133,16 +148,19 @@ export async function fetchLatePayments(): Promise<LatePayment[]> {
 // Only while the plot is still free and the amount matches.
 export async function allocateLatePayment(transactionId: string): Promise<FinanceDecision> {
   if (!isMock("finance")) return apiClient.post<FinanceDecision>(`/api/portal/finance/late-payments/${transactionId}/allocate`);
+  if (mock.late.find((l) => l.transactionId === transactionId)?.letterApproved === false) {
+    throw mockError("LETTER_NOT_APPROVED", "This estate's allocation letter isn't approved. Nothing was changed.");
+  }
   const late = takeLate(transactionId);
   if (!late.plotAvailable) throw mockError("PLOT_NO_LONGER_AVAILABLE", "Someone else has this plot now. Nothing was changed.");
-  return { transactionId, status: "verified" };
+  return { transactionId, status: "verified", allocationLetterId: null, allocationLetterNumber: null };
 }
 
 // `reason` is shown to the buyer.
 export async function refundLatePayment(transactionId: string, reason: string): Promise<FinanceDecision> {
   if (!isMock("finance")) return apiClient.post<FinanceDecision>(`/api/portal/finance/late-payments/${transactionId}/refund`, { reason });
   takeLate(transactionId);
-  return { transactionId, status: "refund_due" };
+  return { transactionId, status: "refund_due", allocationLetterId: null, allocationLetterNumber: null };
 }
 
 // ─── Payouts (read-only) ─────────────────────────────────────────────────────
@@ -177,26 +195,35 @@ const mock: { queue: FinanceQueueItem[]; late: LatePayment[]; payouts: Payout[] 
       plotId: "plot-a14", plotLabel: "Block A, Plot 14", buyerEmail: "emeka@example.com", expectedAmount: 15_000_000, currency: "NGN",
       awaitingSince: "2026-10-08T09:30:00Z",
       payment: { reference: "PAY-DEMO1", amountPaid: 15_000_000, currency: "NGN", channel: "card", paidAt: "2026-10-08T09:29:00Z", last4: "4081", gatewayResponse: "Approved" },
-      amountsMatch: true,
+      amountsMatch: true, letterApproved: true,
     },
     {
       transactionId: "txn-demo-2", transactionReference: "LV-DEMO0002", estateId: "lekki-gardens", estateName: "Lekki Gardens Phase 2",
       plotId: "plot-b03", plotLabel: "Block B, Plot 3", buyerEmail: "aisha@example.com", expectedAmount: 12_000_000, currency: "NGN",
       awaitingSince: "2026-10-08T14:10:00Z",
       payment: { reference: "PAY-DEMO2", amountPaid: 11_500_000, currency: "NGN", channel: "bank_transfer", paidAt: "2026-10-08T14:08:00Z", last4: "7890", gatewayResponse: "Successful" },
-      amountsMatch: false,
+      amountsMatch: false, letterApproved: true,
+    },
+    {
+      // Paid, matched — but the estate's letter lapsed (its fees changed), so
+      // it can't be verified until the director approves the letter again.
+      transactionId: "txn-demo-5", transactionReference: "LV-DEMO0005", estateId: "greenfield-park", estateName: "Greenfield Park",
+      plotId: "plot-c07", plotLabel: "Block C, Plot 7", buyerEmail: "chinedu@example.com", expectedAmount: 8_500_000, currency: "NGN",
+      awaitingSince: "2026-10-09T11:00:00Z",
+      payment: { reference: "PAY-DEMO5", amountPaid: 8_500_000, currency: "NGN", channel: "card", paidAt: "2026-10-09T10:58:00Z", last4: "1123", gatewayResponse: "Approved" },
+      amountsMatch: true, letterApproved: false,
     },
   ],
   late: [
     {
       transactionId: "txn-demo-3", transactionReference: "LV-DEMO0003", estateName: "Lekki Gardens Phase 2", plotLabel: "Block C, Plot 9",
       buyerName: "Tunde Bakare", buyerEmail: "tunde@example.com", paymentReference: "PAY-DEMO3", agreedPrice: 9_000_000, amountPaid: 9_000_000,
-      currency: "NGN", channel: "bank_transfer", paidAt: "2026-10-07T18:45:00Z", plotAvailable: true, amountsMatch: true,
+      currency: "NGN", channel: "bank_transfer", paidAt: "2026-10-07T18:45:00Z", plotAvailable: true, amountsMatch: true, letterApproved: true,
     },
     {
       transactionId: "txn-demo-4", transactionReference: "LV-DEMO0004", estateName: "Lekki Gardens Phase 2", plotLabel: "Block A, Plot 2",
       buyerName: null, buyerEmail: "ngozi@example.com", paymentReference: "PAY-DEMO4", agreedPrice: 15_000_000, amountPaid: 15_000_000,
-      currency: "NGN", channel: "card", paidAt: "2026-10-06T11:20:00Z", plotAvailable: false, amountsMatch: true,
+      currency: "NGN", channel: "card", paidAt: "2026-10-06T11:20:00Z", plotAvailable: false, amountsMatch: true, letterApproved: true,
     },
   ],
   payouts: [

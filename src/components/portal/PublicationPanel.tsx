@@ -6,7 +6,7 @@
 // without being unpublished, and come back on reinstatement with nobody
 // touching the flag. A HIGH conflict raised after publication does the same.
 //
-// Every row below is one of the eleven booleans in `EstateEligibilityDto`,
+// Every row below is one of the twelve booleans in `EstateEligibilityDto`,
 // rendered as the server reported it. None is inferred, and when the server
 // reported nothing each row reads "Unknown" — never met.
 
@@ -26,6 +26,7 @@ const FIX_LINKS: Partial<Record<EligibilityConditionKey, { label: string; path: 
   refundTermsDeclared: { label: "Declare refund terms", path: "disclosure?tab=refund" },
   hasPlots: { label: "Add plots", path: "inventory?tab=plots" },
   hasPhoto: { label: "Add photos", path: "photos" },
+  letterApproved: { label: "Preview and approve the letter", path: "letter" },
 };
 
 interface PublicationPanelProps {
@@ -120,6 +121,13 @@ export default function PublicationPanel({ estate, scope, canManage, onChanged }
           {eligibility && !eligibility.hasPhoto && (
             <p className="text-xs text-amber-800 leading-relaxed mt-2">
               Add a photo under Photos and the listing comes back straight away.
+            </p>
+          )}
+          {/* Lapsed: the conditions, wording, letterhead or fees changed after
+              the director approved the letter. No exemption for live estates. */}
+          {eligibility && !eligibility.letterApproved && (
+            <p className="text-xs text-[var(--warning-text)] leading-relaxed mt-2">
+              Approve the allocation letter again under Allocation letter and the listing comes back straight away.
             </p>
           )}
         </div>

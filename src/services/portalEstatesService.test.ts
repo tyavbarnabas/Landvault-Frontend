@@ -8,6 +8,7 @@ import {
 import { declareFees, declareRefundTerms } from "./estateDisclosureService";
 import { createPlotBatch, createPriceTier, fetchPlots } from "./portalInventoryService";
 import { deleteEstatePhoto, fetchEstatePhotos, uploadEstatePhoto } from "./estatePhotosService";
+import { approveLetter, fetchLetterApproval, mockLetterTenants, saveLetterTerms, setSignatory, uploadLetterheadImage } from "./lettersService";
 
 const DIRECTOR: PortalScope = { tenantId: "estintin-group", branchId: null };
 const HERITAGE_MANAGER: PortalScope = { tenantId: "estintin-group", branchId: "heritage" };
@@ -163,21 +164,21 @@ describe("parseBoundary", () => {
 });
 
 // "Cannot publish" without a reason sends the developer to support. The
-// backend returns TEN booleans for exactly this reason.
+// backend returns TWELVE booleans for exactly this reason.
 describe("publication eligibility", () => {
   const allMet: EstateEligibility = {
     published: true, tenantVerified: true, tenantEntitled: true, tenantActive: true,
-    feesDeclared: true, refundTermsDeclared: true, hasBoundary: true, hasPlots: true, hasPhoto: true, noBlockingConflict: true, eligible: true,
+    feesDeclared: true, refundTermsDeclared: true, hasBoundary: true, hasPlots: true, hasPhoto: true, letterApproved: true, noBlockingConflict: true, eligible: true,
   };
 
   it("has a row for every condition the backend reports, and only those", () => {
-    // Eleven fields: `published` is intent, `eligible` the fold, and the nine
+    // Twelve fields: `published` is intent, `eligible` the fold, and the ten
     // between them are the conditions. If the DTO gains another, this fails
     // instead of the panel silently omitting it — which is exactly what
     // happened when hasBoundary and hasPlots arrived.
     const fields: (keyof EstateEligibility)[] = [
       "published", "tenantVerified", "tenantEntitled", "tenantActive",
-      "feesDeclared", "refundTermsDeclared", "hasBoundary", "hasPlots", "hasPhoto", "noBlockingConflict", "eligible",
+      "feesDeclared", "refundTermsDeclared", "hasBoundary", "hasPlots", "hasPhoto", "letterApproved", "noBlockingConflict", "eligible",
     ];
     expect(Object.keys(allMet).sort()).toEqual([...fields].sort());
     expect(ELIGIBILITY_CONDITIONS.map((c) => c.key).sort())
@@ -185,7 +186,7 @@ describe("publication eligibility", () => {
   });
 
   it("an estate with no boundary or no plots says so — never every row met while eligible is false", () => {
-    for (const key of ["hasBoundary", "hasPlots", "hasPhoto"] as const) {
+    for (const key of ["hasBoundary", "hasPlots", "hasPhoto", "letterApproved"] as const) {
       const eligibility = { ...allMet, published: false, [key]: false, eligible: false };
       const reasons = blockingReasonsFor(eligibility);
       expect(reasons).toEqual([ELIGIBILITY_CONDITIONS.find((c) => c.key === key)!.reason]);
@@ -266,6 +267,7 @@ describe("publication eligibility", () => {
       "PUBLICATION_CONFLICT_OUTSTANDING",
       "PUBLICATION_ENTITLEMENT_MISSING",
       "PUBLICATION_FEES_UNDECLARED",
+      "PUBLICATION_LETTER_NOT_APPROVED",
       "PUBLICATION_NO_PHOTO",
       "PUBLICATION_NO_PLOTS",
       "PUBLICATION_REFUND_TERMS_UNDECLARED",
@@ -354,10 +356,34 @@ describe("publish and unpublish", () => {
     expect((await fetchPortalEstateById(draft.id, DIRECTOR))?.eligibility?.hasPhoto).toBe(false);
   });
 
-  it("publishes once fees (even none), refund terms, a plot and a photo are in place, and unpublishes without touching anything else", async () => {
+  // The letter: a signatory with a signature, conditions HomeTrue approved,
+  // and the director's approval of the versions previewed.
+  async function withApprovedLetter(estateId: string) {
+    await setSignatory("company", "Adaeze Okafor", "Chief Executive Officer", DIRECTOR);
+    await uploadLetterheadImage("company", "signature", new File(["png"], "signature.png", { type: "image/png" }), DIRECTOR);
+    await saveLetterTerms(estateId, ["That the land is for residential use only."], DIRECTOR);
+    const store = mockLetterTenants().find(([t]) => t === DIRECTOR.tenantId)![1];
+    store.terms.get(estateId)!.at(-1)!.decision = { status: "approved", note: null, at: new Date().toISOString() };
+    await approveLetter(estateId, (await fetchLetterApproval(estateId, DIRECTOR)).currentVersions, DIRECTOR);
+  }
+
+  it("won't list a new estate until its letter is approved (no exemption, unlike photos)", async () => {
     const draft = await newDraft();
     await withAPlot(draft.id);
     await withAPhoto(draft.id);
+    await declareFees(draft.id, { fees: [] });
+    await declareRefundTerms(draft.id, { deductionPct: 20, processingDays: 90, appliesTo: "total_price", nonRefundableFeeTypes: [], notes: null });
+    const estate = await fetchPortalEstateById(draft.id, DIRECTOR);
+    expect(estate?.status).toBe("draft");
+    expect(estate?.blockingReasons).toEqual([ELIGIBILITY_CONDITIONS.find((c) => c.key === "letterApproved")!.reason]);
+    expect(refusalFromError(await publishEstate(draft.id, DIRECTOR).catch((e) => e))?.condition).toBe("letterApproved");
+  });
+
+  it("publishes once fees (even none), refund terms, a plot, a photo and the letter are in place, and unpublishes without touching anything else", async () => {
+    const draft = await newDraft();
+    await withAPlot(draft.id);
+    await withAPhoto(draft.id);
+    await withApprovedLetter(draft.id);
     await declareFees(draft.id, { fees: [] });
     await declareRefundTerms(draft.id, { deductionPct: 20, processingDays: 90, appliesTo: "total_price", nonRefundableFeeTypes: [], notes: null });
 

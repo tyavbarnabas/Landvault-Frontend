@@ -11,7 +11,9 @@
 // a confirmation that says exactly what it does.
 
 import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { useApp } from "../../../contexts/AppContext";
+import { DOCUMENTS_VIEW_PERMISSION } from "../../../services/authService";
 import { formatInCurrency } from "../../../data/mockData";
 import { ApiError, ApiTransportError } from "../../../lib/apiClient";
 import { useFetch } from "../../../lib/useFetch";
@@ -27,7 +29,7 @@ import Alert from "../../../components/ui/Alert";
 import { ErrorText, Field, Textarea, describedBy } from "../../../components/ui/Field";
 import {
   REASON_MAX, allocateLatePayment, fetchCompanyPayouts, fetchFinanceQueue, fetchLatePayments, paidWithLabel,
-  refundLatePayment, rejectPurchase, verifyPurchase, type FinanceQueueItem, type LatePayment, type Payout,
+  refundLatePayment, rejectPurchase, verifyPurchase, type FinanceDecision, type FinanceQueueItem, type LatePayment, type Payout,
 } from "../../../services/financeService";
 
 type Tab = "verify" | "late" | "payouts";
@@ -75,8 +77,11 @@ function VerificationQueue() {
 function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?: string; onDone: (message: string) => void }) {
   const [dialog, setDialog] = useState<"verify" | "reject" | null>(null);
   const p = item.payment;
-  const canVerify = item.amountsMatch && !!p;
+  const paymentOk = item.amountsMatch && !!p;
+  const canVerify = paymentOk && item.letterApproved;
   const buyer = item.buyerEmail ?? "the buyer";
+  const { user } = useApp();
+  const seesLetters = !!user?.permissions?.includes(DOCUMENTS_VIEW_PERMISSION);
 
   return (
     <ListCard className="space-y-4">
@@ -93,7 +98,7 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
         <InfoBox label="Agreed price">
           <div className="font-mono-data text-lg">{money(item.expectedAmount, item.currency)}</div>
         </InfoBox>
-        <InfoBox label="Paystack's record" tone={canVerify ? "success" : "warning"}>
+        <InfoBox label="Paystack's record" tone={paymentOk ? "success" : "warning"}>
           {p ? (
             <>
               <div className="font-mono-data text-lg">{money(p.amountPaid, p.currency)}</div>
@@ -108,7 +113,14 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
         </InfoBox>
       </div>
 
-      {!canVerify && (
+      {paymentOk && !item.letterApproved && (
+        <Alert role="status" id={`letter-${item.transactionId}`}>
+          Approve this estate's allocation letter first. Verifying issues the buyer's letter, so it can't be done until the Executive Director approves it.
+          {seesLetters && <> <Link to={`/portal/estates/${item.estateId}/letter`} className="font-semibold hover:underline">See the estate's letter</Link></>}
+        </Alert>
+      )}
+
+      {!paymentOk && (
         <Alert role="alert">
           {p ? "The amount Paystack received doesn't match the agreed price. Don't verify this purchase — reject it so the buyer is refunded, or contact HomeTrue."
             : "There's no confirmed payment for this purchase, so it can't be verified."}
@@ -119,7 +131,8 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
         <p className="text-sm font-medium text-[var(--foreground)]" role="status">{outcome}</p>
       ) : (
         <div className="flex gap-3">
-          <Button onClick={() => setDialog("verify")} disabled={!canVerify}>Verify and sell</Button>
+          <Button onClick={() => setDialog("verify")} disabled={!canVerify}
+            aria-describedby={paymentOk && !item.letterApproved ? `letter-${item.transactionId}` : undefined}>Verify and sell</Button>
           <Button variant="secondary" onClick={() => setDialog("reject")}>Reject</Button>
         </div>
       )}
@@ -127,7 +140,7 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
       {dialog === "verify" && (
         <ConfirmDialog title="Verify this payment?" confirmLabel="Verify and sell the plot" onClose={() => setDialog(null)}
           action={() => verifyPurchase(item.transactionId)}
-          onDone={() => onDone(`Verified — ${item.plotLabel} is sold to ${buyer}.`)}>
+          onDone={(decision) => onDone(`Verified — ${item.plotLabel} is sold to ${buyer}. ${letterIssued(decision)}`)}>
           This sells <strong>{item.plotLabel}</strong> at {item.estateName} to <strong>{buyer}</strong> for {money(item.expectedAmount, item.currency)}. It can't be undone.
         </ConfirmDialog>
       )}
@@ -170,7 +183,7 @@ function LatePayments() {
 
 function LateCard({ item, outcome, onDone }: { item: LatePayment; outcome?: string; onDone: (message: string) => void }) {
   const [dialog, setDialog] = useState<"allocate" | "refund" | null>(null);
-  const canAllocate = item.plotAvailable && item.amountsMatch;
+  const canAllocate = item.plotAvailable && item.amountsMatch && item.letterApproved;
   const buyer = item.buyerName ?? item.buyerEmail ?? "the buyer";
   return (
     <ListCard className="space-y-3">
@@ -188,6 +201,9 @@ function LateCard({ item, outcome, onDone }: { item: LatePayment; outcome?: stri
       </dl>
       {!item.plotAvailable && <Alert>Someone else has this plot now. Refunding is the only option.</Alert>}
       {item.plotAvailable && !item.amountsMatch && <Alert>The amount paid doesn't match the agreed price, so the plot can't be allocated. Refund the buyer.</Alert>}
+      {item.plotAvailable && item.amountsMatch && !item.letterApproved && (
+        <Alert role="status">Approve this estate's allocation letter first. Allocating issues the buyer's letter, so it can't be done until the Executive Director approves it. You can still refund.</Alert>
+      )}
       {outcome ? <p className="text-sm font-medium" role="status">{outcome}</p> : (
         <div className="flex gap-3">
           {canAllocate && <Button onClick={() => setDialog("allocate")}>Allocate the plot</Button>}
@@ -196,7 +212,7 @@ function LateCard({ item, outcome, onDone }: { item: LatePayment; outcome?: stri
       )}
       {dialog === "allocate" && (
         <ConfirmDialog title="Allocate this plot?" confirmLabel="Allocate the plot" onClose={() => setDialog(null)}
-          action={() => allocateLatePayment(item.transactionId)} onDone={() => onDone(`Allocated — ${item.plotLabel} is sold to ${buyer}.`)}>
+          action={() => allocateLatePayment(item.transactionId)} onDone={(decision) => onDone(`Allocated — ${item.plotLabel} is sold to ${buyer}. ${letterIssued(decision)}`)}>
           This sells <strong>{item.plotLabel}</strong> to <strong>{buyer}</strong> for the {money(item.amountPaid, item.currency)} they paid. It can't be undone.
         </ConfirmDialog>
       )}
@@ -274,6 +290,8 @@ export function financeErrorMessage(err: unknown): string {
     case "TRANSACTION_NOT_FOUND":
     case "LATE_PAYMENT_NOT_FOUND": return "We couldn't find this any more — it may have been settled already. Refresh the list.";
     case "COMPANY_SCOPE_REQUIRED": return "This needs a company account. Nothing was changed.";
+    // The estate's letter isn't approved (or lapsed since the list loaded).
+    case "LETTER_NOT_APPROVED": return "This estate's allocation letter isn't approved, so the plot can't be allocated yet. Nothing was changed. Ask the Executive Director to approve it.";
     // Separation of duties: the backend refuses anyone deciding on a purchase
     // they made themselves.
     case "OWN_PURCHASE": return "You can't decide on your own purchase — another finance officer or director must. Nothing was changed.";
@@ -281,16 +299,23 @@ export function financeErrorMessage(err: unknown): string {
   }
 }
 
+// Finance can't open the buyer's letter, so its number is a confirmation, not a link.
+function letterIssued(decision: FinanceDecision): string {
+  return decision.allocationLetterNumber
+    ? `Allocation letter ${decision.allocationLetterNumber} issued to the buyer.`
+    : "The buyer's allocation letter was issued.";
+}
+
 function ConfirmDialog({ title, confirmLabel, children, action, onDone, onClose }: {
   title: string; confirmLabel: string; children: React.ReactNode;
-  action: () => Promise<unknown>; onDone: () => void; onClose: () => void;
+  action: () => Promise<FinanceDecision>; onDone: (decision: FinanceDecision) => void; onClose: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const go = async () => {
     setBusy(true);
     setError("");
-    try { await action(); onDone(); onClose(); } catch (err) { setError(financeErrorMessage(err)); setBusy(false); }
+    try { const decision = await action(); onDone(decision); onClose(); } catch (err) { setError(financeErrorMessage(err)); setBusy(false); }
   };
   return (
     <Dialog title={title} onClose={busy ? () => {} : onClose}>
