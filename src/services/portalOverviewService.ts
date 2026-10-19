@@ -5,7 +5,8 @@
 // whose list fails is left out rather than shown as zero.
 
 import { fetchPortalEstates, type PortalEstate, type PortalScope } from "./portalEstatesService";
-import { fetchCompanyPayouts, fetchFinanceQueue, fetchLatePayments, type Payout } from "./financeService";
+import { failedPayouts, fetchCompanyPayouts, fetchFinanceQueue, fetchLatePayments, type Payout } from "./financeService";
+export { failedPayouts };
 import { fetchStaff, type StaffMember } from "./staffService";
 import { fetchBranches } from "./branchesService";
 import { formatInCurrency } from "../data/mockData";
@@ -21,7 +22,7 @@ export type OverviewTone = "warning" | "error" | "info" | "neutral";
 
 export interface OverviewItem {
   id: string;
-  kind: "estate" | "staff" | "verify" | "late" | "payout_failed" | "payout_waiting";
+  kind: "estate" | "verify" | "late" | "payout_failed" | "payout_waiting";
   tone: OverviewTone;
   badge: string;
   title: string;
@@ -59,7 +60,7 @@ export async function fetchPortalOverview(scope: PortalScope, access: OverviewAc
   ]);
   const estates = estatesPage?.items ?? null;
   return {
-    items: overviewItems({ estates, queue: queue?.length ?? null, late: late?.length ?? null, payouts, staff }),
+    items: overviewItems({ estates, queue: queue?.length ?? null, late: late?.length ?? null, payouts }),
     financeClear: queue && late ? queue.length === 0 && late.length === 0 : null,
     estates,
     staff,
@@ -69,9 +70,9 @@ export async function fetchPortalOverview(scope: PortalScope, access: OverviewAc
 }
 
 // The attention list, in the order a director would deal with it: money
-// stuck, buyers waiting, then the team and the listings. Exported for tests.
-export function overviewItems({ estates, queue, late, payouts, staff }: {
-  estates: PortalEstate[] | null; queue: number | null; late: number | null; payouts: Payout[] | null; staff: StaffMember[] | null;
+// stuck, buyers waiting, then the listings and payouts waiting on HomeTrue. Exported for tests.
+export function overviewItems({ estates, queue, late, payouts }: {
+  estates: PortalEstate[] | null; queue: number | null; late: number | null; payouts: Payout[] | null;
 }): OverviewItem[] {
   const items: OverviewItem[] = [];
 
@@ -112,16 +113,8 @@ export function overviewItems({ estates, queue, late, payouts, staff }: {
       detail: "Each one's page says which condition is missing.", action: "View estates", to: "/portal/estates", urgent: false,
     });
   }
-  const pending = (staff ?? []).filter((s) => s.status === "pending_verification");
-  if (pending.length) {
-    const names = pending.map((s) => `${s.firstName} ${s.lastName}`.trim());
-    items.push({
-      id: "staff", kind: "staff", tone: "neutral", badge: "Pending",
-      title: `${pending.length} staff ${pending.length === 1 ? "hasn't" : "haven't"} activated ${pending.length === 1 ? "their account" : "their accounts"}`,
-      detail: names.length <= 4 ? `${listNames(names)}.` : `${names.slice(0, 3).join(", ")} and ${names.length - 3} others.`,
-      action: "View staff", to: "/portal/staff", urgent: false,
-    });
-  }
+  // Staff whose email or phone isn't confirmed are not listed: the backend
+  // has no confirmation step yet, so there is nothing for anyone to do.
   for (const p of (payouts ?? []).filter((x) => x.status === "awaiting_otp")) {
     items.push({
       id: `payout-waiting:${p.id}`, kind: "payout_waiting", tone: "info", badge: "Waiting",
@@ -133,12 +126,4 @@ export function overviewItems({ estates, queue, late, payouts, staff }: {
   return items;
 }
 
-// A failure that a later payout for the same sale didn't put right.
-export function failedPayouts(payouts: Payout[]): Payout[] {
-  return payouts.filter((p) => (p.status === "failed" || p.status === "reversed")
-    && !payouts.some((q) => q.transactionId === p.transactionId && q.status === "success" && q.createdAt > p.createdAt));
-}
 
-function listNames(names: string[]): string {
-  return names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-}

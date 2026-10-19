@@ -92,8 +92,9 @@ describe("inventory reads use the endpoints that exist", () => {
 
     const [tier] = await fetchPriceTiers("e1", scope);
     expect(tier).toMatchObject({ id: "t1", plotCount: 120, label: undefined });
-    // Not on PriceTierDto, and not divided out here.
-    expect(tier.pricePerSqm).toBeNull();
+    // Not on PriceTierDto: worked out from the tier's own size and price, for
+    // comparison only (the same rule the plots use).
+    expect(tier.pricePerSqm).toBe(Math.round(TIER.price / TIER.sizeSqm));
     // Open: retiredAt null on the wire stays null.
     expect(tier.retiredAt).toBeNull();
     expect(await fetchBlocks("e1", scope)).toEqual([{ id: "b1", estateId: "e1", name: "Block A", label: undefined }]);

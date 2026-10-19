@@ -34,7 +34,6 @@ const TONE_TEXT: Record<OverviewTone, string> = {
 function itemIcon(item: OverviewItem) {
   switch (item.kind) {
     case "estate": return <AlertIcon size={20} />;
-    case "staff": return <UsersIcon size={20} />;
     case "verify": case "late": return <ShieldCheckIcon size={20} />;
     default: return <WalletIcon size={20} />;
   }
@@ -80,7 +79,7 @@ function Attention({ items, financeClear }: { items: OverviewItem[]; financeClea
         <span className="w-9 h-9 shrink-0 rounded-lg bg-[var(--card)] flex items-center justify-center"><CheckIcon size={18} /></span>
         <div>
           <h2 id="attention-heading" className="text-sm font-semibold">Nothing needs your attention</h2>
-          <p className="text-sm">Payments to verify, estates that aren't live and staff who haven't joined will show here.</p>
+          <p className="text-sm">Payments to verify, late payments, estates that aren't live and payout problems will show here.</p>
         </div>
       </section>
     );
@@ -152,7 +151,7 @@ function Figures({ estates, staff, branchCount, payouts }: { estates: PortalEsta
     const active = staff.filter((s) => s.status === "active").length;
     const pending = staff.filter((s) => s.status === "pending_verification").length;
     figures.push(<Figure key="team" label="Team" icon={<UsersIcon size={16} />} value={String(staff.length)} to="/portal/staff"
-      sub={[`${active} active`, pending ? `${pending} not activated` : null, branchCount !== null ? `${branchCount} branch${branchCount === 1 ? "" : "es"}` : null].filter(Boolean).join(" · ")} />);
+      sub={[`${active} active`, pending ? `${pending} not confirmed` : null, branchCount !== null ? `${branchCount} branch${branchCount === 1 ? "" : "es"}` : null].filter(Boolean).join(" · ")} />);
   }
   if (!figures.length) return null;
   return <div className={`grid grid-cols-2 gap-3 sm:gap-4 ${figures.length >= 4 ? "lg:grid-cols-4" : figures.length === 3 ? "lg:grid-cols-3" : ""}`}>{figures}</div>;

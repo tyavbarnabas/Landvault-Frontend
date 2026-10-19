@@ -16,19 +16,20 @@ import { useApp } from "../../../contexts/AppContext";
 import { DOCUMENTS_VIEW_PERMISSION } from "../../../services/authService";
 import { formatInCurrency } from "../../../data/mockData";
 import { ApiError, ApiTransportError } from "../../../lib/apiClient";
-import { useFetch } from "../../../lib/useFetch";
+import { useFetch, type UseFetchResult } from "../../../lib/useFetch";
+import { AlertIcon, CheckIcon } from "../../../components/icons";
 import LoadError from "../../../components/LoadError";
-import StatusBadge, { payoutStatusBadge } from "../../../components/StatusBadge";
+import StatusBadge, { payoutStatusBadge, type BadgeVariant } from "../../../components/StatusBadge";
 import TabBar from "../../../components/ui/Tabs";
 import EmptyState from "../../../components/ui/EmptyState";
 import Dialog, { DialogActions } from "../../../components/ui/Dialog";
 import Page, { Loading } from "../../../components/ui/Page";
-import { InfoBox, ListCard } from "../../../components/ui/Card";
+import Card, { InfoBox, ListCard } from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import Alert from "../../../components/ui/Alert";
 import { ErrorText, Field, Textarea, describedBy } from "../../../components/ui/Field";
 import {
-  REASON_MAX, allocateLatePayment, fetchCompanyPayouts, fetchFinanceQueue, fetchLatePayments, paidWithLabel,
+  REASON_MAX, allocateLatePayment, failedPayouts, fetchCompanyPayouts, saleGroups, type SaleGroupData, fetchFinanceQueue, fetchLatePayments, paidWithLabel,
   refundLatePayment, rejectPurchase, verifyPurchase, type FinanceDecision, type FinanceQueueItem, type LatePayment, type Payout,
 } from "../../../services/financeService";
 
@@ -45,32 +46,78 @@ const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString(undefin
 export default function PortalFinance() {
   const [params, setParams] = useSearchParams();
   const tab = (TABS.some((t) => t.id === params.get("tab")) ? params.get("tab") : "verify") as Tab;
+  // Loaded once for the page, so the figures and tab counts agree with the lists.
+  const queue = useFetch(() => fetchFinanceQueue(), []);
+  const late = useFetch(() => fetchLatePayments(), []);
+  const payouts = useFetch(() => fetchCompanyPayouts(), []);
+  const count: Record<Tab, string | null> = {
+    verify: queue.data ? String(queue.data.length) : null,
+    late: late.data ? String(late.data.length) : null,
+    payouts: payouts.data ? `${saleGroups(payouts.data).length} sale${saleGroups(payouts.data).length === 1 ? "" : "s"}` : null,
+  };
+  const tabs = TABS.map((t) => ({ ...t, label: count[t.id] !== null ? `${t.label} ${count[t.id]}` : t.label }));
   return (
     <Page title="Finance" description="Check buyers' payments before a plot is sold, settle late payments, and see what HomeTrue has paid you.">
-      <TabBar tabs={TABS} active={tab} onActivate={(t) => setParams({ tab: t }, { replace: true })} ariaLabel="Finance" divider />
-      {tab === "verify" && <VerificationQueue />}
-      {tab === "late" && <LatePayments />}
-      {tab === "payouts" && <Payouts />}
+      <Figures queue={queue.data} late={late.data} payouts={payouts.data} />
+      <TabBar tabs={tabs} active={tab} onActivate={(t) => setParams({ tab: t }, { replace: true })} ariaLabel="Finance" divider />
+      <div id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
+        {tab === "verify" && <VerificationQueue list={queue} />}
+        {tab === "late" && <LatePayments list={late} />}
+        {tab === "payouts" && <Payouts list={payouts} />}
+      </div>
     </Page>
   );
 }
 
+// The four numbers a finance officer opens the page for. One whose list
+// didn't load is left out, never shown as zero.
+function Figures({ queue, late, payouts }: { queue: FinanceQueueItem[] | null; late: LatePayment[] | null; payouts: Payout[] | null }) {
+  const cards: [string, string, string, boolean, string | undefined][] = [];
+  if (queue) cards.push(["To verify", String(queue.length), queue.length ? `oldest waiting since ${dayOf(queue.map((q) => q.awaitingSince).sort()[0])}` : "nothing waiting", false, queue.length ? "text-[var(--warning-text)]" : undefined]);
+  if (late) cards.push(["Late payments", String(late.length), late.length ? "to allocate or refund" : "nothing to settle", false, undefined]);
+  if (payouts) {
+    const currency = payouts.find((p) => p.currency === "NGN")?.currency ?? payouts[0]?.currency ?? "NGN";
+    const paid = payouts.filter((p) => p.status === "success" && p.currency === currency);
+    const moving = payouts.filter((p) => IN_FLIGHT.includes(p.status) && p.currency === currency);
+    cards.push(["Paid out to you", money(paid.reduce((n, p) => n + p.amount, 0), currency), paid.length ? `${paid.length} transfer${paid.length === 1 ? "" : "s"}` : "nothing paid yet", true, undefined]);
+    cards.push(["In progress", money(moving.reduce((n, p) => n + p.amount, 0), currency),
+      moving.length ? `${moving.length} part${moving.length === 1 ? "" : "s"} ${moving.some((p) => p.status === "awaiting_otp") ? "awaiting HomeTrue's code" : "on the way"}` : "no transfer under way", true, moving.length ? "text-[var(--warning-text)]" : undefined]);
+  }
+  if (!cards.length) return null;
+  return (
+    <dl className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      {cards.map(([label, value, sub, isMoney, tone]) => (
+        <div key={label} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
+          <dt className="text-xs text-[var(--muted-foreground)]">{label}</dt>
+          <dd className={`${isMoney ? "font-mono-data font-medium text-lg sm:text-xl mt-1" : "font-display text-3xl"} ${tone ?? "text-[var(--foreground)]"} truncate`}>{value}</dd>
+          <dd className="text-xs text-[var(--muted-foreground)] mt-1">{sub}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+const IN_FLIGHT: string[] = ["awaiting_otp", "pending", "sending"];
+const dayOf = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+
 // ─── Awaiting verification ───────────────────────────────────────────────────
 
-function VerificationQueue() {
-  const list = useFetch(() => fetchFinanceQueue(), []);
+function VerificationQueue({ list }: { list: UseFetchResult<FinanceQueueItem[]> }) {
   const [done, setDone] = useState<Record<string, string>>({});
   if (list.loading && !list.data) return <Loading />;
   if (list.error) return <LoadError error={list.errorValue} what="payments awaiting verification" onRetry={list.refetch} />;
   const items = list.data ?? [];
   if (items.length === 0) return <EmptyState title="Nothing waiting for verification" description="Paid purchases appear here for you to check against Paystack's record." />;
   return (
+    <div className="space-y-4">
+      <p className="text-sm text-[var(--muted-foreground)]">Check each payment against Paystack's record. Verifying sells the plot, issues the buyer's documents and starts your payout.</p>
     <ul className="space-y-3">
       {items.map((item) => (
         <QueueCard key={item.transactionId} item={item} outcome={done[item.transactionId]}
           onDone={(message) => setDone((d) => ({ ...d, [item.transactionId]: message }))} />
       ))}
     </ul>
+    </div>
   );
 }
 
@@ -84,34 +131,35 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
   const seesLetters = !!user?.permissions?.includes(DOCUMENTS_VIEW_PERMISSION);
 
   return (
-    <ListCard className="space-y-4">
+    <ListCard className="space-y-4" alert={!paymentOk}>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <div className="font-semibold text-[var(--foreground)]">{item.estateName} — {item.plotLabel}</div>
           <div className="text-xs text-[var(--muted-foreground)]">
             {item.buyerEmail ?? "Buyer email not shown"} · <span className="font-mono-data">{item.transactionReference}</span> · waiting since {when(item.awaitingSince)}
           </div>
         </div>
+        <StatusBadge {...(!p ? { label: "No payment on record", variant: "error" as const } : !paymentOk ? { label: "Amount doesn't match", variant: "error" as const }
+          : !item.letterApproved ? { label: "Letter not approved", variant: "warning" as const } : { label: "Amounts match", variant: "success" as const })} />
       </div>
 
-      <div className="grid sm:grid-cols-2 gap-3">
+      <div className="grid sm:grid-cols-[1fr_auto_1fr] gap-3 items-center">
         <InfoBox label="Agreed price">
           <div className="font-mono-data text-lg">{money(item.expectedAmount, item.currency)}</div>
         </InfoBox>
-        <InfoBox label="Paystack's record" tone={paymentOk ? "success" : "warning"}>
-          {p ? (
-            <>
-              <div className="font-mono-data text-lg">{money(p.amountPaid, p.currency)}</div>
-              <div className="text-xs text-[var(--muted-foreground)] mt-1 space-y-0.5">
-                {paidWithLabel(p.channel, p.last4) && <div>Paid with {paidWithLabel(p.channel, p.last4)}</div>}
-                {p.paidAt && <div>{when(p.paidAt)}</div>}
-                {p.gatewayResponse && <div>Paystack: “{p.gatewayResponse}”</div>}
-                <div className="font-mono-data break-all">{p.reference}</div>
-              </div>
-            </>
-          ) : <div className="text-sm">No confirmed payment on record.</div>}
+        <span aria-hidden="true" className={`hidden sm:flex w-8 h-8 rounded-full items-center justify-center ${paymentOk ? "bg-[var(--success-surface)] text-[var(--success-text)]" : "bg-[var(--error-surface)] text-[var(--error-text)]"}`}>
+          {paymentOk ? <CheckIcon size={16} /> : <AlertIcon size={16} />}
+        </span>
+        <InfoBox label="Paystack received" tone={paymentOk ? "neutral" : "error"}>
+          <div className="font-mono-data text-lg">{p ? money(p.amountPaid, p.currency) : "Nothing confirmed"}</div>
         </InfoBox>
       </div>
+      {p && (
+        <p className="text-xs text-[var(--muted-foreground)]">
+          {[paidWithLabel(p.channel, p.last4) && `Paid with ${paidWithLabel(p.channel, p.last4)}`, p.paidAt && when(p.paidAt), p.gatewayResponse && `Paystack: “${p.gatewayResponse}”`].filter(Boolean).join(" · ")}
+          {" · "}<span className="font-mono-data break-all">{p.reference}</span>
+        </p>
+      )}
 
       {paymentOk && !item.letterApproved && (
         <Alert role="status" id={`letter-${item.transactionId}`}>
@@ -122,7 +170,7 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
 
       {!paymentOk && (
         <Alert role="alert">
-          {p ? "The amount Paystack received doesn't match the agreed price. Don't verify this purchase — reject it so the buyer is refunded, or contact HomeTrue."
+          {p ? `${shortfall(item)}Don't verify this purchase — reject it so the buyer is refunded, or contact HomeTrue.`
             : "There's no confirmed payment for this purchase, so it can't be verified."}
         </Alert>
       )}
@@ -156,10 +204,18 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
   );
 }
 
+// "Paystack received ₦500,000 less than the agreed price." — only when the
+// two are in the same currency; otherwise just that they differ.
+function shortfall(item: FinanceQueueItem): string {
+  const p = item.payment;
+  if (!p || p.currency !== item.currency || p.amountPaid === item.expectedAmount) return "The amount Paystack received doesn't match the agreed price. ";
+  const gap = Math.abs(item.expectedAmount - p.amountPaid);
+  return `Paystack received ${money(gap, item.currency)} ${p.amountPaid < item.expectedAmount ? "less" : "more"} than the agreed price. `;
+}
+
 // ─── Late payments ───────────────────────────────────────────────────────────
 
-function LatePayments() {
-  const list = useFetch(() => fetchLatePayments(), []);
+function LatePayments({ list }: { list: UseFetchResult<LatePayment[]> }) {
   const [done, setDone] = useState<Record<string, string>>({});
   if (list.loading && !list.data) return <Loading />;
   if (list.error) return <LoadError error={list.errorValue} what="late payments" onRetry={list.refetch} />;
@@ -230,8 +286,7 @@ function LateCard({ item, outcome, onDone }: { item: LatePayment; outcome?: stri
 
 // ─── Payouts (read-only) ─────────────────────────────────────────────────────
 
-function Payouts() {
-  const list = useFetch(() => fetchCompanyPayouts(), []);
+function Payouts({ list }: { list: UseFetchResult<Payout[]> }) {
   if (list.loading && !list.data) return <Loading />;
   if (list.error) {
     const code = list.errorValue instanceof ApiError ? list.errorValue.body?.code : undefined;
@@ -242,37 +297,60 @@ function Payouts() {
   }
   const items = list.data ?? [];
   if (items.length === 0) return <EmptyState title="No payouts yet" description="When HomeTrue pays you for a verified sale, it appears here." />;
+  const groups = saleGroups(items);
+  const bank = items.find((p) => p.bankName);
   return (
-    <div className="space-y-3">
-      <p className="text-sm text-[var(--muted-foreground)]">What HomeTrue has sent to your payout account. A sale over ₦10,000,000 is paid in parts.</p>
-      <ul className="space-y-3">{items.map((p) => <PayoutRow key={p.id} payout={p} />)}</ul>
+    <div className="space-y-4">
+      <p className="text-sm text-[var(--muted-foreground)]">
+        What HomeTrue has sent{bank?.bankName ? ` to ${bank.bankName}${bank.accountLast4 ? ` ••${bank.accountLast4}` : ""}` : " to your payout account"}, one row per sale. A sale over ₦10,000,000 is paid in parts.
+      </p>
+      <Card padding="none" className="overflow-hidden">
+        <ul className="divide-y divide-[var(--border)]">{groups.map((g) => <SaleGroup key={g.transactionId} group={g} />)}</ul>
+      </Card>
     </div>
   );
 }
 
-function PayoutRow({ payout: p }: { payout: Payout }) {
-  const badge = payoutStatusBadge(p.status);
-  const failed = p.status === "failed" || p.status === "reversed";
+function groupBadge(g: SaleGroupData): { label: string; variant: BadgeVariant } {
+  const waiting = g.parts.find((p) => p.status === "awaiting_otp");
+  if (waiting) return { label: g.parts.length > 1 ? `Part ${waiting.partNumber} waiting` : "Waiting on HomeTrue", variant: "warning" };
+  if (g.parts.some((p) => p.status === "pending" || p.status === "sending")) return { label: "Sending", variant: "info" };
+  if (failedPayouts(g.parts).length) return { label: "Failed", variant: "error" };
+  if (g.parts.some((p) => p.status === "success")) return { label: "Paid", variant: "success" };
+  return payoutStatusBadge(g.parts[g.parts.length - 1].status);
+}
+
+function SaleGroup({ group: g }: { group: SaleGroupData }) {
+  const badge = groupBadge(g);
   return (
-    <ListCard>
-      <div className="flex items-start gap-4">
-        <div className="flex-1 min-w-0 space-y-1.5">
-          <div>
-            <div className="font-semibold text-[var(--foreground)]">
-              <span className="font-mono-data">{money(p.amount, p.currency)}</span>
-              {p.partCount > 1 && <span className="text-xs font-normal text-[var(--muted-foreground)]"> · part {p.partNumber} of {p.partCount}</span>}
-            </div>
-            <div className="text-xs text-[var(--muted-foreground)] mt-0.5">
-              {p.bankName && p.accountLast4 ? `${p.bankName} ending ${p.accountLast4} · ` : p.bankName ? `${p.bankName} · ` : ""}
-              started {when(p.createdAt)}{p.transferredAt ? ` · transferred ${when(p.transferredAt)}` : ""} · <span className="font-mono-data">{p.reference}</span>
-            </div>
-          </div>
-          {failed && p.gatewayMessage && <p className="text-xs text-[var(--error-text)]">Paystack: “{p.gatewayMessage}”</p>}
-          {p.reviewReason && <p className="text-xs text-[var(--warning-text)] font-medium">HomeTrue is looking into this payout.</p>}
+    <li className="px-4 sm:px-5 py-4 space-y-2.5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="font-semibold text-[var(--foreground)]">Sale · <span className="font-mono-data">{money(g.amount, g.currency)}</span></div>
+          <div className="text-xs text-[var(--muted-foreground)]">Started {dayOf(g.started)}{g.retried ? " · retried after an earlier attempt failed" : ""}</div>
         </div>
         <StatusBadge label={badge.label} variant={badge.variant} />
       </div>
-    </ListCard>
+      <ul className="space-y-1.5">{g.parts.map((p) => <PayoutPart key={p.id} payout={p} />)}</ul>
+    </li>
+  );
+}
+
+function PayoutPart({ payout: p }: { payout: Payout }) {
+  const badge = payoutStatusBadge(p.status);
+  const failed = p.status === "failed" || p.status === "reversed";
+  return (
+    <li className="rounded-lg bg-[var(--muted)] px-3 py-2.5 text-sm">
+      <div className="grid grid-cols-2 sm:grid-cols-[9rem_9rem_minmax(0,1fr)_auto] gap-x-4 gap-y-1 items-center">
+        <span className="text-[var(--foreground)]">{p.partCount > 1 ? `Part ${p.partNumber} of ${p.partCount}` : "Single transfer"}</span>
+        <span className="font-mono-data text-right sm:text-left">{money(p.amount, p.currency)}</span>
+        <span className="text-xs text-[var(--muted-foreground)]">{when(p.createdAt)}{p.transferredAt ? ` · transferred ${when(p.transferredAt)}` : ""}</span>
+        <span className="justify-self-end"><StatusBadge label={badge.label} variant={badge.variant} /></span>
+      </div>
+      {failed && p.gatewayMessage && <p className="text-xs text-[var(--error-text)] mt-1.5">Paystack: “{p.gatewayMessage}”</p>}
+      {p.reviewReason && <p className="text-xs text-[var(--warning-text)] font-medium mt-1.5">HomeTrue is looking into this payout.</p>}
+      <p className="text-[11px] text-[var(--muted-foreground)] font-mono-data mt-1 break-all">{p.reference}</p>
+    </li>
   );
 }
 

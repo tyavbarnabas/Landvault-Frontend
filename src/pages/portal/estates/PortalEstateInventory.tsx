@@ -11,7 +11,7 @@ import {
   BULK_STATUS_LIMIT, InventoryEditError, availableCount, changePlotStatus, changePlotStatuses, countFor, createBlock,
   correctPlotBoundary, createPriceTier, fetchBlocks, fetchInventoryGeoJson, fetchPlots, fetchPriceTierImpact, fetchPriceTiers,
   isEditablePlot, movePlotToTier, setTierRetired, tierMoveTargets, withdrawPlot, type PlotBoundaryCorrection, type PlotTierChange,
-  tierDisplayLabel, updateBlock, updatePriceTier, validatePriceTier, type PlotStatusChange, type PlotStatusTarget,
+  blockLabel, tierDisplayLabel, updateBlock, updatePriceTier, validatePriceTier, type PlotStatusChange, type PlotStatusTarget,
   type CreatePriceTierInput, type PlotCounts, type PortalBlock, type PortalPlot, type PortalPriceTier,
   type PortalPlotStatus, type PriceTierUpdate, type TierType, type UpdatePriceTierInput,
 } from "../../../services/portalInventoryService";
@@ -24,6 +24,24 @@ import BoundaryField from "../../../components/portal/BoundaryField";
 import ConflictChangesView from "../../../components/portal/ConflictChangesView";
 import type { GeoJsonPolygon } from "../../../services/portalEstatesService";
 import { usePortalScope } from "../usePortalScope";
+import Page, { Loading } from "../../../components/ui/Page";
+import Card from "../../../components/ui/Card";
+import Alert from "../../../components/ui/Alert";
+import Dialog from "../../../components/ui/Dialog";
+import Button, { LinkButton } from "../../../components/ui/Button";
+import { ErrorText } from "../../../components/ui/Field";
+import { MapPinIcon } from "../../../components/icons";
+import type { BadgeVariant } from "../../../components/StatusBadge";
+
+// A plot's status as a badge: available is open for sale, reserved is held,
+// sold is done, withheld is off the market by choice.
+const STATUS_TONE: Record<PortalPlotStatus, BadgeVariant> = {
+  "available-dev": "info",
+  "available-inv": "info",
+  reserved: "warning",
+  sold: "success",
+  withheld: "neutral",
+};
 
 type Tab = "tiers" | "blocks" | "plots";
 
@@ -54,16 +72,15 @@ export default function PortalEstateInventory() {
 
   // Only the FIRST load blanks the page. A refetch after an edit keeps what is
   // on screen — including the result of the edit that triggered it.
-  if (loaded.loading && !loaded.data) return <div className="p-8 text-sm text-[var(--muted-foreground)]">Loading inventory…</div>;
+  if (loaded.loading && !loaded.data) return <Page title="Inventory"><Loading label="Loading inventory…" /></Page>;
   if (loaded.error) return <LoadError error={loaded.errorValue} what="this estate's inventory" onRetry={loaded.refetch} />;
 
   const estate = loaded.data?.estate;
   if (!estate || !estateId || !scope) {
     return (
-      <div className="p-8">
-        <p className="text-sm font-medium text-[var(--foreground)] mb-2">Estate not found.</p>
-        <Link to="/portal/estates" className="text-sm text-[var(--accent)] hover:underline">Back to estates</Link>
-      </div>
+      <Page title="Estate not found" back={{ to: "/portal/estates", label: "Estates" }}>
+        <p className="text-sm text-[var(--muted-foreground)]">It doesn't exist, or it isn't one you can see.</p>
+      </Page>
     );
   }
 
@@ -72,40 +89,61 @@ export default function PortalEstateInventory() {
   const readOnly = isReadOnlyForScope(estate, scope);
   const canManage = mayManage && !readOnly;
 
-  return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <Link to={`/portal/estates/${estateId}`} className="text-xs text-[var(--accent)] hover:underline">← {estate.name}</Link>
-      <h1 className="font-display text-3xl text-[var(--foreground)] mt-2 mb-1">Inventory</h1>
-      <p className="text-sm text-[var(--muted-foreground)] mb-6">
-        Price by tier, not per plot: {plots.length} plot{plots.length === 1 ? "" : "s"} priced by {tiers.length} tier{tiers.length === 1 ? "" : "s"}.
-      </p>
+  const count = (st: PortalPlotStatus) => plots.filter((p) => p.status === st).length;
+  const available = count("available-dev") + count("available-inv");
+  const onMap = plots.filter((p) => p.hasFootprint).length;
+  const figures: [string, string, string][] = [
+    ["Price tiers", String(tiers.length), tiers.length ? [...new Set(tiers.map((t) => t.tierType === "land_size" ? "land size" : "unit type"))].join(" and ") : "add one to price plots"],
+    ["Blocks", String(blocks.length), blocks.map((b) => b.name).join(", ") || "none yet"],
+    ["Plots", String(plots.length), plots.length ? `${onMap} on the map` : "none yet"],
+    ["Available", String(available), [`${count("reserved")} reserved`, `${count("sold")} sold`, count("withheld") ? `${count("withheld")} withheld` : null].filter(Boolean).join(" · ")],
+  ];
 
+  return (
+    <Page width="xl" back={{ to: `/portal/estates/${estateId}`, label: estate.name }} title="Inventory"
+      description="Price by tier, not per plot. Changing a tier's price changes every plot priced by it."
+      actions={canManage ? (
+        <div className="flex flex-wrap gap-2">
+          <LinkButton to={`/portal/estates/${estateId}/plots/import`} variant="secondary">Import plots</LinkButton>
+          <LinkButton to={`/portal/estates/${estateId}/plots/new`}>Add plots</LinkButton>
+        </div>
+      ) : undefined}>
       {readOnly && <ReadOnlyNotice />}
 
-      <div className="border-b border-[var(--border)] mb-5">
-        <TabBar
-          tabs={[{ id: "tiers", label: "Price tiers" }, { id: "blocks", label: "Blocks" }, { id: "plots", label: "Plots" }]}
-          active={tab}
-          onActivate={setTab}
-          ariaLabel="Inventory sections"
-        />
-      </div>
+      <dl className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        {figures.map(([label, value, sub]) => (
+          <div key={label} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
+            <dt className="text-xs text-[var(--muted-foreground)]">{label}</dt>
+            <dd className="font-display text-3xl text-[var(--foreground)]">{value}</dd>
+            <dd className="text-xs text-[var(--muted-foreground)] mt-1 truncate">{sub}</dd>
+          </div>
+        ))}
+      </dl>
 
-      <div id={`panel-${tab}`} role="tabpanel">
-        {tab === "tiers" && <TiersPanel estateId={estateId} tiers={tiers} canManage={canManage} onCreated={loaded.refetch} />}
+      <TabBar
+        tabs={[{ id: "tiers", label: `Price tiers ${tiers.length}` }, { id: "blocks", label: `Blocks ${blocks.length}` }, { id: "plots", label: `Plots ${plots.length}` }]}
+        active={tab}
+        onActivate={setTab}
+        ariaLabel="Inventory sections"
+        divider
+      />
+
+      <div id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
+        {tab === "tiers" && <TiersPanel estateId={estateId} tiers={tiers} totalPlots={plots.length} canManage={canManage} onCreated={loaded.refetch} />}
         {tab === "blocks" && <BlocksPanel estateId={estateId} blocks={blocks} canManage={canManage} onCreated={loaded.refetch} />}
         {tab === "plots" && <PlotsPanel estateId={estateId} plots={plots} blocks={blocks} tiers={tiers} mapData={mapData} canManage={canManage} onChanged={loaded.refetch} />}
       </div>
-    </div>
+    </Page>
   );
 }
 
 // ─── Tiers ───────────────────────────────────────────────────────────────────
 
-function TiersPanel({ estateId, tiers, canManage, onCreated }: {
-  estateId: string; tiers: PortalPriceTier[]; canManage: boolean; onCreated: () => void;
+function TiersPanel({ estateId, tiers, totalPlots, canManage, onCreated }: {
+  estateId: string; tiers: PortalPriceTier[]; totalPlots: number; canManage: boolean; onCreated: () => void;
 }) {
   const scope = usePortalScope();
+  const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [lastEdit, setLastEdit] = useState<{ tierName: string; update: PriceTierUpdate } | null>(null);
   const editing = tiers.find((t) => t.id === editingId) ?? null;
@@ -158,6 +196,7 @@ function TiersPanel({ estateId, tiers, canManage, onCreated }: {
     try {
       await createPriceTier(estateId, input, scope);
       setSizeSqm(""); setPrice(""); setLabel("");
+      setAdding(false);
       onCreated();
     } catch (err) {
       setFieldError({ field: "form", message: err instanceof Error ? err.message : "Couldn't create the tier." });
@@ -169,59 +208,64 @@ function TiersPanel({ estateId, tiers, canManage, onCreated }: {
   return (
     <div className="space-y-6">
       {tiers.length === 0 ? (
-        <EmptyState title="No price tiers yet" description="A 450-plot estate needs four to six tiers, not 450 prices. Add the first one below." />
+        <Card padding="sm">
+          <EmptyState title="No price tiers yet" description="A 450-plot estate needs four to six tiers, not 450 prices."
+            action={canManage ? <Button onClick={() => setAdding(true)}>Add a price tier</Button> : undefined} />
+        </Card>
       ) : (
         <div>
-          <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
+          <Card padding="none" className="overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5">
+              <h2 className="font-semibold text-[var(--foreground)]">Price tiers</h2>
+              {canManage && <Button variant="secondary" onClick={() => { setAdding(true); setFieldError(null); }}>Add a price tier</Button>}
+            </div>
+            <div className="overflow-x-auto border-t border-[var(--border)]">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-[var(--muted)] text-left">
-                  <th scope="col" className="px-4 py-2.5 font-medium text-[var(--muted-foreground)]">Tier</th>
-                  <th scope="col" className="px-4 py-2.5 font-medium text-[var(--muted-foreground)]">Price</th>
-                  <th scope="col" className="px-4 py-2.5 font-medium text-[var(--muted-foreground)]">Per sqm</th>
-                  <th scope="col" className="px-4 py-2.5 font-medium text-[var(--muted-foreground)]">Plots priced by it</th>
-                  {canManage && <th scope="col" className="px-4 py-2.5"><span className="sr-only">Actions</span></th>}
+                <tr className="bg-[var(--muted)] text-left text-[11px] uppercase tracking-wide">
+                  <th scope="col" className="px-5 py-2 font-semibold text-[var(--muted-foreground)]">Tier</th>
+                  <th scope="col" className="px-4 py-2 font-semibold text-[var(--muted-foreground)]">Type</th>
+                  <th scope="col" className="px-4 py-2 font-semibold text-[var(--muted-foreground)]">Price</th>
+                  <th scope="col" className="px-4 py-2 font-semibold text-[var(--muted-foreground)]">Per sqm</th>
+                  <th scope="col" className="px-4 py-2 font-semibold text-[var(--muted-foreground)]">Plots priced by it</th>
+                  {canManage && <th scope="col" className="px-4 py-2"><span className="sr-only">Actions</span></th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border)] bg-[var(--card)]">
                 {tiers.map((tier) => (
                   <tr key={tier.id}>
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-[var(--foreground)]">{tierDisplayLabel(tier)}</div>
-                      <div className="text-xs text-[var(--muted-foreground)]">{tier.tierType === "land_size" ? "Land size" : "Unit type"}</div>
+                    <td className="px-5 py-3">
+                      <div className="font-semibold text-[var(--foreground)]">{tierDisplayLabel(tier)}</div>
                       {/* Retired: no new plots, but its existing plots stay on
                           sale at this price — withholding is how to take those off. */}
                       {tier.retiredAt && <div className="mt-1"><StatusBadge label="Retired — no new plots" variant="neutral" /></div>}
                     </td>
-                    <td className="px-4 py-3 font-mono-data text-[var(--foreground)]">{formatAmount(tier.price, tier.currency)}</td>
+                    <td className="px-4 py-3"><StatusBadge label={tier.tierType === "land_size" ? "Land size" : "Unit type"} variant="neutral" /></td>
+                    <td className="px-4 py-3 font-mono-data text-[var(--foreground)] whitespace-nowrap">{formatAmount(tier.price, tier.currency)}</td>
                     {/* Display-only comparison. A tier's price is the developer's
                         own figure; it is never derived from a per-sqm rate, and
                         differing rates across tiers are normal. */}
-                    <td className="px-4 py-3 font-mono-data text-[var(--muted-foreground)]">
+                    <td className="px-4 py-3 font-mono-data text-[var(--muted-foreground)] whitespace-nowrap">
                       {tier.pricePerSqm === null ? "—" : `${formatAmount(tier.pricePerSqm, tier.currency)}/sqm`}
                     </td>
-                    <td className="px-4 py-3 font-mono-data text-[var(--foreground)]">{tier.plotCount}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono-data text-[var(--foreground)] whitespace-nowrap">{tier.plotCount} plot{tier.plotCount === 1 ? "" : "s"}</span>
+                        {totalPlots > 0 && (
+                          <span className="hidden sm:block w-28 h-1.5 rounded-full bg-[var(--muted)] overflow-hidden" aria-hidden="true">
+                            <span className="block h-full bg-[var(--primary)]" style={{ width: `${Math.round((tier.plotCount / totalPlots) * 100)}%` }} />
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     {canManage && (
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-3">
-                          <button
-                            type="button"
-                            onClick={() => { setEditingId(tier.id); setLastEdit(null); }}
-                            disabled={editingId === tier.id}
-                            className="text-sm text-[var(--accent)] hover:underline disabled:opacity-50 disabled:no-underline"
-                          >
-                            Edit
-                          </button>
+                          <Button variant="link" onClick={() => { setEditingId(tier.id); setLastEdit(null); }} disabled={editingId === tier.id}>Edit</Button>
                           {tier.retiredAt ? (
-                            <button type="button" onClick={() => setRetired(tier, false)} disabled={retireBusy}
-                              className="text-sm text-[var(--accent)] hover:underline disabled:opacity-50">
-                              Reinstate
-                            </button>
+                            <Button variant="link" onClick={() => setRetired(tier, false)} disabled={retireBusy}>Reinstate</Button>
                           ) : (
-                            <button type="button" onClick={() => { setRetiringId(tier.id); setRetireError(""); }} disabled={retiringId === tier.id}
-                              className="text-sm text-[var(--muted-foreground)] hover:underline disabled:opacity-50">
-                              Retire
-                            </button>
+                            <Button variant="linkMuted" onClick={() => { setRetiringId(tier.id); setRetireError(""); }} disabled={retiringId === tier.id}>Retire</Button>
                           )}
                         </div>
                       </td>
@@ -230,10 +274,10 @@ function TiersPanel({ estateId, tiers, canManage, onCreated }: {
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+          </Card>
           <p className="text-xs text-[var(--muted-foreground)] mt-2.5">
-            Per-sqm is shown for comparison only — each tier's price is your own figure, so rates differing between sizes is normal.
-            Changing a tier's price changes every plot priced by it.
+            Per sqm is for comparison only — each tier's price is your own figure, so rates differing between sizes is normal.
           </p>
         </div>
       )}
@@ -246,20 +290,14 @@ function TiersPanel({ estateId, tiers, canManage, onCreated }: {
             {retiring.plotCount === 1 ? "plot keeps" : "plots keep"} it, and any that are available stay on sale at its price — to take
             them off the market, withhold them on the Plots tab. You can reinstate it at any time.
           </p>
-          {retireError && <p className="text-sm text-red-700" role="alert">{retireError}</p>}
+          {retireError && <ErrorText>{retireError}</ErrorText>}
           <div className="flex gap-3">
-            <button type="button" onClick={() => setRetired(retiring, true)} disabled={retireBusy}
-              className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
-              {retireBusy ? "Retiring…" : "Retire tier"}
-            </button>
-            <button type="button" onClick={() => setRetiringId(null)}
-              className="px-4 py-2 border border-[var(--border)] rounded-md text-sm text-[var(--foreground)] hover:bg-[var(--muted)]">
-              Cancel
-            </button>
+            <Button onClick={() => setRetired(retiring, true)} disabled={retireBusy}>{retireBusy ? "Retiring…" : "Retire tier"}</Button>
+            <Button variant="secondary" onClick={() => setRetiringId(null)}>Cancel</Button>
           </div>
         </div>
       )}
-      {!retiring && retireError && <p className="text-sm text-red-700" role="alert">{retireError}</p>}
+      {!retiring && retireError && <ErrorText>{retireError}</ErrorText>}
 
       {editing && scope && (
         <TierEditor
@@ -277,8 +315,8 @@ function TiersPanel({ estateId, tiers, canManage, onCreated }: {
 
       {lastEdit && <TierEditResult tierName={lastEdit.tierName} update={lastEdit.update} onDismiss={() => setLastEdit(null)} />}
 
-      {canManage && <form onSubmit={submit} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 space-y-4">
-        <h2 className="text-sm font-semibold text-[var(--foreground)]">Add a price tier</h2>
+      {canManage && adding && <Dialog title="Add a price tier" onClose={() => { if (!saving) setAdding(false); }}>
+      <form onSubmit={submit} className="space-y-4">
 
         <div>
           <label htmlFor="tier-type" className="block text-sm font-medium text-[var(--foreground)] mb-1.5">Tier type</label>
@@ -313,12 +351,14 @@ function TiersPanel({ estateId, tiers, canManage, onCreated }: {
           placeholder={tierType === "unit_type" ? "3-bed terrace" : "Standard"}
         />
 
-        {fieldError?.field === "form" && <p className="text-sm text-red-700">{fieldError.message}</p>}
+        {fieldError?.field === "form" && <ErrorText>{fieldError.message}</ErrorText>}
 
-        <button type="submit" disabled={saving} className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
-          {saving ? "Adding…" : "Add tier"}
-        </button>
-      </form>}
+        <div className="flex justify-end gap-3 pt-1">
+          <Button variant="secondary" onClick={() => setAdding(false)} disabled={saving}>Cancel</Button>
+          <Button type="submit" disabled={saving}>{saving ? "Adding…" : "Add tier"}</Button>
+        </div>
+      </form>
+      </Dialog>}
     </div>
   );
 }
@@ -391,7 +431,7 @@ function BlocksPanel({ estateId, blocks, canManage, onCreated }: {
           <TierField id="block-name" label="Name" value={name} onChange={setName} placeholder="Block C" />
           <TierField id="block-label" label="Label (optional)" value={label} onChange={setLabel} />
         </div>
-        {error && <p className="text-sm text-red-700">{error}</p>}
+        {error && <p className="text-sm text-[var(--error-text)]">{error}</p>}
         <button type="submit" disabled={saving || !name.trim()} className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
           {saving ? "Adding…" : "Add block"}
         </button>
@@ -431,6 +471,7 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData, canManage, onChan
     (!cornerOnly || p.isCorner));
 
   const hasFootprints = plots.some((p) => p.hasFootprint);
+  const tierName = (id: string) => { const t = tiers.find((x) => x.id === id); return t ? tierDisplayLabel(t) : "—"; };
   const allVisibleSelected = visible.length > 0 && visible.every((p) => selected.has(p.id));
   const toggle = (id: string) => setSelected((prev) => {
     const next = new Set(prev);
@@ -461,21 +502,6 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData, canManage, onChan
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-[var(--muted-foreground)]">{plots.length} plot{plots.length === 1 ? "" : "s"} on this estate.</p>
-        <div className="flex items-center gap-3 shrink-0">
-          {canManage && (
-            <Link to={`/portal/estates/${estateId}/plots/import`} className="px-4 py-2 border border-[var(--border)] rounded-md text-sm text-[var(--foreground)] hover:bg-[var(--muted)]">
-              Import from file
-            </Link>
-          )}
-          {canManage && (
-            <Link to={`/portal/estates/${estateId}/plots/new`} className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90">
-              Add plots
-            </Link>
-          )}
-        </div>
-      </div>
 
       {canManage && selected.size > 0 && scope && (
         <BulkStatusBar
@@ -489,10 +515,10 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData, canManage, onChan
       {lastBulk && selected.size === 0 && (
         <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 space-y-2">
           <BulkResult result={lastBulk} plots={plots} />
-          <button type="button" onClick={() => setLastBulk(null)} className="text-xs text-[var(--muted-foreground)] hover:underline">Dismiss</button>
+          <Button variant="linkMuted" onClick={() => setLastBulk(null)} className="text-xs">Dismiss</Button>
         </div>
       )}
-      {rowError && <p className="text-sm text-red-700" role="alert">{rowError}</p>}
+      {rowError && <ErrorText>{rowError}</ErrorText>}
       {withdrawn && (
         <p className="text-sm text-[var(--muted-foreground)]" role="status">
           {withdrawn} was withdrawn. Its plot number can be used again.{" "}
@@ -512,13 +538,25 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData, canManage, onChan
       )}
 
       {tiers.length === 0 && (
-        <p className="text-sm text-amber-700">Add at least one price tier first — every plot is priced by one.</p>
+        <Alert>Add at least one price tier first — every plot is priced by one.</Alert>
       )}
 
       {/* Plots with a footprint, over the estate boundary. A plot without one
           is simply absent from the map rather than drawn at a guessed spot. */}
       {mapData && hasFootprints && (
-        <div>
+        <details className="group bg-[var(--card)] border border-[var(--border)] rounded-xl">
+          <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer flex items-center gap-3 px-4 sm:px-5 py-3.5">
+            <MapPinIcon size={18} className="text-[var(--secondary-foreground)] shrink-0" />
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-semibold text-[var(--foreground)]">Plot map</span>
+              <span className="block text-xs text-[var(--muted-foreground)]">
+                {plots.filter((p) => p.hasFootprint).length} of {plots.length} plots have a surveyed footprint; the rest aren't on the map. Colours follow status.
+              </span>
+            </span>
+            <span className="text-sm font-medium text-[var(--accent)] shrink-0 group-open:hidden">Show map</span>
+            <span className="text-sm font-medium text-[var(--accent)] shrink-0 hidden group-open:inline">Hide map</span>
+          </summary>
+          <div className="px-4 sm:px-5 pb-4">
           <EstateBoundaryMap
             boundary={mapData as never}
             label="Plots over the estate boundary"
@@ -528,10 +566,8 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData, canManage, onChan
                 : { color: "#f59e0b", weight: 2, fillOpacity: 0.05 }}
             legend={Object.entries(STATUS_LABELS).map(([key, label]) => ({ color: STATUS_COLORS[key as keyof typeof STATUS_COLORS], label }))}
           />
-          <p className="text-xs text-[var(--muted-foreground)] mt-2">
-            {plots.filter((p) => p.hasFootprint).length} of {plots.length} plots have a surveyed footprint; the rest aren't on the map.
-          </p>
-        </div>
+          </div>
+        </details>
       )}
 
       {plots.length === 0 ? (
@@ -547,7 +583,7 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData, canManage, onChan
             </select>
             <select value={blockId} onChange={(e) => setBlockId(e.target.value)} aria-label="Filter by block" className={filterClass}>
               <option value="">All blocks</option>
-              {blocks.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              {blocks.map((b) => <option key={b.id} value={b.id}>{blockLabel(b.name)}</option>)}
             </select>
             <select value={tierId} onChange={(e) => setTierId(e.target.value)} aria-label="Filter by tier" className={filterClass}>
               <option value="">All tiers</option>
@@ -562,7 +598,7 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData, canManage, onChan
           <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-[var(--muted)] text-left">
+                <tr className="bg-[var(--muted)] text-left text-[11px] uppercase tracking-wide">
                   {canManage && (
                     <th scope="col" className="pl-4 py-2.5 w-8">
                       <input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} aria-label="Select every plot shown" />
@@ -585,20 +621,21 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData, canManage, onChan
                     {canManage && (
                       <td className="pl-4 py-3">
                         <input type="checkbox" checked={selected.has(plot.id)} onChange={() => toggle(plot.id)}
-                          aria-label={`Select ${plot.blockName ? `${plot.blockName}, ` : ""}Plot ${plot.plotNumber}`} />
+                          aria-label={`Select ${plot.blockName ? `${blockLabel(plot.blockName)}, ` : ""}Plot ${plot.plotNumber}`} />
                       </td>
                     )}
                     <td className="px-4 py-3">
-                      <div className="font-medium text-[var(--foreground)]">
-                        {plot.blockName ? `${plot.blockName}, ` : ""}Plot {plot.plotNumber}{plot.isCorner ? " ★" : ""}
+                      <div className="font-semibold text-[var(--foreground)] flex flex-wrap items-center gap-1.5 whitespace-nowrap">
+                        {plot.blockName ? `${blockLabel(plot.blockName)}, ` : ""}Plot {plot.plotNumber}
+                        {plot.isCorner && <StatusBadge label="Corner" variant="warning" />}
                       </div>
                       {plot.orientation && <div className="text-xs text-[var(--muted-foreground)]">Faces {plot.orientation}</div>}
                     </td>
-                    <td className="px-4 py-3 text-[var(--muted-foreground)]">{plot.tierLabel}</td>
-                    <td className="px-4 py-3 font-mono-data text-[var(--foreground)]">{plot.nominalSizeSqm === null ? "—" : `${plot.nominalSizeSqm} sqm`}</td>
+                    <td className="px-4 py-3 text-[var(--foreground)] whitespace-nowrap">{plot.tierLabel || tierName(plot.priceTierId)}</td>
+                    <td className="px-4 py-3 font-mono-data text-[var(--foreground)] whitespace-nowrap">{plot.nominalSizeSqm === null ? "—" : `${plot.nominalSizeSqm} sqm`}</td>
                     {/* Null when there's no footprint — never the nominal size
                         standing in for a measurement nobody took. */}
-                    <td className="px-4 py-3 font-mono-data text-[var(--muted-foreground)]">{plot.actualAreaSqm === null ? "Not surveyed" : `${plot.actualAreaSqm} sqm`}</td>
+                    <td className="px-4 py-3 font-mono-data text-[var(--muted-foreground)] whitespace-nowrap">{plot.actualAreaSqm === null ? "Not surveyed" : `${plot.actualAreaSqm} sqm`}</td>
                     <td className="px-4 py-3 font-mono-data text-[var(--foreground)]">
                       {formatAmount(plot.price, plot.currency)}
                       {/* A corner plot's price matches no tier on the price
@@ -611,31 +648,19 @@ function PlotsPanel({ estateId, plots, blocks, tiers, mapData, canManage, onChan
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
-                        <span className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: STATUS_COLORS[plot.status] }} aria-hidden="true" />
-                        {STATUS_LABELS[plot.status]}
-                      </span>
+                      <StatusBadge label={STATUS_LABELS[plot.status]} variant={STATUS_TONE[plot.status]} />
                     </td>
                     {canManage && (
                       <td className="px-4 py-3 text-right whitespace-nowrap">
                         {(plot.status === "available-dev" || plot.status === "available-inv") && (
-                          <button type="button" onClick={() => quickChange(plot, "withheld")} disabled={rowBusy === plot.id}
-                            className="text-xs text-[var(--accent)] hover:underline disabled:opacity-50">
-                            Withhold
-                          </button>
+                          <Button variant="link" onClick={() => quickChange(plot, "withheld")} disabled={rowBusy === plot.id}>Withhold</Button>
                         )}
                         {plot.status === "withheld" && (
-                          <button type="button" onClick={() => quickChange(plot, "available")} disabled={rowBusy === plot.id}
-                            className="text-xs text-[var(--accent)] hover:underline disabled:opacity-50">
-                            Return to market
-                          </button>
+                          <Button variant="link" onClick={() => quickChange(plot, "available")} disabled={rowBusy === plot.id}>Return to market</Button>
                         )}
                         {/* Reserved and sold: what a buyer agreed to — nothing to edit. */}
                         {(isEditablePlot(plot) || plot.status === "withheld") && (
-                          <button type="button" onClick={() => setEditingPlotId(plot.id)} disabled={editingPlotId === plot.id}
-                            className="ml-3 text-xs text-[var(--accent)] hover:underline disabled:opacity-50">
-                            Edit
-                          </button>
+                          <Button variant="link" onClick={() => setEditingPlotId(plot.id)} disabled={editingPlotId === plot.id} className="ml-3">Edit</Button>
                         )}
                       </td>
                     )}
@@ -740,7 +765,7 @@ function MovePlotTier({ estateId, plot, tiers, onChanged }: { estateId: string; 
               </Field>
             )}
           </div>
-          {error?.field === "form" && <p className="text-sm text-red-700" role="alert">{error.message}</p>}
+          {error?.field === "form" && <p className="text-sm text-[var(--error-text)]" role="alert">{error.message}</p>}
           <button type="button" onClick={move} disabled={busy || !target}
             className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
             {busy ? "Moving…" : "Move plot"}
@@ -793,7 +818,7 @@ function CorrectPlotBoundary({ estateId, plot, onChanged }: { estateId: string; 
         stateChecked={false}
         onChange={(state) => { setPolygon(state.polygon); setUnresolved(state.hasUnresolvedInput); setError(""); setResult(null); }}
       />
-      {error && <p className="text-sm text-red-700" role="alert">{error}</p>}
+      {error && <p className="text-sm text-[var(--error-text)]" role="alert">{error}</p>}
       <button type="button" onClick={save} disabled={busy || !polygon || unresolved}
         className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
         {busy ? "Saving…" : "Save boundary"}
@@ -843,7 +868,7 @@ function WithdrawPlot({ estateId, plot, label, onWithdrawn }: { estateId: string
         Removes a plot entered by mistake. Only possible if it has never been reserved or bought — even a lapsed hold counts — and has
         never been in a boundary conflict. Otherwise, withhold it instead.
       </p>
-      {error && <p className="text-sm text-red-700" role="alert">{error}</p>}
+      {error && <p className="text-sm text-[var(--error-text)]" role="alert">{error}</p>}
       {confirming ? (
         <div className="flex gap-3">
           <button type="button" onClick={withdraw} disabled={busy}
@@ -924,8 +949,8 @@ function BulkStatusBar({ estateId, plotIds, plots, onClear, onApplied }: {
         Reserved and sold plots are never changed here — only checkout moves them — and are skipped with a reason. On the marketplace a
         withheld plot simply shows as unavailable.
       </p>
-      {tooMany && <p className="text-sm text-red-700">At most {BULK_STATUS_LIMIT} plots at once — narrow the selection.</p>}
-      {error && <p className="text-sm text-red-700" role="alert">{error}</p>}
+      {tooMany && <p className="text-sm text-[var(--error-text)]">At most {BULK_STATUS_LIMIT} plots at once — narrow the selection.</p>}
+      {error && <p className="text-sm text-[var(--error-text)]" role="alert">{error}</p>}
 
       {result && <div className="rounded-lg bg-[var(--muted)] p-4"><BulkResult result={result} plots={plots} /></div>}
 
@@ -1073,7 +1098,7 @@ function TierEditor({ estateId, tier, onCancel, onSaved }: {
       <div className="rounded-lg bg-[var(--muted)] p-4">
         {impact.loading && <p className="text-sm text-[var(--muted-foreground)]">Checking which plots this tier reaches…</p>}
         {impact.error && (
-          <div className="text-sm text-red-700">
+          <div className="text-sm text-[var(--error-text)]">
             Couldn't load which plots this tier reaches, so it can't be edited yet.{" "}
             <button type="button" onClick={impact.refetch} className="underline">Try again</button>
           </div>
@@ -1102,7 +1127,7 @@ function TierEditor({ estateId, tier, onCancel, onSaved }: {
         </Field>
       </div>
 
-      {fieldError?.field === "form" && <p className="text-sm text-red-700" role="alert">{fieldError.message}</p>}
+      {fieldError?.field === "form" && <p className="text-sm text-[var(--error-text)]" role="alert">{fieldError.message}</p>}
 
       {/* What saving will do, in the server's own counts. */}
       {plots && plots.total > 0 && (priceChanged || sizeChanged) && (
@@ -1207,7 +1232,7 @@ function BlockRenameForm({ estateId, block, onCancel, onSaved }: {
         <TierField id="rename-name" errorKey="name" label="Name" value={name} onChange={setName} error={error} />
         <TierField id="rename-label" errorKey="label" label="Label (optional)" value={label} onChange={setLabel} error={error} />
       </div>
-      {error?.field === "form" && <p className="text-sm text-red-700" role="alert">{error.message}</p>}
+      {error?.field === "form" && <p className="text-sm text-[var(--error-text)]" role="alert">{error.message}</p>}
       <div className="flex gap-3">
         <button type="submit" disabled={saving} className="px-3 py-1.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
           {saving ? "Saving…" : "Save"}
@@ -1241,9 +1266,9 @@ function TierField({ id, errorKey = id, label, value, onChange, type = "text", p
         onChange={(e) => onChange(e.target.value)}
         aria-invalid={invalid}
         aria-describedby={invalid ? `${id}-error` : undefined}
-        className={`${inputClass} ${invalid ? "border-red-400" : ""}`}
+        className={`${inputClass} ${invalid ? "border-[var(--error-border)]" : ""}`}
       />
-      {invalid && <p id={`${id}-error`} className="text-xs text-red-700 mt-1">{error!.message}</p>}
+      {invalid && <p id={`${id}-error`} className="text-xs text-[var(--error-text)] mt-1">{error!.message}</p>}
     </div>
   );
 }

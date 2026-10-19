@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 import { failedPayouts, overviewItems } from "./portalOverviewService";
 import { estatePlace, listStatus, type PortalEstate } from "./portalEstatesService";
 import type { Payout } from "./financeService";
-import type { StaffMember } from "./staffService";
 
 const payout = (id: string, transactionId: string, status: Payout["status"], createdAt: string, extra: Partial<Payout> = {}): Payout => ({
   id, transactionId, tenantId: "t1", amount: 7_500_000, currency: "NGN", partNumber: 1, partCount: 1, status, reference: `po-${id}`,
@@ -15,7 +14,6 @@ const payout = (id: string, transactionId: string, status: Payout["status"], cre
 const estate = (name: string, status: PortalEstate["status"], published: boolean, totalPlots = 0) =>
   ({ id: name, name, status, published, totalPlots, area: "", city: "", state: "Lagos" }) as unknown as PortalEstate;
 
-const member = (firstName: string, status: StaffMember["status"]) => ({ userId: firstName, firstName, lastName: "M", email: "", phone: null, status, roles: [], lastLoginAt: null, createdAt: "" }) as StaffMember;
 
 describe("the estates list's status, from the flag and the marketplace", () => {
   it("never says live without the marketplace's word", () => {
@@ -37,21 +35,44 @@ describe("what needs the team", () => {
     expect(failedPayouts(list).map((p) => p.id)).toEqual(["c"]);
   });
 
-  it("lists money first, then buyers, listings, team and payouts waiting on HomeTrue", () => {
+  it("lists money first, then buyers, listings and payouts waiting on HomeTrue — never staff with an unconfirmed contact", () => {
     const items = overviewItems({
       estates: [estate("Boundary Test Estate", "published_not_live", true), estate("Lugbe", "published", true, 56), estate("Draft", "not_published", false)],
       queue: 2, late: 0,
       payouts: [payout("w", "t-3", "awaiting_otp", "2026-10-11T00:00:00Z", { partNumber: 2, partCount: 2 })],
-      staff: [member("Chidi", "pending_verification"), member("Ada", "active"), member("Bala", "pending_verification")],
     });
-    expect(items.map((i) => i.kind)).toEqual(["verify", "estate", "staff", "payout_waiting"]);
+    expect(items.map((i) => i.kind)).toEqual(["verify", "estate", "payout_waiting"]);
     expect(items[0].title).toBe("2 payments waiting for verification");
     expect(items[1].detail).toBe("At least one condition for listing isn't met. Open it to see which.");
-    expect(items[2]).toMatchObject({ title: "2 staff haven't activated their accounts", detail: "Chidi M and Bala M." });
-    expect(items[3].detail).toBe("Part 2 of 2 to Stanbic IBTC Bank ••0566. HomeTrue confirms the transfer; nothing to do on your side.");
+    expect(items[2].detail).toBe("Part 2 of 2 to Stanbic IBTC Bank ••0566. HomeTrue confirms the transfer; nothing to do on your side.");
   });
 
   it("says nothing it wasn't allowed to read", () => {
-    expect(overviewItems({ estates: null, queue: null, late: null, payouts: null, staff: null })).toEqual([]);
+    expect(overviewItems({ estates: null, queue: null, late: null, payouts: null })).toEqual([]);
+  });
+});
+
+describe("payouts by sale", () => {
+  it("groups a sale's parts, counts a retried failure once, newest sale first", async () => {
+    const { saleGroups } = await import("./financeService");
+    const groups = saleGroups([
+      payout("f", "s1", "failed", "2026-10-08T23:22:00Z", { amount: 15_000_000 }),
+      payout("a", "s1", "success", "2026-10-09T10:43:00Z", { partNumber: 1, partCount: 2 }),
+      payout("b", "s1", "success", "2026-10-09T11:00:00Z", { partNumber: 2, partCount: 2 }),
+      payout("c", "s2", "success", "2026-10-11T02:40:00Z", { partNumber: 1, partCount: 2 }),
+      payout("d", "s2", "awaiting_otp", "2026-10-11T02:48:00Z", { partNumber: 2, partCount: 2 }),
+    ]);
+    expect(groups.map((g) => [g.transactionId, g.amount, g.parts.map((p) => p.id), g.retried])).toEqual([
+      ["s2", 15_000_000, ["c", "d"], false],
+      ["s1", 15_000_000, ["f", "a", "b"], true],
+    ]);
+  });
+});
+
+describe("inventory, live", () => {
+  it("names a block plainly", async () => {
+    const { blockLabel } = await import("./portalInventoryService");
+    expect(blockLabel("B")).toBe("Block B");
+    expect(blockLabel("Block A")).toBe("Block A");
   });
 });

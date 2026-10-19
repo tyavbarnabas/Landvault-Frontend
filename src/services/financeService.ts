@@ -233,3 +233,25 @@ const mock: { queue: FinanceQueueItem[]; late: LatePayment[]; payouts: Payout[] 
       reference: "PO-DEMO-1", gatewayMessage: null, bankName: "Guaranty Trust Bank", accountLast4: "1234", createdAt: "2026-10-05T10:00:00Z", transferredAt: "2026-10-05T10:01:00Z", reviewReason: null },
   ],
 };
+
+// A failure that a later payout for the same sale didn't put right.
+export function failedPayouts(payouts: Payout[]): Payout[] {
+  return payouts.filter((p) => (p.status === "failed" || p.status === "reversed")
+    && !payouts.some((q) => q.transactionId === p.transactionId && q.status === "success" && q.createdAt > p.createdAt));
+}
+
+export interface SaleGroupData { transactionId: string; parts: Payout[]; amount: number; currency: string; started: string; retried: boolean }
+
+// One sale's payouts together, newest sale first, its parts in order. The
+// sale's amount is what is paid or still moving — a failed attempt that was
+// retried isn't counted twice.
+export function saleGroups(payouts: Payout[]): SaleGroupData[] {
+  const by = new Map<string, Payout[]>();
+  for (const p of payouts) by.set(p.transactionId, [...(by.get(p.transactionId) ?? []), p]);
+  return [...by].map(([transactionId, list]) => {
+    const parts = [...list].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const live = parts.filter((p) => !["failed", "reversed", "cancelled"].includes(p.status));
+    const amount = live.length ? live.reduce((n, p) => n + p.amount, 0) : Math.max(...parts.map((p) => p.amount));
+    return { transactionId, parts, amount, currency: parts[0].currency, started: parts[0].createdAt, retried: live.length > 0 && live.length < parts.length };
+  }).sort((a, b) => b.parts[b.parts.length - 1].createdAt.localeCompare(a.parts[a.parts.length - 1].createdAt));
+}

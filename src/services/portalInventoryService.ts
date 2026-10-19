@@ -387,7 +387,9 @@ function fromPriceTierDto(dto: PriceTierDto, plotCount: number): PortalPriceTier
     currency: dto.currency,
     label: dto.label ?? undefined,
     plotCount,
-    pricePerSqm: null,
+    // The backend doesn't send it for a tier; worked out the same way as a
+    // plot's, for comparison only.
+    pricePerSqm: dto.sizeSqm ? Math.round(dto.price / dto.sizeSqm) : null,
     retiredAt: dto.retiredAt ?? null,
   };
 }
@@ -658,7 +660,9 @@ export async function fetchPlots(
 ): Promise<Page<PortalPlot>> {
   if (!isMock("portalInventory")) {
     const qp = new URLSearchParams({ ...(filters as Record<string, string>), ...(params as Record<string, string>) });
-    return apiClient.get<Page<PortalPlot>>(`/api/portal/estates/${estateId}/plots?${qp}`);
+    const page = await apiClient.get<Page<PortalPlot & { priceTierLabel?: string | null }>>(`/api/portal/estates/${estateId}/plots?${qp}`);
+    // The plot DTO names its tier `priceTierLabel`; the screens read `tierLabel`.
+    return { ...page, items: page.items.map(({ priceTierLabel, ...plot }) => ({ ...plot, tierLabel: plot.tierLabel ?? priceTierLabel ?? "" })) };
   }
   if (!(await assertInScope(estateId, scope))) return { items: [], total: 0, hasMore: false };
 
@@ -772,6 +776,11 @@ function materialisePlot(estateId: string, input: CreatePlotInput, estateCornerP
 // The tiers a NEW plot may join. Retired tiers keep their existing plots.
 export function openTiers(tiers: PortalPriceTier[]): PortalPriceTier[] {
   return tiers.filter((t) => t.retiredAt === null);
+}
+
+// "Block B" — a block stored as just "B" reads as one.
+export function blockLabel(name: string): string {
+  return /^block\b/i.test(name) ? name : `Block ${name}`;
 }
 
 export function tierDisplayLabel(tier: PortalPriceTier): string {

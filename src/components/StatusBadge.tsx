@@ -82,7 +82,7 @@ export function invitationStatusBadge(status: InvitationStatus): { label: string
 export function staffStatusBadge(status: StaffStatus): { label: string; variant: BadgeVariant } {
   switch (status) {
     case "active": return { label: "Active", variant: "success" };
-    case "pending_verification": return { label: "Pending verification", variant: "warning" };
+    case "pending_verification": return { label: "Not confirmed", variant: "neutral" };
     case "suspended": return { label: "Suspended", variant: "error" };
     case "deactivated": return { label: "Deactivated", variant: "neutral" };
   }

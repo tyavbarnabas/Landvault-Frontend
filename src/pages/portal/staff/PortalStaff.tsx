@@ -28,7 +28,13 @@ import {
 import StatusBadge, { invitationStatusBadge, staffStatusBadge } from "../../../components/StatusBadge";
 import TabBar from "../../../components/ui/Tabs";
 import EmptyState from "../../../components/ui/EmptyState";
-import { ListCard } from "../../../components/ui/Card";
+import Card, { ListCard } from "../../../components/ui/Card";
+import Page, { Loading } from "../../../components/ui/Page";
+import Button, { LinkButton } from "../../../components/ui/Button";
+import Alert from "../../../components/ui/Alert";
+import Dialog from "../../../components/ui/Dialog";
+import Popover from "../../../components/ui/Popover";
+import { ErrorText, Input, Select } from "../../../components/ui/Field";
 import { Field, inputClass } from "../../../components/portal/formParts";
 import { usePortalScope } from "../usePortalScope";
 
@@ -44,6 +50,9 @@ export default function PortalStaff() {
   const sent = (useLocation().state as { sent?: StaffInvitation } | null)?.sent;
   const [tab, setTab] = useState<Tab>(sent || !canInvite ? "invitations" : "team");
   const [query, setQuery] = useState("");
+  // null = every branch; "" = company-wide only.
+  const [branchFilter, setBranchFilter] = useState<string | null>(null);
+  const [roleFilter, setRoleFilter] = useState("");
 
   const caller: StaffCaller | null = scope && user ? { tenantId: scope.tenantId, branchId: scope.branchId ?? null, email: user.email, permissions: user.permissions } : null;
   const data = useFetch(async () => {
@@ -52,15 +61,15 @@ export default function PortalStaff() {
     return { staff, invitations, branches, roles };
   }, [scope?.tenantId, scope?.branchId, user?.email]);
 
-  if (!caller) return <div className="p-8 text-sm text-[var(--muted-foreground)]">This account isn't linked to a company.</div>;
-  if (data.loading && !data.data) return <div className="p-8 text-sm text-[var(--muted-foreground)]">Loading staff…</div>;
+  if (!caller) return <Page title="Staff"><p className="text-sm text-[var(--muted-foreground)]">This account isn't linked to a company.</p></Page>;
+  if (data.loading && !data.data) return <Page title="Staff"><Loading label="Loading staff…" /></Page>;
   if (data.error) return <LoadError error={data.errorValue} what="your staff" onRetry={data.refetch} />;
   if (!data.data) {
     return (
-      <div className="p-8">
+      <Page title="Staff">
         <p className="text-sm text-[var(--foreground)] mb-2">Couldn't load your staff.</p>
-        <button onClick={data.refetch} className="text-sm text-[var(--accent)] hover:underline">Try again</button>
-      </div>
+        <Button variant="link" onClick={data.refetch}>Try again</Button>
+      </Page>
     );
   }
 
@@ -69,62 +78,108 @@ export default function PortalStaff() {
   // Search only once the open list is long enough to need it.
   const q = query.trim().toLowerCase();
   const matches = (text: string) => !q || text.toLowerCase().includes(q);
-  const shownStaff = staff.filter((m) => matches(`${m.firstName} ${m.lastName} ${m.email} ${m.roles.map((r) => `${r.roleName} ${r.branchName ?? ""}`).join(" ")}`));
+  const branchOf = (m: StaffMember) => m.roles[0]?.branchName ?? "";
+  const branchOptions = [...new Set(staff.map(branchOf))].sort();
+  const roleOptions = [...new Set(staff.flatMap((m) => m.roles.map((r) => r.roleName)))].sort();
+  const shownStaff = staff
+    .filter((m) => matches(`${m.firstName} ${m.lastName} ${m.email} ${m.roles.map((r) => `${r.roleName} ${r.branchName ?? ""}`).join(" ")}`))
+    .filter((m) => branchFilter === null || branchOf(m) === branchFilter)
+    .filter((m) => !roleFilter || m.roles.some((r) => r.roleName === roleFilter));
   const shownInvitations = invitations.filter((i) => matches(`${i.firstName} ${i.lastName} ${i.email} ${i.roleName} ${i.branchName ?? ""}`));
   const searchable = (tab === "team" ? staff.length : invitations.length) > 10;
+  const unconfirmed = staff.some((m) => m.status === "pending_verification");
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      {/* The action sits beside the heading, as on Estates and Branches —
-          never above or below a list that may run to fifty people. */}
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="font-display text-3xl text-[var(--foreground)] mb-1">Staff</h1>
-          <p className="text-sm text-[var(--muted-foreground)]">
-            {canInvite
-              ? "Invite people to your company and decide what they can do. Branch staff see only their branch's estates."
-              : "Your branch's team. To add someone, ask head office — they approve it before anything is sent."}
-          </p>
+    <Page title="Staff"
+      description={canInvite
+        ? "Who works in your company, what they can do, and where. Branch staff see only their branch's estates."
+        : "Your branch's team. To add someone, ask head office — they approve it before anything is sent."}
+      actions={
+        <div className="flex flex-wrap gap-2">
+          {canManageRoles(user) && <LinkButton to="/portal/staff/roles" variant="secondary">Roles &amp; permissions</LinkButton>}
+          {(canInvite || canRequest) && <LinkButton to="/portal/staff/new">{canInvite ? "Invite someone" : "Ask for someone"}</LinkButton>}
         </div>
-        <div className="shrink-0 flex items-center gap-4">
-        {canManageRoles(user) && <TextLink to="/portal/staff/roles" className="text-sm">Roles</TextLink>}
-        {(canInvite || canRequest) && (
-          <Link to="/portal/staff/new" className="shrink-0 px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90">
-            {canInvite ? "Invite someone" : "Ask for someone"}
-          </Link>
-        )}
-        </div>
-      </div>
-
+      }>
       {sent && <SentNotice sent={sent} />}
 
-      <div className="border-b border-[var(--border)] mb-5 mt-2">
-        <TabBar
-          tabs={[{ id: "team", label: "Team" }, { id: "invitations", label: awaiting > 0 && canInvite ? `Invitations (${awaiting} to review)` : "Invitations" }]}
-          active={tab}
-          onActivate={setTab}
-          ariaLabel="Staff sections"
-        />
+      <StaffFigures staff={staff} invitations={invitations} />
+
+      <div className="flex flex-col-reverse lg:flex-row lg:items-end lg:justify-between gap-3 border-b border-[var(--border)] mb-5">
+        <div className="min-w-0 -mb-px">
+          <TabBar
+            tabs={[{ id: "team", label: `Team ${staff.length}` }, { id: "invitations", label: awaiting > 0 && canInvite ? `Invitations · ${awaiting} to review` : `Invitations ${invitations.length}` }]}
+            active={tab}
+            onActivate={setTab}
+            ariaLabel="Staff sections"
+          />
+        </div>
+        {tab === "team" && (branchOptions.length > 1 || roleOptions.length > 1) && (
+          <div className="flex gap-2 lg:mb-2">
+            {branchOptions.length > 1 && (
+              <Select inputSize="sm" className="w-auto" aria-label="Filter by branch" value={branchFilter ?? "*"} onChange={(e) => setBranchFilter(e.target.value === "*" ? null : e.target.value)}>
+                <option value="*">All branches</option>
+                {branchOptions.map((b) => <option key={b || "company"} value={b}>{b || "Company-wide"}</option>)}
+              </Select>
+            )}
+            {roleOptions.length > 1 && (
+              <Select inputSize="sm" className="w-auto" aria-label="Filter by role" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
+                <option value="">All roles</option>
+                {roleOptions.map((r) => <option key={r} value={r}>{r}</option>)}
+              </Select>
+            )}
+          </div>
+        )}
       </div>
 
       {searchable && (
-        <input
+        <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by name, email, role or branch"
           aria-label={tab === "team" ? "Search staff" : "Search invitations"}
-          className={`${inputClass} mb-4`}
+          className="mb-4"
         />
       )}
 
-      <div role="tabpanel">
-        {q && (tab === "team" ? shownStaff : shownInvitations).length === 0 ? (
-          <p className="text-sm text-[var(--muted-foreground)]">No one matches "{query}".</p>
+      {tab === "team" && unconfirmed && (
+        <Alert tone="info" className="mb-4">
+          “Not confirmed” means the person hasn't confirmed their email or phone. That step isn't switched on yet, so new accounts stay unconfirmed — they can still sign in and work.
+        </Alert>
+      )}
+
+      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+        {(q || branchFilter !== null || roleFilter) && (tab === "team" ? shownStaff : shownInvitations).length === 0 ? (
+          <p className="text-sm text-[var(--muted-foreground)]">No one matches{q ? ` "${query}"` : " those filters"}.</p>
         ) : tab === "team"
           ? <TeamList staff={shownStaff} caller={caller} canManage={canInvite} branches={branches} roles={roles} onChanged={data.refetch} />
           : <InvitationList invitations={shownInvitations} caller={caller} canApprove={canInvite} canCancel={canRequest} onChanged={data.refetch} />}
       </div>
-    </div>
+    </Page>
+  );
+}
+
+// People, roles in use and where invitations stand — from the lists loaded.
+function StaffFigures({ staff, invitations }: { staff: StaffMember[]; invitations: StaffInvitation[] }) {
+  const companyWide = staff.filter((m) => m.roles.every((r) => !r.branchName)).length;
+  const branches = [...new Set(staff.flatMap((m) => m.roles.map((r) => r.branchName).filter(Boolean)))];
+  const roleNames = [...new Set(staff.flatMap((m) => m.roles.map((r) => r.roleName)))];
+  const byStatus = invitations.reduce<Record<string, number>>((n, i) => ({ ...n, [i.status]: (n[i.status] ?? 0) + 1 }), {});
+  const invitationLine = Object.entries(byStatus).map(([status, n]) => `${n} ${invitationStatusBadge(status as StaffInvitation["status"]).label.toLowerCase()}`).join(" · ");
+  const cards: [string, string, string][] = [
+    ["People", String(staff.length), [companyWide ? `${companyWide} company-wide` : null, ...branches.map((b) => `${staff.filter((m) => m.roles.some((r) => r.branchName === b)).length} at ${b}`)].filter(Boolean).join(" · ") || "No one yet"],
+    ["Roles in use", String(roleNames.length), roleNames.join(", ") || "—"],
+    ["Invitations", String(invitations.length), invitationLine || "None sent yet"],
+  ];
+  return (
+    <dl className="grid sm:grid-cols-3 gap-3 mb-6">
+      {cards.map(([label, value, sub]) => (
+        <div key={label} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
+          <dt className="text-xs text-[var(--muted-foreground)]">{label}</dt>
+          <dd className="font-display text-3xl text-[var(--foreground)]">{value}</dd>
+          <dd className="text-xs text-[var(--muted-foreground)] mt-1">{sub}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -282,7 +337,7 @@ function InviteSection({ mode, caller, branches, roles: allRoles, onDone, onCanc
           )}
         </div>
         {mode === "invite" && rule && rule !== "forbidden" && branches.length === 0 && <NoBranchesNote required={rule === "required"} />}
-        {error?.field === "form" && <p className="text-sm text-red-700" role="alert">{error.message}</p>}
+        {error?.field === "form" && <p className="text-sm text-[var(--error-text)]" role="alert">{error.message}</p>}
         <div className="flex gap-3">
           <button type="submit" disabled={saving} className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
             {saving ? "Sending…" : mode === "invite" ? "Send invitation" : "Send request"}
@@ -376,15 +431,14 @@ function InvitationList({ invitations, caller, canApprove, canCancel, onChanged 
                   <input id={`reject-${inv.id}`} value={reason} onChange={(e) => setReason(e.target.value)} className={inputClass} />
                 </Field>
                 <div className="flex gap-3">
-                  <button type="button" disabled={busy} onClick={() => run(inv, () => rejectInvitation(inv.id, reason, caller), "Request rejected.")}
-                    className="px-3 py-1.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold disabled:opacity-60">Reject request</button>
-                  <button type="button" onClick={() => setRejecting(null)} className="px-3 py-1.5 border border-[var(--border)] rounded-md text-sm">Cancel</button>
+                  <Button variant="danger" disabled={busy} onClick={() => run(inv, () => rejectInvitation(inv.id, reason, caller), "Request rejected.")}>Reject request</Button>
+                  <Button variant="secondary" onClick={() => setRejecting(null)}>Cancel</Button>
                 </div>
               </div>
             )}
 
             {message?.id === inv.id && (
-              <p className={`text-sm ${message.tone === "error" ? "text-red-700" : "text-[var(--muted-foreground)]"}`} role={message.tone === "error" ? "alert" : "status"}>
+              <p className={`text-sm ${message.tone === "error" ? "text-[var(--error-text)]" : "text-[var(--muted-foreground)]"}`} role={message.tone === "error" ? "alert" : "status"}>
                 {message.text}
               </p>
             )}
@@ -415,6 +469,8 @@ function InvitationDetail({ inv }: { inv: StaffInvitation }) {
 
 // ─── Team ────────────────────────────────────────────────────────────────────
 
+const TEAM_GRID = "md:grid md:grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_7rem] md:items-center md:gap-4";
+
 function TeamList({ staff, caller, canManage, branches, roles, onChanged }: {
   staff: StaffMember[]; caller: StaffCaller; canManage: boolean; branches: PortalBranch[]; roles: AssignableRole[]; onChanged: () => void;
 }) {
@@ -422,58 +478,109 @@ function TeamList({ staff, caller, canManage, branches, roles, onChanged }: {
   const [message, setMessage] = useState<{ id: string; text: string; tone: "error" | "ok" } | null>(null);
 
   if (staff.length === 0) return <EmptyState title="No staff yet" description="People appear here once they accept an invitation." />;
+  const member = editing ? staff.find((m) => m.userId === editing.id) : undefined;
+
+  const reactivate = async (m: StaffMember) => {
+    try { await setStaffActive(m.userId, true, "", caller); setMessage({ id: m.userId, text: "Reactivated, with their role unchanged.", tone: "ok" }); onChanged(); }
+    catch (err) { setMessage({ id: m.userId, text: err instanceof Error ? err.message : "That didn't go through.", tone: "error" }); }
+  };
 
   return (
-    <ul className="space-y-3">
-      {staff.map((member) => {
-        const badge = staffStatusBadge(member.status);
-        const isYou = member.email.toLowerCase() === caller.email.toLowerCase();
-        return (
-          <ListCard key={member.userId} className="space-y-2">
-            <div className="flex flex-wrap items-start gap-3">
-              <div className="flex-1 min-w-[200px]">
-                <div className="font-semibold text-[var(--foreground)]">{member.firstName} {member.lastName}{isYou ? " (you)" : ""}</div>
-                <div className="text-xs text-[var(--muted-foreground)]">{member.email}</div>
-                <div className="text-xs text-[var(--muted-foreground)] mt-0.5">
-                  {member.roles.map((r) => `${r.roleName}${r.branchName ? ` · ${r.branchName}` : " · company-wide"}`).join("; ") || "No role"}
+    <>
+      <Card padding="none" className="overflow-hidden">
+        <div aria-hidden="true" className={`hidden ${TEAM_GRID} bg-[var(--muted)] px-5 py-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]`}>
+          <span>Person</span><span>Role</span><span>Status</span><span>Last signed in</span><span />
+        </div>
+        <ul className="divide-y divide-[var(--border)]">
+          {staff.map((m) => {
+            const badge = staffStatusBadge(m.status);
+            const isYou = m.email.toLowerCase() === caller.email.toLowerCase();
+            return (
+              <li key={m.userId} className="px-4 sm:px-5 py-3.5">
+                <div className={TEAM_GRID}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span aria-hidden="true" className="w-9 h-9 shrink-0 rounded-full bg-[var(--secondary)] text-[var(--secondary-foreground)] flex items-center justify-center text-sm font-semibold">
+                      {`${m.firstName[0] ?? ""}${m.lastName[0] ?? ""}`.toUpperCase()}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-semibold text-[var(--foreground)] truncate">{m.firstName} {m.lastName}{isYou ? " (you)" : ""}</div>
+                      <div className="text-xs text-[var(--muted-foreground)] truncate">{m.email}</div>
+                    </div>
+                    <span className="md:hidden shrink-0"><StatusBadge label={badge.label} variant={badge.variant} /></span>
+                  </div>
+                  <div className="mt-2 md:mt-0 min-w-0 pl-12 md:pl-0">
+                    {m.roles.length ? m.roles.map((r) => (
+                      <div key={`${r.roleCode}:${r.branchId ?? ""}`}>
+                        <div className="text-sm text-[var(--foreground)]">{r.roleName}</div>
+                        <div className="text-xs text-[var(--muted-foreground)]">{r.branchName ?? "Company-wide"}</div>
+                      </div>
+                    )) : <span className="text-sm text-[var(--muted-foreground)]">No role</span>}
+                  </div>
+                  <div className="hidden md:block"><StatusBadge label={badge.label} variant={badge.variant} /></div>
+                  <div className="text-sm pl-12 md:pl-0 mt-1 md:mt-0 text-[var(--muted-foreground)] md:text-[var(--foreground)]">
+                    {m.lastLoginAt
+                      ? <><span className="md:hidden">Last signed in </span>{lastSeen(m.lastLoginAt)}</>
+                      : <><span className="md:hidden">Never signed in</span><span className="hidden md:inline">Never</span></>}
+                  </div>
+                  <div className="pl-12 md:pl-0 mt-2 md:mt-0 md:justify-self-end">
+                    {canManage && !isYou ? (
+                      <Popover label="Manage" align="end">
+                        {(close) => (
+                          <div className="py-1 min-w-44" role="menu">
+                            <MenuItem onClick={() => { close(); setMessage(null); setEditing({ id: m.userId, kind: "role" }); }}>Change role</MenuItem>
+                            {m.status === "deactivated"
+                              ? <MenuItem onClick={() => { close(); void reactivate(m); }}>Reactivate</MenuItem>
+                              : <MenuItem danger onClick={() => { close(); setMessage(null); setEditing({ id: m.userId, kind: "deactivate" }); }}>Deactivate…</MenuItem>}
+                          </div>
+                        )}
+                      </Popover>
+                    ) : <span className="hidden md:inline text-sm text-[var(--muted-foreground)]">—</span>}
+                  </div>
                 </div>
-              </div>
-              <StatusBadge label={badge.label} variant={badge.variant} />
-            </div>
-
-            {canManage && !isYou && !editing && (
-              <div className="flex gap-3">
-                <button type="button" onClick={() => { setEditing({ id: member.userId, kind: "role" }); setMessage(null); }} className="text-sm text-[var(--accent)] hover:underline">Change role</button>
-                {member.status === "deactivated" ? (
-                  <button type="button" onClick={async () => {
-                    try { await setStaffActive(member.userId, true, "", caller); setMessage({ id: member.userId, text: "Reactivated, with their role unchanged.", tone: "ok" }); onChanged(); }
-                    catch (err) { setMessage({ id: member.userId, text: err instanceof Error ? err.message : "That didn't go through.", tone: "error" }); }
-                  }} className="text-sm text-[var(--accent)] hover:underline">Reactivate</button>
-                ) : (
-                  <button type="button" onClick={() => { setEditing({ id: member.userId, kind: "deactivate" }); setMessage(null); }} className="text-sm text-[var(--muted-foreground)] hover:underline">Deactivate…</button>
+                {message?.id === m.userId && (
+                  <p className={`text-sm mt-2 ${message.tone === "error" ? "text-[var(--error-text)]" : "text-[var(--muted-foreground)]"}`} role={message.tone === "error" ? "alert" : "status"}>
+                    {message.text}
+                  </p>
                 )}
-              </div>
-            )}
+              </li>
+            );
+          })}
+        </ul>
+      </Card>
 
-            {editing?.id === member.userId && editing.kind === "role" && (
-              <RoleChange member={member} caller={caller} branches={branches} roles={roles} onCancel={() => setEditing(null)}
-                onDone={(text) => { setEditing(null); setMessage({ id: member.userId, text, tone: "ok" }); onChanged(); }} />
-            )}
-            {editing?.id === member.userId && editing.kind === "deactivate" && (
-              <Deactivate member={member} caller={caller} onCancel={() => setEditing(null)}
-                onDone={(text) => { setEditing(null); setMessage({ id: member.userId, text, tone: "ok" }); onChanged(); }} />
-            )}
-
-            {message?.id === member.userId && (
-              <p className={`text-sm ${message.tone === "error" ? "text-red-700" : "text-[var(--muted-foreground)]"}`} role={message.tone === "error" ? "alert" : "status"}>
-                {message.text}
-              </p>
-            )}
-          </ListCard>
-        );
-      })}
-    </ul>
+      {member && editing?.kind === "role" && (
+        <Dialog title={`Change ${member.firstName}'s role`} onClose={() => setEditing(null)}>
+          <RoleChange member={member} caller={caller} branches={branches} roles={roles} onCancel={() => setEditing(null)}
+            onDone={(text) => { setEditing(null); setMessage({ id: member.userId, text, tone: "ok" }); onChanged(); }} />
+        </Dialog>
+      )}
+      {member && editing?.kind === "deactivate" && (
+        <Dialog title={`Deactivate ${member.firstName}?`} onClose={() => setEditing(null)}>
+          <Deactivate member={member} caller={caller} onCancel={() => setEditing(null)}
+            onDone={(text) => { setEditing(null); setMessage({ id: member.userId, text, tone: "ok" }); onChanged(); }} />
+        </Dialog>
+      )}
+    </>
   );
+}
+
+function MenuItem({ onClick, danger, children }: { onClick: () => void; danger?: boolean; children: React.ReactNode }) {
+  return (
+    <button type="button" role="menuitem" onClick={onClick}
+      className={`block w-full text-left px-3 py-2 text-sm hover:bg-[var(--muted)] ${danger ? "text-[var(--error-text)]" : "text-[var(--foreground)]"}`}>
+      {children}
+    </button>
+  );
+}
+
+// "Today", "Yesterday", or the date.
+function lastSeen(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const days = Math.floor((new Date(today.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
 // Same rules as an invitation, decided by the backend's one StaffRoleRules —
@@ -502,8 +609,8 @@ function RoleChange({ member, caller, branches, roles, onCancel, onDone }: {
   };
 
   return (
-    <div className="rounded-lg bg-[var(--muted)] p-4 space-y-3">
-      <p className="text-xs text-[var(--muted-foreground)]">This replaces every role they hold with the one chosen here.</p>
+    <div className="space-y-3">
+      <p className="text-sm text-[var(--muted-foreground)]">This replaces every role they hold with the one chosen here.</p>
       <div className="grid sm:grid-cols-2 gap-3">
         <Field id={`role-${member.userId}`} label="Role" error={error?.field === "roleCode" ? error.message : undefined}>
           <select id={`role-${member.userId}`} value={roleCode} onChange={(e) => { setRoleCode(e.target.value); setBranchId(""); }} className={inputClass}>
@@ -524,12 +631,10 @@ function RoleChange({ member, caller, branches, roles, onCancel, onDone }: {
         )}
       </div>
       {rule && rule !== "forbidden" && branches.length === 0 && <NoBranchesNote required={rule === "required"} />}
-      {error?.field === "form" && <p className="text-sm text-red-700" role="alert">{error.message}</p>}
-      <div className="flex gap-3">
-        <button type="button" onClick={save} disabled={saving || !roleCode} className="px-3 py-1.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold disabled:opacity-60">
-          {saving ? "Saving…" : "Change role"}
-        </button>
-        <button type="button" onClick={onCancel} className="px-3 py-1.5 border border-[var(--border)] rounded-md text-sm">Cancel</button>
+      {error?.field === "form" && <ErrorText>{error.message}</ErrorText>}
+      <div className="flex justify-end gap-3 pt-1">
+        <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+        <Button onClick={save} disabled={saving || !roleCode}>{saving ? "Saving…" : "Change role"}</Button>
       </div>
     </div>
   );
@@ -553,17 +658,15 @@ function Deactivate({ member, caller, onCancel, onDone }: { member: StaffMember;
   };
 
   return (
-    <div className="rounded-lg bg-[var(--muted)] p-4 space-y-3">
-      <p className="text-xs text-[var(--muted-foreground)]">Not a deletion: their account and history stay, and you can reactivate them later.</p>
+    <div className="space-y-3">
+      <p className="text-sm text-[var(--muted-foreground)]">Not a deletion: their account and history stay, and you can reactivate them later.</p>
       <Field id={`deact-${member.userId}`} label="Reason" hint="Kept in the audit log.">
         <input id={`deact-${member.userId}`} value={reason} onChange={(e) => setReason(e.target.value)} className={inputClass} />
       </Field>
-      {error && <p className="text-sm text-red-700" role="alert">{error}</p>}
-      <div className="flex gap-3">
-        <button type="button" onClick={save} disabled={saving} className="px-3 py-1.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold disabled:opacity-60">
-          {saving ? "Deactivating…" : `Deactivate ${member.firstName}`}
-        </button>
-        <button type="button" onClick={onCancel} className="px-3 py-1.5 border border-[var(--border)] rounded-md text-sm">Cancel</button>
+      {error && <ErrorText>{error}</ErrorText>}
+      <div className="flex justify-end gap-3 pt-1">
+        <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+        <Button variant="danger" onClick={save} disabled={saving}>{saving ? "Deactivating…" : `Deactivate ${member.firstName}`}</Button>
       </div>
     </div>
   );
