@@ -192,9 +192,11 @@ export default function Dashboard() {
         </div>
         )}
 
-        {/* Recent documents — only when the vault has a backend (or in demo mode). */}
+        {/* Recent documents — only when the vault has a backend (or in demo mode).
+            Alone (live: no upcoming payments), it takes the full width, like
+            Your purchases above. */}
         {showDocuments && (
-        <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
+        <div className={`bg-[var(--card)] rounded-xl border border-[var(--border)] p-5${showUpcoming ? "" : " lg:col-span-2"}`}>
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-sm">Recent documents</h3>
             <Link to="/documents" className="text-xs text-[var(--accent)] hover:underline">Vault</Link>
