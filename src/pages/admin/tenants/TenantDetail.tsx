@@ -15,6 +15,7 @@ import {
 import { accountNameLooksMismatched } from "../../../lib/onboarding/schema";
 import StatusBadge, { tenantStatusBadge, verificationStateBadge } from "../../../components/StatusBadge";
 import FileUpload from "../../../components/onboarding/FileUpload";
+import Button from "../../../components/ui/Button";
 
 const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   cac_certificate: "CAC Certificate of Incorporation",
@@ -113,34 +114,77 @@ export default function TenantDetail() {
   const statusBadge = tenantStatusBadge(tenant.status);
   const accountMismatch = tenant.financial && accountNameLooksMismatched(tenant.identity.registeredName, tenant.financial.accountName);
   const canReview = tenant.verificationState === "under_review";
+  // The cards below, in order, for the section list. Optional ones only when shown.
+  const sectionList: [string, string][] = ([
+    ["Company identity", true], ["Company contact & presence", true], ["Corporate documents", true],
+    ["Regulatory & compliance", !!tenant.regulatory], ["Directors & beneficial ownership", tenant.directors.length > 0],
+    ["Financial & settlement", !!tenant.financial], ["Branches", true], ["Verification history", true],
+    ["Plan & entitlements", true], ["Account status", true], ["Support access", true],
+  ] as [string, boolean][]).filter(([, on]) => on).map(([title]) => [sectionId(title), title]);
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <Link to="/admin/tenants" className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]">← Tenants</Link>
+    <div className="p-6 max-w-6xl mx-auto">
+      <Link to="/admin/tenants" className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]">← Tenants</Link>
 
       {submitProblem && (
-        <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900" role="status">
+        <div className="mt-3 p-3 bg-[var(--warning-surface)] border border-[var(--warning-border)] rounded-lg text-xs text-[var(--warning-text)]" role="status">
           The tenant was created and its Executive Director invited, but its documents weren't submitted for verification: {submitProblem}
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 mt-2 mb-6">
+      {/* Header: both statuses, and the two actions people come here for */}
+      <div className="flex flex-wrap items-end justify-between gap-4 mt-2 mb-6">
         <div>
-          <h1 className="font-display text-3xl text-[var(--foreground)] mb-1">{tenantDisplayName(tenant)}</h1>
+          <h1 className="font-display text-3xl text-[var(--foreground)] mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+            {tenantDisplayName(tenant)}
+            <span className="font-[family-name:var(--font-body)] inline-flex gap-1.5">
+              <StatusBadge label={verBadge.label} variant={verBadge.variant} />
+              <StatusBadge label={statusBadge.label} variant={statusBadge.variant} />
+            </span>
+          </h1>
           <p className="text-sm text-[var(--muted-foreground)]">{tenant.primaryContact
             ? `${tenant.primaryContact.fullName} (${tenant.primaryContact.roleTitle}) · ${tenant.primaryContact.workEmail}`
             : "No primary contact on record"}</p>
         </div>
-        <div className="flex flex-col items-end gap-1.5">
-          <StatusBadge label={verBadge.label} variant={verBadge.variant} />
-          <StatusBadge label={statusBadge.label} variant={statusBadge.variant} />
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => jumpTo("plan-entitlements")}>Change plan</Button>
+          <Button variant={tenant.status === "suspended" ? "secondary" : "danger"} onClick={() => jumpTo("account-status")}>
+            {tenant.status === "suspended" ? "Reactivate…" : "Suspend account…"}
+          </Button>
         </div>
       </div>
 
+      <dl className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        {[
+          ["Plan", tenant.plan.charAt(0).toUpperCase() + tenant.plan.slice(1), tenant.entitlements.marketplacePublishing ? "Marketplace publishing on" : "Marketplace publishing off"],
+          ["Branches", String(tenant.branches.length), tenant.branches.map((b) => b.name).join(", ") || "none yet"],
+          ["Estates", String(estateCount), "across the branches"],
+          ["Documents", `${tenant.documents.filter((d) => d.status === "verified").length} of ${tenant.documents.length}`,
+            tenant.documents.some((d) => d.status === "rejected") ? "some rejected" : tenant.documents.every((d) => d.status === "verified") && tenant.documents.length ? "all verified" : "to check"],
+        ].map(([label, value, sub]) => (
+          <div key={label} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
+            <dt className="text-xs text-[var(--muted-foreground)]">{label}</dt>
+            <dd className="font-display text-2xl text-[var(--foreground)]">{value}</dd>
+            <dd className="text-xs text-[var(--muted-foreground)] mt-1 truncate">{sub}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <div className="grid gap-6 lg:grid-cols-[200px_minmax(0,1fr)] items-start">
+        <nav aria-label="Sections" className="hidden lg:block lg:sticky lg:top-6">
+          <ul className="space-y-0.5">
+            {sectionList.map(([sid, title]) => (
+              <li key={sid}>
+                <a href={`#${sid}`} onClick={(e) => { e.preventDefault(); jumpTo(sid); }}
+                  className="block rounded-md px-3 py-1.5 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]">{title}</a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+        <div className="min-w-0">
       {/* Publish/payments gate */}
-      <div className={`mb-6 rounded-xl p-4 border ${canPublishAndTakePayments ? "bg-emerald-50 border-emerald-200" : "bg-[var(--muted)] border-[var(--border)]"}`}>
-        <div className={`text-sm font-medium mb-1 ${canPublishAndTakePayments ? "text-emerald-900" : "text-[var(--foreground)]"}`}>
+      <div className={`mb-6 rounded-xl p-4 border ${canPublishAndTakePayments ? "bg-[var(--success-surface)] border-[var(--success-border)]" : "bg-[var(--muted)] border-[var(--border)]"}`}>
+        <div className={`text-sm font-medium mb-1 ${canPublishAndTakePayments ? "text-[var(--success-text)]" : "text-[var(--foreground)]"}`}>
           {canPublishAndTakePayments ? "Verified — can publish to the marketplace and collect payments." : "Marketplace publishing and payment collection are locked."}
         </div>
         {!canPublishAndTakePayments && (
@@ -152,19 +196,19 @@ export default function TenantDetail() {
 
       {/* Reviewer action panel (SA-1.2) */}
       {canReview && (
-        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4">
-          <div className="text-sm font-medium text-amber-900 mb-1">Awaiting your review</div>
-          <p className="text-xs text-amber-800 mb-3">Check the documents, regulatory registrations, and directors below before deciding.</p>
+        <div className="mb-6 bg-[var(--warning-surface)] border border-[var(--warning-border)] rounded-xl p-4">
+          <div className="text-sm font-medium text-[var(--warning-text)] mb-1">Awaiting your review</div>
+          <p className="text-xs text-[var(--warning-text)] mb-3">Check the documents, regulatory registrations, and directors below before deciding.</p>
 
           {reviewAction === null && (
             <div className="flex flex-wrap gap-2">
               <button disabled={busy} onClick={handleApprove} className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-60">
                 Approve
               </button>
-              <button disabled={busy} onClick={() => setReviewAction("reject")} className="px-4 py-2 bg-white border border-red-300 text-red-700 rounded-md text-sm font-medium hover:bg-red-50 disabled:opacity-60">
+              <button disabled={busy} onClick={() => setReviewAction("reject")} className="px-4 py-2 bg-[var(--card)] border border-[var(--error-border)] text-[var(--error-text)] rounded-md text-sm font-medium hover:bg-[var(--error-surface)] disabled:opacity-60">
                 Reject
               </button>
-              <button disabled={busy} onClick={() => setReviewAction("request_info")} className="px-4 py-2 bg-white border border-amber-300 text-amber-900 rounded-md text-sm font-medium hover:bg-amber-100 disabled:opacity-60">
+              <button disabled={busy} onClick={() => setReviewAction("request_info")} className="px-4 py-2 bg-[var(--card)] border border-[var(--warning-border)] text-[var(--warning-text)] rounded-md text-sm font-medium hover:bg-[var(--warning-surface)] disabled:opacity-60">
                 Request more information
               </button>
             </div>
@@ -172,7 +216,7 @@ export default function TenantDetail() {
 
           {reviewAction === "reject" && (
             <div className="space-y-3">
-              <div className="text-xs font-medium text-amber-900">Select which documents failed:</div>
+              <div className="text-xs font-medium text-[var(--warning-text)]">Select which documents failed:</div>
               <div className="space-y-1.5">
                 {tenant.documents.map((doc) => (
                   <label key={doc.id} className="flex items-center gap-2 text-xs text-[var(--foreground)]">
@@ -191,13 +235,13 @@ export default function TenantDetail() {
                 onChange={(e) => setReviewReason(e.target.value)}
                 placeholder="Reason (required, shown to the tenant)…"
                 rows={2}
-                className="w-full px-3 py-2 bg-white border border-amber-300 rounded-md text-sm"
+                className="w-full px-3 py-2 bg-[var(--card)] border border-[var(--warning-border)] rounded-md text-sm"
               />
               <div className="flex gap-2">
-                <button disabled={busy || !reviewReason.trim() || failedDocIds.size === 0} onClick={handleReject} className="px-4 py-2 bg-red-600 text-white rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50">
+                <button disabled={busy || !reviewReason.trim() || failedDocIds.size === 0} onClick={handleReject} className="px-4 py-2 bg-[var(--error)] text-[var(--error-foreground)] rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50">
                   Confirm rejection
                 </button>
-                <button onClick={() => { setReviewAction(null); setReviewReason(""); setFailedDocIds(new Set()); }} className="px-4 py-2 text-sm text-amber-900">Cancel</button>
+                <button onClick={() => { setReviewAction(null); setReviewReason(""); setFailedDocIds(new Set()); }} className="px-4 py-2 text-sm text-[var(--warning-text)]">Cancel</button>
               </div>
             </div>
           )}
@@ -209,13 +253,13 @@ export default function TenantDetail() {
                 onChange={(e) => setReviewReason(e.target.value)}
                 placeholder="What's missing or needs clarifying?…"
                 rows={2}
-                className="w-full px-3 py-2 bg-white border border-amber-300 rounded-md text-sm"
+                className="w-full px-3 py-2 bg-[var(--card)] border border-[var(--warning-border)] rounded-md text-sm"
               />
               <div className="flex gap-2">
                 <button disabled={busy || !reviewReason.trim()} onClick={handleRequestInfo} className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-60">
                   Send request
                 </button>
-                <button onClick={() => { setReviewAction(null); setReviewReason(""); }} className="px-4 py-2 text-sm text-amber-900">Cancel</button>
+                <button onClick={() => { setReviewAction(null); setReviewReason(""); }} className="px-4 py-2 text-sm text-[var(--warning-text)]">Cancel</button>
               </div>
             </div>
           )}
@@ -261,8 +305,8 @@ export default function TenantDetail() {
                   <StatusBadge {...(doc.status === "verified" ? { label: "Verified", variant: "success" as const } : doc.status === "rejected" ? { label: "Rejected", variant: "error" as const } : { label: "Pending", variant: "neutral" as const })} />
                 </div>
                 {doc.status === "rejected" && (
-                  <div className="mt-2 bg-red-50 border border-red-200 rounded-lg p-3">
-                    {doc.rejectionReason && <p className="text-xs text-red-800 mb-2">{doc.rejectionReason}</p>}
+                  <div className="mt-2 bg-[var(--error-surface)] border border-[var(--error-border)] rounded-lg p-3">
+                    {doc.rejectionReason && <p className="text-xs text-[var(--error-text)] mb-2">{doc.rejectionReason}</p>}
                     <ResubmitControl doc={doc} onResubmit={(file) => handleResubmit(doc, file)} />
                   </div>
                 )}
@@ -317,7 +361,7 @@ export default function TenantDetail() {
             <Row label="Settlement currency" value={tenant.financial.settlementCurrency} />
           </div>
           {accountMismatch && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 mb-3">
+            <div className="bg-[var(--warning-surface)] border border-[var(--warning-border)] rounded-lg p-3 text-xs text-[var(--warning-text)] mb-3">
               Account name doesn't closely match the registered company name ("{tenant.identity.registeredName}") — a compliance red flag worth a closer look, though not a blocker on its own.
             </div>
           )}
@@ -401,7 +445,7 @@ export default function TenantDetail() {
             Reactivate tenant
           </button>
         ) : (
-          <button disabled={busy} onClick={() => runAction(() => setTenantStatus(id, "suspended", reviewerName))} className="px-4 py-2 bg-white border border-red-300 text-red-700 rounded-md text-sm font-medium hover:bg-red-50 disabled:opacity-40">
+          <button disabled={busy} onClick={() => runAction(() => setTenantStatus(id, "suspended", reviewerName))} className="px-4 py-2 bg-[var(--card)] border border-[var(--error-border)] text-[var(--error-text)] rounded-md text-sm font-medium hover:bg-[var(--error-surface)] disabled:opacity-40">
             Suspend tenant
           </button>
         )}
@@ -410,7 +454,7 @@ export default function TenantDetail() {
       {/* Support access (SA-1.6) */}
       <Section title="Support access" subtitle="Guarded: reason-required, time-boxed, fully logged. Never used to move money or sign documents on the tenant's behalf.">
         {lastGrant && (
-          <div className="mb-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-xs text-emerald-800">
+          <div className="mb-3 bg-[var(--success-surface)] border border-[var(--success-border)] rounded-lg p-3 text-xs text-[var(--success-text)]">
             Access granted, expires <span className="font-mono-data">{new Date(lastGrant.expiresAt).toLocaleString()}</span>. Logged against this tenant.
           </div>
         )}
@@ -433,7 +477,7 @@ export default function TenantDetail() {
             </div>
           </form>
         ) : (
-          <button onClick={() => setShowAccessForm(true)} className="px-4 py-2 bg-white border border-[var(--border)] rounded-md text-sm font-medium hover:bg-[var(--muted)]">
+          <button onClick={() => setShowAccessForm(true)} className="px-4 py-2 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm font-medium hover:bg-[var(--muted)]">
             Request support access
           </button>
         )}
@@ -449,8 +493,19 @@ export default function TenantDetail() {
           </div>
         )}
       </Section>
+        </div>
+      </div>
     </div>
   );
+}
+
+// Scrolls a section into view (the header's actions and the section list).
+function jumpTo(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function sectionId(title: string): string {
+  return title.toLowerCase().replace(/&/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -464,7 +519,7 @@ function Row({ label, value }: { label: string; value: string }) {
 
 function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <div className="mb-6 bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
+    <div id={sectionId(title)} className="mb-6 bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 scroll-mt-6">
       <h2 className="text-sm font-semibold text-[var(--foreground)] mb-0.5">{title}</h2>
       {subtitle && <p className="text-xs text-[var(--muted-foreground)] mb-4">{subtitle}</p>}
       {!subtitle && <div className="mb-3" />}

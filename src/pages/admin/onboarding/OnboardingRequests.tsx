@@ -3,7 +3,8 @@
 // "Convert", which opens the tenant wizard prefilled from it.
 
 import { useEffect, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ChevronRightIcon } from "../../../components/icons";
 import { useApp } from "../../../contexts/AppContext";
 import { useFetch } from "../../../lib/useFetch";
 import {
@@ -48,6 +49,8 @@ function formatDate(iso: string | null): string {
   return iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "";
 }
 
+const ROW_GRID = "lg:grid lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1.6fr)_minmax(0,1.3fr)_7rem_6rem_16px] lg:items-center lg:gap-4";
+
 const errorText = (err: unknown) => (err instanceof Error ? err.message : "That didn't go through.");
 
 // ─── /admin/onboarding-requests ──────────────────────────────────────────────
@@ -62,9 +65,12 @@ export default function OnboardingRequests() {
   const [moreError, setMoreError] = useState("");
 
   const first = useFetch(() => { const [status, attention] = query(filter); return fetchOnboardingRequests(status, {}, attention); }, [filter]);
-  // The tab's count, so a late request is noticed from any tab.
-  const waiting = useFetch(() => fetchOnboardingRequests(null, { limit: 1 }, true), [filter]);
-  const tabs = FILTERS.map((f) => (f.id === "attention" && waiting.data?.total ? { ...f, label: `Needs attention (${waiting.data.total})` } : f));
+  // Every tab's count, so a late request is noticed from any tab.
+  const counts = useFetch(async () => Object.fromEntries(await Promise.all(FILTERS.map(async (f) => {
+    const [status, attention] = query(f.id);
+    return [f.id, (await fetchOnboardingRequests(status, { limit: 1 }, attention)).total] as const;
+  }))), [filter]);
+  const tabs = FILTERS.map((f) => (counts.data ? { ...f, label: `${f.label} ${counts.data[f.id] ?? 0}` } : f));
   useEffect(() => {
     if (!first.data) return;
     setItems(first.data.items);
@@ -102,28 +108,34 @@ export default function OnboardingRequests() {
             : <EmptyState title={filter === "new" ? "No new requests" : "Nothing here"} description="Requests sent from the public “List your estates” form appear here." />
         ) : (
           <>
-            <ul className="space-y-3">
-              {items.map((r) => {
-                const badge = onboardingRequestStatusBadge(r.status);
-                return (
-                  <ListCard key={r.id} to={`/admin/onboarding-requests/${r.id}`} density="compact" alert={r.needsAttention}>
-                    <div className="flex flex-wrap items-start gap-3">
-                      <div className="flex-1 min-w-[200px]">
-                        <div className="font-semibold text-[var(--foreground)]">{r.companyName}</div>
-                        <div className="text-sm text-[var(--muted-foreground)]">{r.contactName}{r.contactRole ? `, ${r.contactRole}` : ""} · prefers {contactMethodLabel(r.preferredContactMethod).toLowerCase()}</div>
-                        <div className="text-xs text-[var(--muted-foreground)] mt-0.5">
-                          Sent {formatDate(r.createdAt)}{r.statesOfOperation.length ? ` · ${r.statesOfOperation.join(", ")}` : ""}
+            <Card padding="none" className="overflow-hidden">
+              <div aria-hidden="true" className={`hidden ${ROW_GRID} bg-[var(--muted)] px-5 py-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]`}>
+                <span>Company</span><span>Contact</span><span>States</span><span>Sent</span><span>Status</span><span />
+              </div>
+              <ul className="divide-y divide-[var(--border)]">
+                {items.map((r) => {
+                  const badge = onboardingRequestStatusBadge(r.status);
+                  return (
+                    <li key={r.id}>
+                      <Link to={`/admin/onboarding-requests/${r.id}`} className={`group block px-4 sm:px-5 py-3.5 hover:bg-[var(--muted)]/50 transition-colors ${ROW_GRID}`}>
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-[var(--foreground)] group-hover:underline">{r.companyName}</div>
+                          {r.needsAttention && <div className="mt-1"><StatusBadge label={ATTENTION_TEXT} variant="warning" /></div>}
                         </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {r.needsAttention && <StatusBadge label={ATTENTION_TEXT} variant="error" />}
-                        <StatusBadge label={badge.label} variant={badge.variant} />
-                      </div>
-                    </div>
-                  </ListCard>
-                );
-              })}
-            </ul>
+                        <div className="text-sm mt-1 lg:mt-0 min-w-0">
+                          <span className="text-[var(--foreground)]">{r.contactName}{r.contactRole ? `, ${r.contactRole}` : ""}</span>
+                          <span className="block text-xs text-[var(--muted-foreground)]">prefers {contactMethodLabel(r.preferredContactMethod).toLowerCase()}</span>
+                        </div>
+                        <div className="text-sm text-[var(--foreground)] min-w-0">{r.statesOfOperation.join(", ") || "—"}</div>
+                        <div className="text-sm text-[var(--muted-foreground)]">{formatDate(r.createdAt)}</div>
+                        <div className="mt-1 lg:mt-0"><StatusBadge label={badge.label} variant={badge.variant} /></div>
+                        <ChevronRightIcon size={16} className="hidden lg:block text-[var(--muted-foreground)]" />
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
             <div className="flex items-center justify-between gap-3 pt-4 text-sm text-[var(--muted-foreground)]">
               <span aria-live="polite">{items.length} of {total}</span>
               {cursor && <Button variant="secondary" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "Loading…" : "Load more"}</Button>}
