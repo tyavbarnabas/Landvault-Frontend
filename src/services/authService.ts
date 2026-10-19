@@ -94,6 +94,17 @@ export const CHECKOUT_RESERVE_PERMISSION = "client.checkout.reserve";
 // Verify or reject the land titles developers declare. super_admin only: a
 // developer can never verify its own land.
 export const TITLE_REVIEW_PERMISSION = "admin.titles.review";
+// Documents (changesets 090 and 092), granted exactly as the backend grants them:
+//   portal.documents.view   — executive_director, branch_manager, finance_officer,
+//     legal_officer: letterheads, letter templates, an estate's conditions, the
+//     letter preview and its approval status
+//   portal.documents.manage — executive_director only, and company-wide: a
+//     director narrowed to one branch is refused (DOCUMENTS_REQUIRE_COMPANY_WIDE_SCOPE)
+//   admin.documents.review  — super_admin and compliance_officer: HomeTrue's
+//     review of every version of a template or an estate's conditions
+export const DOCUMENTS_VIEW_PERMISSION = "portal.documents.view";
+export const DOCUMENTS_MANAGE_PERMISSION = "portal.documents.manage";
+export const DOCUMENTS_REVIEW_PERMISSION = "admin.documents.review";
 
 const SUPER_ADMIN_PERMISSIONS = [
   "admin.dashboard.view",
@@ -102,6 +113,7 @@ const SUPER_ADMIN_PERMISSIONS = [
   "admin.marketplace.conflicts",
   ADMIN_PAYOUTS_PERMISSION,
   TITLE_REVIEW_PERMISSION,
+  DOCUMENTS_REVIEW_PERMISSION,
 ];
 
 // Only what this slice actually builds (DP-1 to DP-6: reach the portal, list
@@ -129,12 +141,12 @@ export const STAFF_REQUEST_PERMISSION = "portal.staff.request";
 export const ROLES_MANAGE_PERMISSION = "portal.roles.manage";
 
 const DIRECTOR_PERMISSIONS = [...PORTAL_PERMISSIONS, BRANCHES_MANAGE_PERMISSION, STAFF_INVITE_PERMISSION, STAFF_REQUEST_PERMISSION,
-  PAYMENTS_VERIFY_PERMISSION, SETTLEMENT_MANAGE_PERMISSION, ROLES_MANAGE_PERMISSION];
+  PAYMENTS_VERIFY_PERMISSION, SETTLEMENT_MANAGE_PERMISSION, ROLES_MANAGE_PERMISSION, DOCUMENTS_VIEW_PERMISSION, DOCUMENTS_MANAGE_PERMISSION];
 // NOT portal.estates.manage: changeset 041 grants that to executive_director
 // and surveyor_project_manager only. A branch manager reads their branch's
 // estates and asks head office for staff — the surveyor they ask for is the
 // one who builds the inventory.
-const BRANCH_MANAGER_PERMISSIONS = ["portal.estates.view", STAFF_REQUEST_PERMISSION];
+const BRANCH_MANAGER_PERMISSIONS = ["portal.estates.view", STAFF_REQUEST_PERMISSION, DOCUMENTS_VIEW_PERMISSION];
 
 // ─── Surface helpers — permissions, never role strings ───────────────────────
 
@@ -300,15 +312,15 @@ export function mockAccountExists(email: string): boolean {
 
 // The permissions a mock account holds for a tenant role — the backend's
 // role_permissions, for the roles a tenant can assign.
-// Transcribed from changesets 041, 045, 065, 067, 068, 073 and 075.
+// Transcribed from changesets 041, 045, 065, 067, 068, 073, 075 and 090.
 export function mockPermissionsForRole(roleCode: string): string[] {
   switch (roleCode) {
     case "executive_director": return DIRECTOR_PERMISSIONS;
     case "branch_manager": return BRANCH_MANAGER_PERMISSIONS;
     case "surveyor_project_manager": return PORTAL_PERMISSIONS;
-    case "finance_officer": return ["portal.estates.view", PAYMENTS_VERIFY_PERMISSION];
-    case "sales_manager":
-    case "legal_officer": return ["portal.estates.view"];
+    case "finance_officer": return ["portal.estates.view", PAYMENTS_VERIFY_PERMISSION, DOCUMENTS_VIEW_PERMISSION];
+    case "sales_manager": return ["portal.estates.view"];
+    case "legal_officer": return ["portal.estates.view", DOCUMENTS_VIEW_PERMISSION];
     default: return [];
   }
 }

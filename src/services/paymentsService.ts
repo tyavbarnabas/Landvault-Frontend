@@ -33,6 +33,9 @@ export interface PaymentSummary {
   underReview: boolean;
   reviewKind: ReviewKind | null;
   refundStatus: RefundStatus | null;
+  // HomeTrue's receipt, issued when Paystack confirms the payment; null before.
+  receiptId: string | null;
+  receiptNumber: string | null;
 }
 
 // A purchase exactly as the backend returns it (TransactionDto).
@@ -217,7 +220,7 @@ function mockPurchase(id: string): Purchase | null {
     intent: txn.intent, plan: txn.plan, installmentMonths: txn.installmentMonths ?? null, status: txn.status, createdAt: txn.createdAt,
     payment: shown ? {
       reference: shown.reference, status: shown.status, amountPaid: shown.status === "succeeded" ? shown.amount : null,
-      paidAt: shown.paidAt, underReview: false, reviewKind: null, refundStatus: null,
+      paidAt: shown.paidAt, underReview: false, reviewKind: null, refundStatus: null, receiptId: null, receiptNumber: null,
     } : null,
   };
 }

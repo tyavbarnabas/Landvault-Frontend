@@ -9,6 +9,7 @@ import { useFetch } from "../../lib/useFetch";
 import LoadError from "../../components/LoadError";
 import PurchaseStatusPanel from "../../components/purchases/PurchaseStatusPanel";
 import RefundPanel from "../../components/purchases/RefundPanel";
+import ReceiptDownload from "../../components/documents/ReceiptDownload";
 import Page from "../../components/ui/Page";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
@@ -86,6 +87,12 @@ export default function PurchaseDetail() {
           <>
             <dt className="text-[var(--muted-foreground)]">Payment reference</dt>
             <dd className="text-right font-mono-data text-xs break-all">{p.reference}</dd>
+          </>
+        )}
+        {p?.receiptId && p.receiptNumber && (
+          <>
+            <dt className="text-[var(--muted-foreground)]">Receipt</dt>
+            <dd className="text-right"><ReceiptDownload receiptId={p.receiptId} receiptNumber={p.receiptNumber} /></dd>
           </>
         )}
       </Card>

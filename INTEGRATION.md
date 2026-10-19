@@ -48,7 +48,6 @@ Every migrated page follows the same shape: `useState` + `useEffect` fetch + a l
 These aren't just "point at a new URL" — they need actual backend-shaped rework:
 
 - **`src/components/PlotCanvas.tsx`** — plot geometry. Currently a `row`/`col` grid grouped into visual "blocks" for the street-map look. The real backend will serve PostGIS-derived polygons; rendering real geometry is a data-model rework, not an async swap.
-- **`src/pages/documents/Vault.tsx`** / **`PlotView.tsx`** documents tab — needs real S3/MinIO-backed file URLs behind "Download", not just metadata (the QR "verify" modal is also still a fake random pattern, not a real QR code).
 - **`src/pages/checkout/Checkout.tsx`** — the seam now exists (`checkoutService.ts`) but still needs an actual gateway behind it: real Paystack/Opay API keys, a redirect-and-return flow (paystack), and webhook-based confirmation instead of a simulated delay.
 - **Support's live-chat panel** (`Support.tsx`) — canned auto-replies are local component state by design; would need a real chat/messaging backend to migrate meaningfully.
 

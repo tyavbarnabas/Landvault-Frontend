@@ -695,6 +695,8 @@ const MOCK_PORTAL_PERMISSIONS: Omit<PortalPermission, "held">[] = [
   { code: "portal.staff.invite", label: "Invite and manage staff", description: "Invite, revoke and resend staff invitations for the owning tenant. Company-wide roles only.", requiresCompanyWide: true, group: "staff", groupLabel: "Staff and roles" },
   { code: "portal.staff.request", label: "Ask head office to invite staff to a branch", description: "Request a staff invitation into your own branch; it is sent only once a company-wide approver approves it.", requiresCompanyWide: false, group: "staff", groupLabel: "Staff and roles" },
   { code: "portal.roles.manage", label: "Create and edit company roles", description: "Create, edit and delete your company's own roles, from permissions you hold. Company-wide roles only.", requiresCompanyWide: true, group: "staff", groupLabel: "Staff and roles" },
+  { code: "portal.documents.view", label: "See letterheads and letters", description: "See your company's letterheads, signatories and the letters HomeTrue issues for your sales.", requiresCompanyWide: false, group: "documents", groupLabel: "Documents" },
+  { code: "portal.documents.manage", label: "Set letterheads, signatures and seals", description: "Set your company's and branches' letterheads, signatories, signatures and seals. Company-wide roles only.", requiresCompanyWide: true, group: "documents", groupLabel: "Documents" },
 ];
 
 // The catalogue as the editor's headings, keeping the backend's order — it

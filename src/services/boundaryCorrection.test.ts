@@ -151,7 +151,7 @@ describe("roles from the backend", () => {
     // A director's real grant (incl. payments, changesets 073/075) — not a
     // hand-kept list that drifts as permissions are added.
     permissions: mockPermissionsForRole("executive_director") };
-  const BM = { tenantId: "estintin-group", branchId: "heritage", email: "heritage@estintin.com", permissions: ["portal.estates.view", "portal.staff.request"] };
+  const BM = { tenantId: "estintin-group", branchId: "heritage", email: "heritage@estintin.com", permissions: mockPermissionsForRole("branch_manager") };
 
   it("canGrant is whether the caller holds every permission the role carries", async () => {
     expect((await fetchAssignableRoles(ED)).every((r) => r.canGrant)).toBe(true);

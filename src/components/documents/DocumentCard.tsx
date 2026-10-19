@@ -1,9 +1,16 @@
-// Reusable document row — extracted from what used to be duplicated between
-// Vault.tsx and PlotView.tsx's documents tab. Part 8 deliverable. Centralizes
-// the type labels/icons so a new document type only needs to be added here.
+// Reusable document row — shared by Vault.tsx and PlotView.tsx's documents
+// tab. Centralizes the type labels/icons so a new document type only needs to
+// be added here. Live documents come with their files (PDF, and the same pages
+// as one JPEG for WhatsApp); the demo ones have none, so they show no buttons.
 
+import { useState } from "react";
+import { Link } from "react-router-dom";
 import type { Document } from "../../data/mockData";
 import { ListCard } from "../ui/Card";
+import Button from "../ui/Button";
+import { ErrorText } from "../ui/Field";
+import { formatDay } from "../../lib/formatDate";
+import { canShareFiles, fetchDocumentFile, saveFile, shareFile, type DocumentFormat } from "../../services/documentsService";
 
 export const DOCUMENT_TYPE_LABELS: Record<Document["type"], string> = {
   receipt: "Receipt",
@@ -21,40 +28,78 @@ export const DOCUMENT_TYPE_ICONS: Record<Document["type"], string> = {
   poa_draft: "🔏",
 };
 
-interface DocumentCardProps {
-  doc: Document;
-  onVerify?: () => void;
+// The printed code without its dashes — the form the verify page's URL uses.
+export function verifyPath(qrCode: string): string {
+  return `/verify/${qrCode.replace(/-/g, "")}`;
 }
 
-export default function DocumentCard({ doc, onVerify }: DocumentCardProps) {
+interface DocumentCardProps {
+  doc: Document;
+}
+
+export default function DocumentCard({ doc }: DocumentCardProps) {
+  const [busy, setBusy] = useState<DocumentFormat | "share" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const hasFiles = !!doc.pdfUrl && !!doc.number;
+
+  const run = async (kind: DocumentFormat | "share") => {
+    setBusy(kind);
+    setError(null);
+    try {
+      const file = await fetchDocumentFile(doc, kind === "share" ? "jpeg" : kind);
+      if (kind === "share") await shareFile(file, doc.title);
+      else saveFile(file);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The download didn't work. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
-    <ListCard density="compact" className="flex items-center gap-4">
-      <div className="w-10 h-10 rounded-lg bg-[var(--muted)] flex items-center justify-center text-xl shrink-0">
-        {DOCUMENT_TYPE_ICONS[doc.type]}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="font-medium text-sm text-[var(--foreground)] mb-0.5">{doc.title}</div>
-        <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-xs text-[var(--muted-foreground)] font-mono-data">{doc.date}</span>
-          <span className="text-[var(--muted-foreground)]">·</span>
-          <span className="text-xs text-[var(--muted-foreground)]">{doc.size}</span>
-          <span className="text-[var(--muted-foreground)]">·</span>
-          <span className={`text-xs font-medium ${doc.status === "valid" ? "text-emerald-700" : "text-red-600"}`}>
-            {doc.status === "valid" ? "✓ Valid" : "✗ " + doc.status}
-          </span>
+    <ListCard density="compact" className="flex flex-col sm:flex-row sm:items-center gap-4">
+      <div className="flex items-start gap-4 flex-1 min-w-0">
+        <div className="w-10 h-10 rounded-lg bg-[var(--muted)] flex items-center justify-center text-xl shrink-0" aria-hidden="true">
+          {DOCUMENT_TYPE_ICONS[doc.type]}
         </div>
-        <div className="text-xs text-[var(--muted-foreground)] font-mono-data mt-0.5">QR: {doc.qrCode}</div>
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-sm text-[var(--foreground)] mb-0.5">{doc.title}</div>
+          <div className="flex flex-wrap gap-x-2 gap-y-0.5 items-center text-xs text-[var(--muted-foreground)]">
+            {doc.number && <span className="font-mono-data">{doc.number}</span>}
+            {doc.number && <span aria-hidden="true">·</span>}
+            <span>Issued {formatDay(doc.date)}</span>
+            {doc.size && <><span aria-hidden="true">·</span><span>{doc.size}</span></>}
+            {doc.status !== "valid" && <><span aria-hidden="true">·</span><span className="font-medium text-[var(--error-text)] capitalize">{doc.status}</span></>}
+          </div>
+          <div className="text-xs text-[var(--muted-foreground)] mt-0.5">
+            Verification code <span className="font-mono-data text-[var(--foreground)]">{doc.qrCode}</span>
+            {" · "}
+            <Link to={verifyPath(doc.qrCode)} className="text-[var(--accent)] hover:underline">Check it's genuine</Link>
+          </div>
+          {/* The money did arrive, so the receipt stays valid — this is a note, not an error. */}
+          {doc.refundedAt && (
+            <div className="text-xs text-[var(--muted-foreground)] mt-1">Refunded on {formatDay(doc.refundedAt)}. The receipt still shows the payment was made.</div>
+          )}
+          {error && <ErrorText className="mt-1">{error}</ErrorText>}
+        </div>
       </div>
-      <div className="flex flex-col gap-2 shrink-0">
-        <button className="text-xs px-3 py-1.5 bg-[var(--muted)] hover:bg-[var(--secondary)] text-[var(--foreground)] rounded-md transition-colors">
-          ↓ Download
-        </button>
-        {onVerify && (
-          <button onClick={onVerify} className="text-xs px-3 py-1.5 border border-[var(--border)] hover:border-[var(--accent)] text-[var(--muted-foreground)] hover:text-[var(--accent)] rounded-md transition-colors">
-            Verify QR
-          </button>
-        )}
-      </div>
+      {hasFiles && (
+        <div className="flex flex-wrap sm:flex-col gap-2 shrink-0">
+          <Button variant="secondary" onClick={() => run("pdf")} disabled={busy !== null}>
+            {busy === "pdf" ? "Downloading…" : "Download PDF"}
+          </Button>
+          {doc.jpegUrl && (
+            <Button variant="secondary" onClick={() => run("jpeg")} disabled={busy !== null}>
+              {busy === "jpeg" ? "Downloading…" : "Download image"}
+            </Button>
+          )}
+          {doc.jpegUrl && canShareFiles() && (
+            <Button variant="secondary" onClick={() => run("share")} disabled={busy !== null}>
+              {busy === "share" ? "Opening…" : "Share"}
+            </Button>
+          )}
+        </div>
+      )}
     </ListCard>
   );
 }

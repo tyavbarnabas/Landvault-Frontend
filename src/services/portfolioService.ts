@@ -236,7 +236,7 @@ function generateSchedule(plot: OwnedPlot): InstallmentSchedule | undefined {
         currency: plot.currency,
         status: "paid",
         paidAmount: record?.amount ?? perPeriodAmount,
-        receiptId: record?.receiptId,
+        receiptId: record?.receiptId ?? undefined,
       });
       continue;
     }
@@ -350,7 +350,7 @@ export async function verifyInstallmentPayment(plotId: string, paymentId: string
   if (period) {
     period.status = "paid";
     period.paidAmount = payment.amount;
-    period.receiptId = payment.receiptId;
+    period.receiptId = payment.receiptId ?? undefined;
   }
 
   // Advance to the next period's due date, and clear arrears if this payment

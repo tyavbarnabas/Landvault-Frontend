@@ -7,7 +7,7 @@ import {
   installmentsAvailable, sizeText, type InstallmentSchedule, type PaymentRecord,
 } from "../../services/portfolioService";
 import { titleLabel } from "../../services/marketplaceService";
-import { isAvailable } from "../../lib/backends";
+import { isAvailable, isLive } from "../../lib/backends";
 import { fetchDocumentsByPlotId } from "../../services/documentsService";
 import { fetchUpgradeRequestForPlot, type UpgradeRequest } from "../../services/upgradeService";
 import { useFetch } from "../../lib/useFetch";
@@ -15,7 +15,7 @@ import { fetchConstructionProgress, type ConstructionProgress } from "../../serv
 import { CAPABILITIES } from "../../lib/capabilities";
 import { useApp } from "../../contexts/AppContext";
 import DocumentCard from "../../components/documents/DocumentCard";
-import QRVerifyModal from "../../components/documents/QRVerifyModal";
+import ReceiptDownload from "../../components/documents/ReceiptDownload";
 import PlotStatusBadge from "../../components/portfolio/PlotStatusBadge";
 import ArrearsBanner from "../../components/portfolio/ArrearsBanner";
 import PaymentSchedule from "../../components/portfolio/PaymentSchedule";
@@ -39,7 +39,7 @@ export default function PlotView() {
   const { currency: displayCurrency, user } = useApp();
   const { data, loading, error: loadError, refetch, setData } = useFetch<PlotViewData>(async () => {
     if (!id) return { plot: null, docs: [], schedule: undefined };
-    // No documents are issued live yet: an honest empty tab, not demo ones.
+    // Live: the allocation letter first, then the receipts.
     const [plotData, docData, scheduleData] = await Promise.all([
       fetchOwnedPlotById(id),
       isAvailable("documents") ? fetchDocumentsByPlotId(id) : Promise.resolve([]),
@@ -48,7 +48,6 @@ export default function PlotView() {
     return { plot: plotData ?? null, docs: docData, schedule: scheduleData };
   }, [id]);
   const [tab, setTab] = useState<Tab>("overview");
-  const [verifyingDoc, setVerifyingDoc] = useState<Document | null>(null);
   const [restructuring, setRestructuring] = useState(false);
 
   // Payment form state
@@ -88,6 +87,10 @@ export default function PlotView() {
   const canPay = installments && (plot.status === "installment_active" || plot.status === "in_arrears") && !!nextPeriod;
   const pending = plot.status === "pending_verification";
   const docsAvailable = isAvailable("documents");
+  // A payment's receipt among this plot's documents (live: receiptId is the
+  // receipt's own id). Only one with a number can be downloaded by it.
+  const receiptFor = (receiptId: string | null | undefined) =>
+    receiptId ? docs.find((d) => d.id === receiptId && d.type === "receipt" && d.number) : undefined;
   // Upgrades, resale and disputes have no backend yet: live, they'd run demo
   // flows against a real plot.
   const actions = { upgrade: isAvailable("upgrades"), resale: isAvailable("resale") && plot.intent === "investment", dispute: isAvailable("disputes") };
@@ -203,7 +206,9 @@ export default function PlotView() {
         <div className="mb-6 bg-[var(--card)] rounded-xl border border-[var(--border)] p-5">
           <VerificationProgress
             status="awaiting_finance"
-            reference={purchasePayment?.receiptId ?? plot.transactionId ?? ""}
+            // Live, a payment's id is its reference (LV-PAY-…) and receiptId is
+            // the receipt document's id; the mock's receiptId stood for both.
+            reference={(isLive("portfolio") ? purchasePayment?.id : purchasePayment?.receiptId) ?? plot.transactionId ?? ""}
             amountDue={purchasePayment?.amount ?? plot.totalPrice}
             currency={plot.currency}
             finalStageLabel="Plot allocated"
@@ -434,7 +439,7 @@ export default function PlotView() {
           <div className="px-5 py-4 border-b border-[var(--border)]">
             <h3 className="font-semibold text-sm">Payment history</h3>
             <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-              Every payment is logged and immutable.{docsAvailable ? " Download any receipt from your vault." : " Receipts aren't issued yet; quote the payment reference if you contact us."}
+              Every payment is logged and immutable.{docsAvailable ? " Download a payment's receipt from its number." : " Receipts aren't issued yet; quote the payment reference if you contact us."}
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -458,8 +463,11 @@ export default function PlotView() {
                       <PaymentStatusPill status={p.status} />
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {p.status === "confirmed" && docsAvailable ? (
-                        <Link to="/documents" className="text-xs text-[var(--accent)] hover:underline font-mono-data">{p.receiptId}</Link>
+                      {receiptFor(p.receiptId) ? (
+                        <ReceiptDownload receiptId={p.receiptId!} receiptNumber={receiptFor(p.receiptId)!.number!} />
+                      ) : isLive("portfolio") ? (
+                        // A receipt is issued when Paystack confirms; none yet.
+                        <span className="text-xs text-[var(--muted-foreground)]">—</span>
                       ) : (
                         <span className="text-xs text-[var(--muted-foreground)] font-mono-data">{p.receiptId}</span>
                       )}
@@ -495,12 +503,11 @@ export default function PlotView() {
               No documents yet. They'll appear here as they're issued.
             </div>
           ) : (
-            <ul className="space-y-3">{docs.map((doc) => <DocumentCard key={doc.id} doc={doc} onVerify={() => setVerifyingDoc(doc)} />)}</ul>
+            <ul className="space-y-3">{docs.map((doc) => <DocumentCard key={doc.id} doc={doc} />)}</ul>
           )}
         </div>
       )}
 
-      {verifyingDoc && <QRVerifyModal doc={verifyingDoc} onClose={() => setVerifyingDoc(null)} />}
     </div>
   );
 }

@@ -68,6 +68,9 @@ export const SERVICES = {
   // schedules, installment payments and restructuring have no backend, so
   // their controls hide and portfolioService never calls them live.
   portfolio: { label: "Portfolio (owned plots, outright)", status: "live", paths: ["/api/portfolio/plots", "/api/portfolio/summary"] },
+  // Receipts and allocation letters, and the public verify page. Read-only:
+  // the backend issues them; voiding/reissuing isn't built (mock flows only).
+  documents: { label: "Document vault & verification", status: "live", paths: ["/api/documents"] },
   // Dev-only test routes (backend dev profile, Super Admin). Real uploads go
   // through each feature's own routes, via src/lib/uploadFile.ts.
   devStorage: { label: "File uploads (dev test routes)", status: "live", paths: ["/api/dev/storage"] },
@@ -83,7 +86,6 @@ export const SERVICES = {
   },
 
   // ── No backend yet ────────────────────────────────────────────────────────
-  documents: { label: "Document vault", status: "no_backend", paths: ["/api/documents"], reason: "The backend doesn't issue receipts or allocation letters yet." },
   attention: { label: "Dashboard attention list", status: "no_backend", paths: ["/api/me/attention"], reason: "No /api/me/attention on the backend." },
   upgrades: { label: "Plot upgrades", status: "no_backend", paths: ["/api/upgrades"], reason: "Needs owned plots." },
   resale: { label: "Resale", status: "no_backend", paths: ["/api/resale"], reason: "Needs owned plots and title transfer." },

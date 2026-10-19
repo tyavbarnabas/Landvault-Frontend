@@ -61,6 +61,10 @@ to fetch". The dev panel (bottom right) turns red when the origin is wrong.
 - staff, roles and invitations
 - **the purchase flow, as one group**: marketplace listings, plots (from the
   estate map), the public cost disclosure, reservations, and transactions
+- portfolio (outright purchases; installment plans have no backend yet)
+- document vault: receipts and allocation letters, downloaded as PDF or one
+  stacked JPEG with the bearer token. Read-only: voiding and reissuing are
+  mock-only (the demo resale and upgrade flows)
 
 **Retired when live**
 - `/estates` plot-grid browse. Real plots have boundaries, not grid positions,
@@ -70,8 +74,7 @@ to fetch". The dev panel (bottom right) turns red when the origin is wrong.
   grid.
 
 **No backend yet** (demo data by design)
-- portfolio and payment schedules
-- document vault
+- payment schedules (installments)
 - dashboard attention list
 - upgrades
 - resale
@@ -191,8 +194,8 @@ configured, and has a demo-mode stand-in.
 | Super Admin | **Refunds** | refund the full amount; send to the buyer's account after checking the bank's name |
 
 **With a backend, the buyer dashboard shows only what has a backend:** real
-purchases. The demo attention list, portfolio, payment schedule and documents
-are hidden, so demo plots and "₦3.2M overdue" never sit beside real purchases.
+purchases, owned plots and documents. The demo attention list and payment
+schedule are hidden, so "₦3.2M overdue" never sits beside real purchases.
 
 **Proven live:**
 - reserve → purchase → Paystack page opens

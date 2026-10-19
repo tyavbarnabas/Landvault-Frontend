@@ -35,6 +35,7 @@ import { fetchOwnedPlots, fetchPortfolioSummary, installmentsAvailable } from ".
 import { fetchDocuments } from "../services/documentsService";
 import { fetchAttentionItems } from "../services/attentionService";
 import { DOCUMENT_TYPE_ICONS } from "../components/documents/DocumentCard";
+import { formatDay } from "../lib/formatDate";
 import AttentionStrip from "../components/dashboard/AttentionStrip";
 import { urgencyRank, isActivelyOwned } from "./portfolio/Portfolio";
 
@@ -209,7 +210,7 @@ export default function Dashboard() {
                   <span className="text-base" aria-hidden="true">{DOCUMENT_TYPE_ICONS[d.type]}</span>
                   <div className="flex-1 min-w-0">
                     <div className="truncate text-xs font-medium text-[var(--foreground)]">{d.title}</div>
-                    <div className="text-xs text-[var(--muted-foreground)] font-mono-data">{d.date}</div>
+                    <div className="text-xs text-[var(--muted-foreground)]">{formatDay(d.date)}</div>
                   </div>
                 </div>
               ))}

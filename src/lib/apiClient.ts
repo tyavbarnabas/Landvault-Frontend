@@ -310,6 +310,9 @@ export interface RequestOptions extends RequestInit {
    * and possibly a sign-out. Login and 2FA verify pass it for the same reason. The 401 is thrown as an
    * ordinary ApiError instead, carrying the server's code. */
   skipAuthRefresh?: boolean;
+  /** "blob" for a file download (a PDF, a JPEG). Errors still come back as
+   * the JSON error body, so they're read the same way. */
+  responseType?: "json" | "blob";
   /** Internal — set on the recursive retry-after-refresh call so a second
    * 401 doesn't loop forever. */
   _retriedAfterRefresh?: boolean;
@@ -322,7 +325,7 @@ async function request<T>(path: string, options: RequestOptions = {}, attempt = 
     throw new Error(`apiClient called for "${path}" with no VITE_API_BASE_URL set. Set it in .env, or fix the calling service's mock-mode branch.`);
   }
 
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, idempotencyKey, skipAuthRefresh, _retriedAfterRefresh, signal: callerSignal, ...init } = options;
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, idempotencyKey, skipAuthRefresh, responseType: _responseType, _retriedAfterRefresh, signal: callerSignal, ...init } = options;
   const method = (init.method ?? "GET").toUpperCase();
   const info: RequestInfo = { method, path: path.split("?")[0], service: serviceLabel(serviceForPath(path)) };
 
@@ -409,6 +412,7 @@ async function request<T>(path: string, options: RequestOptions = {}, attempt = 
   }
 
   if (res.status === 204) return undefined as T;
+  if (options.responseType === "blob") return (await res.blob()) as T;
   return (await res.json()) as T;
 }
 
@@ -419,6 +423,8 @@ export const apiClient = {
   put: <T>(path: string, body?: unknown, options?: RequestOptions) => request<T>(path, { ...options, method: "PUT", body: body !== undefined ? JSON.stringify(body) : undefined }),
   patch: <T>(path: string, body?: unknown, options?: RequestOptions) => request<T>(path, { ...options, method: "PATCH", body: body !== undefined ? JSON.stringify(body) : undefined }),
   del: <T>(path: string, options?: RequestOptions) => request<T>(path, { ...options, method: "DELETE" }),
+  // A file, with the bearer token — what a plain <a href> can't send.
+  getBlob: (path: string, options?: RequestOptions) => request<Blob>(path, { ...options, method: "GET", responseType: "blob" }),
   // multipart/form-data — a file upload. Sent as-is, never JSON-encoded.
   postForm: <T>(path: string, form: FormData, options?: RequestOptions) => request<T>(path, { ...options, method: "POST", body: form }),
 };

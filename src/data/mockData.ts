@@ -127,7 +127,9 @@ export interface Payment {
   // and marketplaceCheckoutService.ts. Never mark a payment "confirmed"
   // optimistically on the client.
   status: "confirmed" | "pending" | "pending_verification" | "failed" | "rejected";
-  receiptId: string;
+  // Live: HomeTrue's receipt document id, null until Paystack confirms the
+  // payment. The mock's are payment references ("RCP-…").
+  receiptId: string | null;
   rejectionReason?: string;
   verifiedAt?: string;
 }
@@ -225,9 +227,22 @@ export interface Document {
   type: "receipt" | "offer_letter" | "allocation_letter" | "deed_of_assignment" | "poa_draft";
   title: string;
   date: string;
+  // Live documents are always "valid" — a refunded receipt stays valid (the
+  // money did arrive) and carries `refundedAt`. "void"/"superseded" are the
+  // mock resale/upgrade flows' only; the backend has no void or reissue.
   status: "valid" | "void" | "superseded";
+  // The printed verification code, e.g. "D897-0A03-3C97-202D".
   qrCode: string;
-  size: string;
+  // Null live: documents are drawn on demand, so no size is known.
+  size: string | null;
+  // The rest is what the backend's Document carries beyond the mock's shape.
+  // Optional because the mock documents have none of it (no file behind them).
+  number?: string; // "HT-RCT-2026-000123", "HT-ALC-2026-000002"
+  issuedAt?: string;
+  verifyUrl?: string; // what the QR opens: {origin}/verify/{code}
+  refundedAt?: string | null;
+  pdfUrl?: string; // API paths, fetched with the bearer token — never a plain link
+  jpegUrl?: string; // every page stacked into one image, for WhatsApp
   // Append-only chain (see marketplaceCheckoutService.ts / documentsService.ts):
   // every issued document references the transaction that produced it, and
   // any document it supersedes carries the superseded one's id here. Nothing

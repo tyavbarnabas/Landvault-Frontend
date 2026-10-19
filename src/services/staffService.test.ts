@@ -58,8 +58,8 @@ describe("inviting", () => {
 
     const user = await acceptInvitation(token, "a password");
     expect(user).toMatchObject({ email, tenantId: "estintin-group", branchId: "double-king" });
-    // A branch manager reads estates and asks for staff — never manages estates.
-    expect(user.permissions).toEqual(["portal.estates.view", "portal.staff.request"]);
+    // A branch manager reads estates and letters and asks for staff — never manages estates.
+    expect(user.permissions).toEqual(["portal.estates.view", "portal.staff.request", "portal.documents.view"]);
 
     // Single use, and indistinguishable from a link that never existed.
     const reused = await previewInvitation(token).catch((e) => e);
@@ -191,19 +191,19 @@ describe("company-made roles", () => {
   let r = 0;
   const name = () => `Accounts Clerk ${++r}`;
 
-  it("lists the 8 portal permissions, marking those you hold and the company-wide-only ones", async () => {
+  it("lists the 10 portal permissions, marking those you hold and the company-wide-only ones", async () => {
     const all = await fetchPortalPermissions(FINANCE);
-    expect(all).toHaveLength(8);
-    expect(all.filter((p) => p.held).map((p) => p.code).sort()).toEqual(["portal.estates.view", "portal.payments.verify"]);
+    expect(all).toHaveLength(10);
+    expect(all.filter((p) => p.held).map((p) => p.code).sort()).toEqual(["portal.documents.view", "portal.estates.view", "portal.payments.verify"]);
     expect(all.filter((p) => p.requiresCompanyWide).map((p) => p.code).sort())
-      .toEqual(["portal.branches.manage", "portal.roles.manage", "portal.settlement.manage", "portal.staff.invite"]);
+      .toEqual(["portal.branches.manage", "portal.documents.manage", "portal.roles.manage", "portal.settlement.manage", "portal.staff.invite"]);
     expect(companyOnlyPermissions("either", ["portal.estates.view", "portal.staff.invite"], all)).toEqual(["portal.staff.invite"]);
     expect(companyOnlyPermissions("company", ["portal.staff.invite"], all)).toEqual([]);
   });
 
   it("groups the catalogue under the backend's headings, in the backend's order", async () => {
     const groups = groupPermissions(await fetchPortalPermissions(ED));
-    expect(groups.map((g) => g.label)).toEqual(["Estates", "Money", "Branches", "Staff and roles"]);
+    expect(groups.map((g) => g.label)).toEqual(["Estates", "Money", "Branches", "Staff and roles", "Documents"]);
     expect(groups[3].permissions.map((p) => p.code)).toEqual(["portal.staff.invite", "portal.staff.request", "portal.roles.manage"]);
     // Never re-sorted: a group's first appearance decides its place.
     expect(groupPermissions([{ group: "b", groupLabel: "B" }, { group: "a", groupLabel: "A" }, { group: "b", groupLabel: "B" }]).map((g) => [g.group, g.permissions.length]))
