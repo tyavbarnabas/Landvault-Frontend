@@ -6,7 +6,8 @@
 import { useEffect, useRef, useId } from "react";
 import Button, { type ButtonVariant } from "./Button";
 
-export default function Dialog({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+// `size="md"` for a dialog with a form of its own (the marketplace filters).
+export default function Dialog({ title, children, onClose, size = "sm" }: { title: string; children: React.ReactNode; onClose: () => void; size?: "sm" | "md" }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   // The latest onClose, read at key-press time. Callers usually pass a fresh
@@ -42,7 +43,7 @@ export default function Dialog({ title, children, onClose }: { title: string; ch
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="bg-[var(--card)] rounded-2xl border border-[var(--border)] p-6 max-w-sm w-full shadow-2xl outline-none">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className={`bg-[var(--card)] rounded-2xl border border-[var(--border)] p-6 ${size === "md" ? "max-w-md max-h-[90vh] overflow-y-auto" : "max-w-sm"} w-full shadow-2xl outline-none`}>
         <div className="flex items-center justify-between mb-3">
           <h3 id={titleId} className="font-semibold">{title}</h3>
           <button onClick={() => onCloseRef.current()} aria-label="Close dialog" className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-xl leading-none">×</button>

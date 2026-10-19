@@ -4,6 +4,7 @@ import { fetchUnifiedListings, type MarketplaceListing, type UnifiedListingFilte
 import { formatCompactCurrency } from "../../lib/formatCurrency";
 import ListingCard from "../../components/marketplace/ListingCard";
 import FilterBar from "../../components/marketplace/FilterBar";
+import MarketplaceHero from "../../components/marketplace/MarketplaceHero";
 import FilterChip from "../../components/marketplace/FilterChip";
 import EmptyState from "../../components/ui/EmptyState";
 
@@ -52,6 +53,7 @@ export default function MarketplaceFeed() {
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(false);
@@ -62,7 +64,7 @@ export default function MarketplaceFeed() {
     setLoading(true);
     setError(false);
     fetchUnifiedListings(filters)
-      .then((page) => { if (!cancelled) { setListings(page.items); setCursor(page.cursor); setHasMore(page.hasMore); } })
+      .then((page) => { if (!cancelled) { setListings(page.items); setCursor(page.cursor); setHasMore(page.hasMore); setTotal(page.total); } })
       .catch(() => { if (!cancelled) setError(true); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -111,7 +113,9 @@ export default function MarketplaceFeed() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <>
+    <MarketplaceHero filters={filters} onSearch={updateFilters} />
+    <div className="px-4 sm:px-6 pt-6 pb-4 max-w-6xl mx-auto">
       {showWelcome && !welcomeDismissed && (
         <div className="mb-6 flex items-center justify-between gap-4 bg-[var(--secondary)] border border-[var(--border)] rounded-xl px-4 py-3">
           <p className="text-sm text-[var(--secondary-foreground)]">
@@ -121,13 +125,8 @@ export default function MarketplaceFeed() {
         </div>
       )}
 
-      <div className="mb-6">
-        <h1 className="font-display text-3xl text-[var(--foreground)] mb-1">Marketplace</h1>
-        <p className="text-sm text-[var(--muted-foreground)]">Developer estates and resale plots from every seller on HomeTrue, across Nigeria — clearly labelled either way.</p>
-      </div>
-
-      <div className="mb-3">
-        <FilterBar filters={filters} onChange={updateFilters} />
+      <div className="mb-4">
+        <FilterBar filters={filters} onChange={updateFilters} total={loading ? null : total} />
       </div>
 
       {filters.paymentPlan && filters.type !== "primary" && (
@@ -157,7 +156,7 @@ export default function MarketplaceFeed() {
 
       {!loading && !error && listings.length > 0 && (
         <>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {listings.map((item) => <ListingCard key={`${item.listingType}:${item.data.id}`} item={item} />)}
           </div>
           {hasMore && (
@@ -168,5 +167,6 @@ export default function MarketplaceFeed() {
         </>
       )}
     </div>
+    </>
   );
 }
