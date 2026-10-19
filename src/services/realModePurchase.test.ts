@@ -85,6 +85,16 @@ describe("marketplace listings", () => {
     expect(l.priceTiers.find((t) => t.id === "t2")?.sizeSqm).toBe(0);
   });
 
+  it("the title filter keeps only verified titles, even if the backend returns declared ones", async () => {
+    const declared = { ...LISTING, id: "e1", titleStatus: "pending", titleVerifiedAt: null };
+    const verified = { ...LISTING, id: "e2", name: "Crown Court", titleStatus: "verified", titleVerifiedAt: "2026-08-01T00:00:00Z" };
+    respond({ "GET /api/marketplace/estates?titleType=C+of+O&limit=10": { status: 200, body: { items: [declared, verified], total: 2, cursor: null, hasMore: false } } });
+    const { fetchListings } = await import("./marketplaceService");
+    const page = await fetchListings({ titleType: "C of O" }, { limit: 10 });
+    expect(page.items.map((l) => l.id)).toEqual(["e2"]);
+    expect(page.total).toBe(1);
+  });
+
   it("a listing that doesn't exist is undefined, not an error", async () => {
     respond({});
     const { fetchListingById } = await import("./marketplaceService");

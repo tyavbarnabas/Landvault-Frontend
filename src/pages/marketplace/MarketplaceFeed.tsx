@@ -93,7 +93,7 @@ export default function MarketplaceFeed() {
   if (filters.type) chips.push({ key: "type", label: filters.type === "primary" ? "Developer estates" : "Resale", onRemove: () => updateFilters({ type: undefined }) });
   if (filters.query) chips.push({ key: "q", label: `"${filters.query}"`, onRemove: () => updateFilters({ query: undefined }) });
   if (filters.state) chips.push({ key: "state", label: filters.state, onRemove: () => updateFilters({ state: undefined }) });
-  if (filters.titleType) chips.push({ key: "title", label: filters.titleType, onRemove: () => updateFilters({ titleType: undefined }) });
+  if (filters.titleType) chips.push({ key: "title", label: `${filters.titleType}, verified`, onRemove: () => updateFilters({ titleType: undefined }) });
   if (filters.paymentPlan) chips.push({ key: "plan", label: filters.paymentPlan, onRemove: () => updateFilters({ paymentPlan: undefined }) });
   if (filters.intent) chips.push({ key: "intent", label: filters.intent, onRemove: () => updateFilters({ intent: undefined }) });
   if (filters.verifiedOnly) chips.push({ key: "verified", label: "Verified only", onRemove: () => updateFilters({ verifiedOnly: undefined }) });

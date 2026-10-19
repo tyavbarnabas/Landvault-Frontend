@@ -59,7 +59,7 @@ function ResaleListingCard({ listing, priceChangeSinceSaved }: { listing: Resale
         <div className="flex items-baseline gap-2 mb-1">
           <span className="font-semibold font-mono-data text-lg text-[var(--foreground)]" title={formatAmount(listing.asking, "NGN")}>{formatCompactCurrency(listing.asking)}</span>
           {priceChangeSinceSaved !== undefined && priceChangeSinceSaved !== 0 && (
-            <span className={`text-xs font-medium ${priceChangeSinceSaved < 0 ? "text-emerald-600" : "text-amber-600"}`}>
+            <span className={`text-xs font-medium ${priceChangeSinceSaved < 0 ? "text-[var(--success-text)]" : "text-[var(--warning-text)]"}`}>
               {priceChangeSinceSaved < 0 ? "↓" : "↑"} {formatCompactCurrency(Math.abs(priceChangeSinceSaved))}
             </span>
           )}
@@ -74,7 +74,7 @@ function ResaleListingCard({ listing, priceChangeSinceSaved }: { listing: Resale
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--muted-foreground)] pt-2.5 border-t border-[var(--border)]">
           <span>{listing.sqm} sqm</span>
           <span>·</span>
-          <span>{titleLabel(listing.titleType)}</span>
+          <span>{titleLabel(listing.titleType, listing.estateTitleStatus)}</span>
           <span>·</span>
           <span>Listed {listing.daysListed} day{listing.daysListed !== 1 ? "s" : ""} ago</span>
         </div>

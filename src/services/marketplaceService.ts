@@ -174,6 +174,12 @@ export function isTitleVerified(listing: Pick<Estate, "titleType" | "titleStatus
   return !!listing.titleType && listing.titleStatus === "verified";
 }
 
+// The marketplace's title filter: "C of O" means a C of O HomeTrue has
+// verified, never one only declared by the developer.
+export function matchesTitleFilter(listing: Pick<Estate, "titleType" | "titleStatus">, titleType: TitleType): boolean {
+  return listing.titleType === titleType && isTitleVerified(listing);
+}
+
 export function landCheckLabel(lastVerifiedDate: string | null | undefined): string {
   return lastVerifiedDate ? `Land checked ${lastVerifiedDate}` : "Land not checked yet";
 }
@@ -385,7 +391,12 @@ export async function fetchListings(filters: ListingFilters = {}, params: PagePa
   if (!isMock("marketplace")) {
     const page = await apiClient.get<{ items: ListingDto[]; total: number; cursor: string | null; hasMore: boolean }>(
       `/api/marketplace/estates?${liveQuery(filters, params)}`);
-    return { items: page.items.map(fromListingDto), total: page.total, cursor: page.cursor ?? undefined, hasMore: page.hasMore };
+    let items = page.items.map(fromListingDto);
+    // The backend matches the title type only, declared or verified; until it
+    // filters by status too, the declared ones are taken out here.
+    const titleType = filters.titleType;
+    if (titleType) items = items.filter((l) => matchesTitleFilter(l, titleType));
+    return { items, total: page.total - (page.items.length - items.length), cursor: page.cursor ?? undefined, hasMore: page.hasMore };
   }
 
   let results = publishedListings();
@@ -395,7 +406,7 @@ export async function fetchListings(filters: ListingFilters = {}, params: PagePa
     results = results.filter((l) => l.name.toLowerCase().includes(q) || l.area.toLowerCase().includes(q) || l.city.toLowerCase().includes(q) || l.state.toLowerCase().includes(q));
   }
   if (filters.state) results = results.filter((l) => l.state === filters.state);
-  if (filters.titleType) results = results.filter((l) => l.titleType === filters.titleType);
+  if (filters.titleType) results = results.filter((l) => matchesTitleFilter(l, filters.titleType!));
   if (filters.paymentPlan) results = results.filter((l) => l.paymentPlans.includes(filters.paymentPlan!));
   if (filters.intent) results = results.filter((l) => l.intent === filters.intent || l.intent === "both");
   if (filters.verifiedOnly) results = results.filter((l) => l.verified);

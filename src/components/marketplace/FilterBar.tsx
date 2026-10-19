@@ -22,6 +22,8 @@ interface FilterBarProps {
 }
 
 const TITLE_TYPES = ["C of O", "R of O", "Governor's Consent", "Gazette"] as const;
+// The title filter matches verified titles only, never ones just declared.
+const TITLE_HINT = "Only titles HomeTrue has verified. A resale plot counts when its estate's title is verified.";
 const TYPES: { value: UnifiedListingFilters["type"]; label: string }[] = [
   { value: undefined, label: "All" }, { value: "primary", label: "Developer estates" }, { value: "resale", label: "Resale" },
 ];
@@ -66,11 +68,14 @@ function rangeLabel(base: string, min: number | undefined, max: number | undefin
 export default function FilterBar({ filters, onChange, total }: FilterBarProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const moreCount = [filters.paymentPlan, filters.intent, filters.verifiedOnly].filter(Boolean).length;
+  // On a phone the price, size and title menus are hidden (the row scrolls,
+  // which would clip them), so the Filters button counts those too.
+  const phoneCount = moreCount + [filters.minPrice !== undefined || filters.maxPrice !== undefined, filters.minSize !== undefined || filters.maxSize !== undefined, filters.titleType].filter(Boolean).length;
   const noun = filters.type === "primary" ? "estate" : filters.type === "resale" ? "resale plot" : "listing";
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-2 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 pb-1 sm:pb-0 sm:flex-wrap">
+      <div className="flex items-center gap-2 overflow-x-auto sm:overflow-visible -mx-4 px-4 sm:mx-0 sm:px-0 pb-1 sm:pb-0 sm:flex-wrap">
         <div className="flex shrink-0 rounded-full bg-[var(--muted)] p-[3px]" role="radiogroup" aria-label="Listing type">
           {TYPES.map((opt) => {
             const on = filters.type === opt.value;
@@ -83,6 +88,7 @@ export default function FilterBar({ filters, onChange, total }: FilterBarProps) 
           })}
         </div>
 
+        <div className="hidden sm:contents">
         <Popover label={rangeLabel("Price", filters.minPrice, filters.maxPrice, formatCompactCurrency)} active={filters.minPrice !== undefined || filters.maxPrice !== undefined}>
           {(close) => <RangePanel label="Price (₦)" min={filters.minPrice} max={filters.maxPrice} minLabel="Minimum price" maxLabel="Maximum price"
             onApply={(min, max) => { onChange({ minPrice: min, maxPrice: max }); close(); }} />}
@@ -91,17 +97,23 @@ export default function FilterBar({ filters, onChange, total }: FilterBarProps) 
           {(close) => <RangePanel label="Plot size (sqm)" min={filters.minSize} max={filters.maxSize} minLabel="Minimum size" maxLabel="Maximum size"
             onApply={(min, max) => { onChange({ minSize: min, maxSize: max }); close(); }} />}
         </Popover>
-        <Popover label={filters.titleType ?? "Title"} active={!!filters.titleType}>
+        <Popover label={filters.titleType ? `${filters.titleType}, verified` : "Title"} active={!!filters.titleType}>
           {(close) => (
-            <div role="radiogroup" aria-label="Title type" className="flex flex-wrap gap-2">
-              <Choice on={!filters.titleType} onClick={() => { onChange({ titleType: undefined }); close(); }}>Any</Choice>
-              {TITLE_TYPES.map((t) => <Choice key={t} on={filters.titleType === t} onClick={() => { onChange({ titleType: t }); close(); }}>{t}</Choice>)}
+            <div className="space-y-2">
+              <div role="radiogroup" aria-label="Title type" aria-describedby="title-filter-hint" className="flex flex-wrap gap-2">
+                <Choice on={!filters.titleType} onClick={() => { onChange({ titleType: undefined }); close(); }}>Any</Choice>
+                {TITLE_TYPES.map((t) => <Choice key={t} on={filters.titleType === t} onClick={() => { onChange({ titleType: t }); close(); }}>{t}</Choice>)}
+              </div>
+              <p id="title-filter-hint" className="text-xs text-[var(--muted-foreground)]">{TITLE_HINT}</p>
             </div>
           )}
         </Popover>
+        </div>
         <button type="button" onClick={() => setMoreOpen(true)}
-          className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full border text-sm font-medium transition-colors ${moreCount ? "border-[var(--primary)] bg-[var(--secondary)] text-[var(--secondary-foreground)]" : "border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] hover:bg-[var(--muted)]"}`}>
-          <SlidersIcon />More filters{moreCount ? ` (${moreCount})` : ""}
+          className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full border text-sm font-medium transition-colors ${phoneCount ? "max-sm:border-[var(--primary)] max-sm:bg-[var(--secondary)] max-sm:text-[var(--secondary-foreground)]" : ""} ${moreCount ? "border-[var(--primary)] bg-[var(--secondary)] text-[var(--secondary-foreground)]" : "border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] hover:bg-[var(--muted)]"}`}>
+          <SlidersIcon />
+          <span className="sm:hidden">Filters{phoneCount ? ` (${phoneCount})` : ""}</span>
+          <span className="hidden sm:inline">More filters{moreCount ? ` (${moreCount})` : ""}</span>
         </button>
       </div>
 
@@ -156,10 +168,13 @@ function MoreFilters({ filters, total, onClose, onApply }: { filters: UnifiedLis
         {group("Listing type", TYPES.map((t) => <Choice key={t.label} on={d.type === t.value} onClick={() => set({ type: t.value })}>{t.label}</Choice>))}
         <Range label="Price (₦)" min={d.minPrice} max={d.maxPrice} onMin={(v) => set({ minPrice: v })} onMax={(v) => set({ maxPrice: v })} minLabel="Minimum price" maxLabel="Maximum price" />
         <Range label="Plot size (sqm)" min={d.minSize} max={d.maxSize} onMin={(v) => set({ minSize: v })} onMax={(v) => set({ maxSize: v })} minLabel="Minimum size" maxLabel="Maximum size" />
-        {group("Title", <>
-          <Choice on={!d.titleType} onClick={() => set({ titleType: undefined })}>Any</Choice>
-          {TITLE_TYPES.map((t) => <Choice key={t} on={d.titleType === t} onClick={() => set({ titleType: t })}>{t}</Choice>)}
-        </>)}
+        <div>
+          {group("Title", <>
+            <Choice on={!d.titleType} onClick={() => set({ titleType: undefined })}>Any</Choice>
+            {TITLE_TYPES.map((t) => <Choice key={t} on={d.titleType === t} onClick={() => set({ titleType: t })}>{t}</Choice>)}
+          </>)}
+          <p className="text-xs text-[var(--muted-foreground)] mt-2">{TITLE_HINT}</p>
+        </div>
         {group("Payment plan", <>
           <Choice on={!d.paymentPlan} onClick={() => set({ paymentPlan: undefined })}>Any</Choice>
           {PLANS.map((p) => <Choice key={p.value} on={d.paymentPlan === p.value} onClick={() => set({ paymentPlan: p.value })}>{p.label}</Choice>)}

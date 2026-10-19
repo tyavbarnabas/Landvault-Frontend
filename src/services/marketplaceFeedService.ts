@@ -15,7 +15,7 @@
 
 import {
   fetchListings as fetchPrimaryListings, fetchListingById as fetchPrimaryListingById,
-  fromPrice, cheapestTier, pricePerSqm,
+  fromPrice, cheapestTier, pricePerSqm, matchesTitleFilter,
   type Listing, type ListingFilters, type TitleType, type WishlistItem,
 } from "./marketplaceService";
 import {
@@ -119,7 +119,11 @@ export function listingRoute(item: MarketplaceListing): string {
 export async function fetchWishlistListing(saved: WishlistItem): Promise<MarketplaceListing | null> {
   if (saved.listingType === "resale") {
     const listing = await fetchResaleListingById(saved.listingId);
-    return listing ? { listingType: "resale", data: listing } : null;
+    if (!listing) return null;
+    // The plot's title is its estate's, as in the feed.
+    const estate = await fetchPrimaryListingById(listing.estateId).catch(() => undefined);
+    const estateTitleStatus = estate && estate.titleType === listing.titleType ? estate.titleStatus : null;
+    return { listingType: "resale", data: { ...listing, estateTitleStatus } };
   }
   const listing = await fetchPrimaryListingById(saved.listingId);
   return listing ? { listingType: "primary", data: listing } : null;
@@ -149,14 +153,21 @@ export async function fetchUnifiedListings(filters: UnifiedListingFilters = {}, 
   // ever returns active listings), so this is the one place cross-type
   // filters are actually applied, rather than duplicating filter logic into
   // two services that model listings completely differently.
+  // A resale plot's title is its estate's, so resale needs the estates too —
+  // for the title filter and for the title shown on the card.
+  const needEstates = wantPrimary || wantResale;
   const [primaryPage, resalePage] = await Promise.all([
-    wantPrimary ? fetchPrimaryListings({}, { limit: MERGE_FETCH_LIMIT }) : Promise.resolve({ items: [], total: 0, hasMore: false } as Page<Listing>),
+    needEstates ? fetchPrimaryListings({}, { limit: MERGE_FETCH_LIMIT }) : Promise.resolve({ items: [], total: 0, hasMore: false } as Page<Listing>),
     wantResale ? fetchResaleListingsRaw({ limit: MERGE_FETCH_LIMIT }) : Promise.resolve({ items: [], total: 0, hasMore: false } as Page<ResaleListing>),
   ]);
 
+  const estateById = new Map(primaryPage.items.map((e) => [e.id, e]));
+  // Only when the estate's title is the same type the seller's plot carries.
+  const estateTitle = (r: ResaleListing) => { const e = estateById.get(r.estateId); return e && e.titleType === r.titleType ? e.titleStatus : null; };
+
   let merged: MarketplaceListing[] = [
-    ...primaryPage.items.map((data): MarketplaceListing => ({ listingType: "primary", data })),
-    ...resalePage.items.map((data): MarketplaceListing => ({ listingType: "resale", data })),
+    ...(wantPrimary ? primaryPage.items : []).map((data): MarketplaceListing => ({ listingType: "primary", data })),
+    ...resalePage.items.map((data): MarketplaceListing => ({ listingType: "resale", data: { ...data, estateTitleStatus: estateTitle(data) } })),
   ];
 
   if (filters.query) {
@@ -164,7 +175,14 @@ export async function fetchUnifiedListings(filters: UnifiedListingFilters = {}, 
     merged = merged.filter((l) => listingQueryText(l).includes(q));
   }
   if (filters.state) merged = merged.filter((l) => listingState(l) === filters.state);
-  if (filters.titleType) merged = merged.filter((l) => listingTitleType(l) === filters.titleType);
+  // Verified titles only: a declared C of O doesn't match "C of O". A resale
+  // plot matches when its estate's title of that type is verified.
+  if (filters.titleType) {
+    const titleType = filters.titleType;
+    merged = merged.filter((l) => l.listingType === "primary"
+      ? matchesTitleFilter(l.data, titleType)
+      : matchesTitleFilter({ titleType: l.data.titleType, titleStatus: l.data.estateTitleStatus ?? null }, titleType));
+  }
   if (filters.intent) merged = merged.filter((l) => listingIntentMatches(l, filters.intent!));
   if (filters.minPrice !== undefined) merged = merged.filter((l) => listingFromPrice(l) >= filters.minPrice!);
   if (filters.maxPrice !== undefined) merged = merged.filter((l) => listingFromPrice(l) <= filters.maxPrice!);

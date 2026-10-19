@@ -25,7 +25,7 @@ import { addDocuments, voidDocument, fetchDocumentsByPlotId } from "./documentsS
 import { updateOwnedPlotStatus } from "./portfolioService";
 import { ESTATES } from "../data/mockData";
 import type { NigerianState } from "../data/nigerianStates";
-import type { TitleType } from "./marketplaceService";
+import type { ListingTitleStatus, TitleType } from "./marketplaceService";
 
 // ─── Eligibility (Fix 2) ─────────────────────────────────────────────────────
 
@@ -81,6 +81,9 @@ export interface ResaleListing {
   location: string;
   state: NigerianState; // for cross-type filtering alongside marketplace listings
   titleType: TitleType;
+  // The plot's title is its estate's: the marketplace feed fills this in from
+  // the estate's own title status. Unset means not known here ("declared").
+  estateTitleStatus?: ListingTitleStatus | null;
   sqm: number;
   isCorner: boolean;
   intent: "development" | "investment";
