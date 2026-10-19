@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useApp } from "../contexts/AppContext"
-import { DOCUMENTS_VIEW_PERMISSION, TITLE_REVIEW_PERMISSION, isBuyer, isPlatformStaff, isPortalStaff } from "../services/authService";
+import { DOCUMENTS_REVIEW_PERMISSION, DOCUMENTS_VIEW_PERMISSION, TITLE_REVIEW_PERMISSION, isBuyer, isPlatformStaff, isPortalStaff } from "../services/authService";
 import ErrorBoundary from "./ErrorBoundary"
 import { isLive } from "../lib/backends";
 
@@ -69,6 +69,7 @@ const NAV_SECTIONS = [
       { path: "/admin/listing-conflicts", label: "Listing conflicts", icon: AlertTriangleIcon, permission: "admin.marketplace.conflicts" },
       { path: "/admin/boundary-changes", label: "Boundary changes", icon: MapIcon, permission: "admin.marketplace.conflicts" },
       { path: "/admin/title-reviews", label: "Title reviews", icon: ShieldIcon, permission: TITLE_REVIEW_PERMISSION },
+      { path: "/admin/letter-reviews", label: "Letter reviews", icon: LetterIcon, permission: DOCUMENTS_REVIEW_PERMISSION },
       { path: "/admin/estate-state-override", label: "State overrides", icon: MapIcon, permission: "admin.marketplace.conflicts" },
       { path: "/admin/payout-accounts", label: "Payout accounts", icon: FolderIcon, permission: "admin.payouts.manage" },
       { path: "/admin/payouts", label: "Payouts", icon: TagIcon, permission: "admin.payouts.manage" },

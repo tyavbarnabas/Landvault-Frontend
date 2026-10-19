@@ -69,6 +69,10 @@ to fetch". The dev panel (bottom right) turns red when the origin is wrong.
 - allocation letter setup (Portal → Letters): letterheads, signatory,
   signature/logo/seal uploads, letter wording; per estate, its conditions,
   the preview and the director's approval
+- the letter gate: eligibility's `letterApproved`, finance Verify/Allocate
+  disabled until the letter is approved, the issued letter's number after
+- HomeTrue's letter reviews (Admin → Letter reviews, `admin.documents.review`):
+  estate conditions and letter wording, beside the approved version
 
 **Retired when live**
 - `/estates` plot-grid browse. Real plots have boundaries, not grid positions,

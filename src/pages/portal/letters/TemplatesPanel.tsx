@@ -122,7 +122,7 @@ function TemplateCard({ template, target, overview, scope, canManage, onChanged 
   );
 }
 
-function WordingView({ version }: { version: Pick<LetterTemplateVersion, "opening" | "closing" | "signOff" | "standardClauses"> }) {
+export function WordingView({ version }: { version: Pick<LetterTemplateVersion, "opening" | "closing" | "signOff" | "standardClauses"> }) {
   return (
     <dl className="text-sm space-y-3">
       <div><dt className="text-xs font-medium text-[var(--muted-foreground)]">Opening</dt><dd className="mt-0.5 whitespace-pre-line">{version.opening}</dd></div>

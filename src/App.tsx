@@ -64,6 +64,7 @@ const AdminPayouts = lazy(() => import("./pages/admin/payments/Payouts"));
 const AdminRefunds = lazy(() => import("./pages/admin/payments/Refunds"));
 const BoundaryChanges = lazy(() => import("./pages/admin/estates/BoundaryChanges"));
 const TitleReviews = lazy(() => import("./pages/admin/estates/TitleReviews"));
+const LetterReviews = lazy(() => import("./pages/admin/documents/LetterReviews"));
 const PortalBranches = lazy(() => import("./pages/portal/branches/PortalBranches"));
 const NewPortalBranch = lazy(() => import("./pages/portal/branches/PortalBranches").then((m) => ({ default: m.NewPortalBranch })));
 const PortalStaff = lazy(() => import("./pages/portal/staff/PortalStaff"));
@@ -315,6 +316,7 @@ function AppRoutes() {
       <Route path="/admin/payout-accounts" element={<AdminPage><PermissionGate anyOf={["admin.payouts.manage"]} to="/admin/dashboard"><AdminPayoutAccounts /></PermissionGate></AdminPage>} />
       <Route path="/admin/boundary-changes" element={<AdminPage><BoundaryChanges /></AdminPage>} />
       <Route path="/admin/title-reviews" element={<AdminPage><TitleReviews /></AdminPage>} />
+      <Route path="/admin/letter-reviews" element={<AdminPage><PermissionGate anyOf={["admin.documents.review"]} to="/admin/dashboard"><LetterReviews /></PermissionGate></AdminPage>} />
 
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />

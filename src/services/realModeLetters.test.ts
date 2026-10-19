@@ -74,6 +74,23 @@ describe("the letter setup, live", () => {
     expect(errorMessage(err)).toMatch(/company-wide view/);
   });
 
+  it("reviews: approve sends a note only if given; reject always sends one; a superseded version reads as stale", async () => {
+    const T = "a1b2c3d4-0000-4000-8000-000000000001";
+    respond({
+      [`POST /api/admin/letter-terms-reviews/${T}/approve`]: { status: 409, body: { message: "Newer version saved.", code: "LETTER_TERMS_SUPERSEDED" } },
+      [`POST /api/admin/letter-template-reviews/${T}/reject`]: { status: 200, body: { templateId: T, status: "rejected" } },
+      "GET /api/admin/letter-terms-reviews?status=rejected": { status: 200, body: [] },
+    });
+    const { approveTerms, rejectTemplate, fetchTermsReviews, isStaleReview } = await import("./letterReviewsService");
+    const err = await approveTerms(T, "  ").catch((e) => e);
+    expect(calls[0].body).toEqual({});
+    expect(isStaleReview(err)).toBe(true);
+    await rejectTemplate(T, " Remove the amount in the closing. ");
+    expect(calls[1].body).toEqual({ note: "Remove the amount in the closing." });
+    await fetchTermsReviews("rejected");
+    expect(calls[2].url).toBe("/api/admin/letter-terms-reviews?status=rejected");
+  });
+
   it("files estate letter routes under the letters service", async () => {
     const { serviceForPath } = await import("../lib/backends");
     expect(serviceForPath(`/api/portal/estates/${E}/letter-terms`)).toBe("letters");
