@@ -5,22 +5,27 @@
 // Verifying records HOW it was checked: a document review, or an official
 // search at the land registry. Rejecting needs a note, which the developer
 // sees. A developer who changes a title sends it back here as pending.
+//
+// Laid out from the Figma review-queue proposal: counted tabs and a table,
+// each title opening under its row with its documents and the decision.
 
 import { useState } from "react";
 import LoadError from "../../../components/LoadError";
 import StatusBadge, { titleStatusBadge } from "../../../components/StatusBadge";
 import TitleDocumentList, { formatDate } from "../../../components/TitleDocumentList";
 import { useFetch } from "../../../lib/useFetch";
+import { useTabCounts, withCount } from "../../../lib/useTabCounts";
 import {
   TitleError, VERIFICATION_SOURCES, fetchTitleReviews, rejectTitle, reviewDocumentLink, sourceLabel, verifyTitle,
   type TitleReview, type TitleStatus, type VerificationSource,
 } from "../../../services/estateTitleService";
 import Page, { Loading } from "../../../components/ui/Page";
-import { InfoBox, ListCard } from "../../../components/ui/Card";
+import Card, { InfoBox } from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import Alert from "../../../components/ui/Alert";
 import EmptyState from "../../../components/ui/EmptyState";
 import TabBar from "../../../components/ui/Tabs";
+import DisclosureTable, { DisclosureRow } from "../../../components/ui/DisclosureTable";
 import { ErrorText, Field, Textarea, describedBy } from "../../../components/ui/Field";
 
 const TABS: { id: TitleStatus; label: string }[] = [
@@ -28,51 +33,73 @@ const TABS: { id: TitleStatus; label: string }[] = [
   { id: "verified", label: "Verified" },
   { id: "rejected", label: "Not confirmed" },
 ];
+const TAB_IDS = TABS.map((t) => t.id);
+
+const COLUMNS = ["Estate", "Company · state", "Title", "Number", "Sent", "Status"];
+const GRID = "lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1.6fr)_minmax(0,0.8fr)_minmax(0,1fr)_7rem_minmax(0,1.3fr)_16px]";
 
 export default function TitleReviews() {
   const [status, setStatus] = useState<TitleStatus>("pending");
   const list = useFetch(() => fetchTitleReviews(status), [status]);
+  const { counts, refetch: recount } = useTabCounts(TAB_IDS, async (s) => (await fetchTitleReviews(s)).length);
+  const tabs = TABS.map((t) => ({ id: t.id, label: withCount(t.label, counts[t.id]) }));
+  const reload = () => { list.refetch(); recount(); };
 
   return (
     <Page title="Title reviews" description="Land titles developers have declared. Buyers see a title as verified only after you verify it here.">
-      <TabBar tabs={TABS} active={status} onActivate={setStatus} ariaLabel="Titles by status" divider />
+      <TabBar tabs={tabs} active={status} onActivate={setStatus} ariaLabel="Titles by status" divider />
 
-      {list.loading && !list.data && <Loading label="Loading titles…" />}
-      {!list.loading && list.error && <LoadError error={list.errorValue} what="titles" onRetry={list.refetch} />}
-      {list.data && list.data.length === 0 && (
-        <EmptyState
-          title={status === "pending" ? "Nothing waiting" : "None"}
-          description={status === "pending" ? "Titles developers send for review appear here, oldest first." : "No titles with this status yet."}
-        />
-      )}
-      {list.data && list.data.length > 0 && (
-        <ul className="space-y-3">
-          {list.data.map((title) => <ReviewCard key={`${title.id}-${title.submittedAt}`} title={title} onDecided={list.refetch} />)}
-        </ul>
-      )}
+      <div id={`panel-${status}`} role="tabpanel" aria-labelledby={`tab-${status}`}>
+        {list.loading && !list.data && <Loading label="Loading titles…" />}
+        {!list.loading && list.error && <LoadError error={list.errorValue} what="titles" onRetry={list.refetch} />}
+        {list.data && list.data.length === 0 && (
+          <Card padding="sm">
+            <EmptyState
+              title={status === "pending" ? "Nothing waiting" : "None"}
+              description={status === "pending" ? "Titles developers send for review appear here, oldest first." : "No titles with this status yet."}
+            />
+          </Card>
+        )}
+        {list.data && list.data.length > 0 && (
+          <DisclosureTable columns={COLUMNS} grid={GRID} label="Titles">
+            {list.data.map((title) => (
+              <TitleRow key={`${title.id}-${title.submittedAt}`} title={title} onlyOne={list.data!.length === 1} onDecided={reload} />
+            ))}
+          </DisclosureTable>
+        )}
+      </div>
     </Page>
   );
 }
 
-function ReviewCard({ title, onDecided }: { title: TitleReview; onDecided: () => void }) {
+// One title: a row in the table, opening to its documents and the decision.
+function TitleRow({ title, onlyOne, onDecided }: { title: TitleReview; onlyOne: boolean; onDecided: () => void }) {
   const [decided, setDecided] = useState<TitleReview | null>(null);
   const shown = decided ?? title;
+  const docs = shown.documents.length;
+
+  const cells = [
+    <span className="font-semibold text-[var(--foreground)]">{shown.estateName}</span>,
+    <>
+      <div className="text-sm text-[var(--foreground)]">{shown.companyName ?? "Company not shown"}</div>
+      {shown.estateState && <div className="text-xs text-[var(--muted-foreground)]">{shown.estateState}</div>}
+    </>,
+    <span className="text-sm text-[var(--foreground)]"><span className="lg:hidden text-[var(--muted-foreground)]">Title: </span>{shown.titleType}</span>,
+    <span className="text-sm"><span className="lg:hidden text-[var(--muted-foreground)]">Number: </span><span className={shown.titleNumber ? "font-mono-data text-[var(--foreground)] break-all" : "text-[var(--muted-foreground)]"}>{shown.titleNumber || "Not on file"}</span></span>,
+    <span className="text-sm text-[var(--muted-foreground)]"><span className="lg:hidden">Sent </span>{formatDate(shown.submittedAt)}</span>,
+    <>
+      <StatusBadge {...titleStatusBadge(shown.status)} />
+      <div className="text-[11px] text-[var(--muted-foreground)] mt-1">
+        {shown.status === "verified" ? `${sourceLabel(shown.verificationSource)} · ` : ""}{docs ? `${docs} document${docs === 1 ? "" : "s"}` : "no documents"}
+      </div>
+    </>,
+  ];
 
   return (
-    <ListCard className="space-y-4">
-      <div className="flex flex-wrap items-start gap-3">
-        <div className="flex-1 min-w-[200px]">
-          <div className="font-semibold text-[var(--foreground)]">{shown.estateName}</div>
-          <div className="text-xs text-[var(--muted-foreground)]">
-            {shown.companyName ?? "Company not shown"}{shown.estateState ? ` · ${shown.estateState}` : ""} · sent {formatDate(shown.submittedAt)}
-          </div>
-        </div>
-        <StatusBadge {...titleStatusBadge(shown.status)} />
-      </div>
-
+    <DisclosureRow id={`title-${shown.id}`} grid={GRID} cells={cells} defaultOpen={onlyOne && title.status === "pending"}>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <InfoBox label="Title type">{shown.titleType}</InfoBox>
-        <InfoBox label="Title number"><span className="font-mono-data break-all">{shown.titleNumber || "Not on file"}</span></InfoBox>
+        <InfoBox label="Title number">{shown.titleNumber ? <span className="font-mono-data break-all">{shown.titleNumber}</span> : "Not on file"}</InfoBox>
         <InfoBox label="Issued">{shown.issuedDate ? formatDate(shown.issuedDate) : "Not given"}</InfoBox>
       </div>
 
@@ -99,7 +126,7 @@ function ReviewCard({ title, onDecided }: { title: TitleReview; onDecided: () =>
           <Button variant="link" onClick={onDecided}>Refresh the list</Button>
         </div>
       )}
-    </ListCard>
+    </DisclosureRow>
   );
 }
 
@@ -131,8 +158,8 @@ function Decision({ title, onDecided, onReload }: { title: TitleReview; onDecide
   };
 
   return (
-    <div className="space-y-4 pt-1 border-t border-[var(--border)]">
-      <Alert tone="info" className="mt-4">
+    <div className="space-y-4 pt-4 border-t border-[var(--border)]">
+      <Alert tone="info">
         Before verifying, check that the title number on the document matches the one declared, that the holder is this company (or
         the deed links them), and that the survey plan describes this estate's land.
       </Alert>

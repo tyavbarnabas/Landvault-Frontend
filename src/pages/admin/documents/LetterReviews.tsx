@@ -4,10 +4,15 @@
 // catches most amounts and bank details; this is where a person catches the
 // rest ("five hundred k", an account in words). Shown beside what letters use
 // today, so the change is what gets read.
+//
+// Laid out from the Figma review-queue proposal: the two kinds as tabs with
+// what's waiting counted, and each version a row that opens to the compare
+// view and the decision.
 
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useFetch } from "../../../lib/useFetch";
+import { useTabCounts, withCount } from "../../../lib/useTabCounts";
 import { formatDay } from "../../../lib/formatDate";
 import {
   REVIEW_NOTE_MAX, approveTemplate, approveTerms, fetchTemplateReviews, fetchTermsReviews, isStaleReview, rejectTemplate, rejectTerms,
@@ -18,11 +23,12 @@ import { WordingView } from "../../portal/letters/TemplatesPanel";
 import LoadError from "../../../components/LoadError";
 import StatusBadge, { letterReviewBadge } from "../../../components/StatusBadge";
 import Page, { Loading } from "../../../components/ui/Page";
-import { ListCard } from "../../../components/ui/Card";
+import Card from "../../../components/ui/Card";
 import Alert from "../../../components/ui/Alert";
 import Button from "../../../components/ui/Button";
 import EmptyState from "../../../components/ui/EmptyState";
 import TabBar from "../../../components/ui/Tabs";
+import DisclosureTable, { DisclosureRow } from "../../../components/ui/DisclosureTable";
 import { ErrorText, Field, Select, Textarea, describedBy } from "../../../components/ui/Field";
 
 type Kind = "terms" | "templates";
@@ -35,6 +41,13 @@ const STATUSES: { value: ReviewStatus; label: string }[] = [
   { value: "approved", label: "Approved" },
   { value: "rejected", label: "Changes asked for" },
 ];
+const KIND_IDS = KINDS.map((k) => k.id);
+const STATUS_IDS = STATUSES.map((s) => s.value);
+const countOf = async (kind: Kind, status: ReviewStatus) => (await (kind === "terms" ? fetchTermsReviews(status) : fetchTemplateReviews(status))).length;
+
+const TERMS_COLUMNS = ["Estate", "Company · state", "Version", "Saved", "Status"];
+const TEMPLATE_COLUMNS = ["Company", "Wording", "Version", "Saved", "Status"];
+const GRID = "lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1.6fr)_6rem_7rem_minmax(0,1.2fr)_16px]";
 
 export default function LetterReviews() {
   const [params, setParams] = useSearchParams();
@@ -46,16 +59,22 @@ export default function LetterReviews() {
     setParams({ ...(k !== "terms" ? { kind: k } : {}), ...(s !== "pending" ? { status: s } : {}) }, { replace: true });
   };
 
+  // What's waiting, on the kind tabs; every status of this kind, in the menu.
+  const waiting = useTabCounts(KIND_IDS, (k) => countOf(k, "pending"));
+  const byStatus = useTabCounts(STATUS_IDS, (st) => countOf(kind, st), [kind]);
+  const kinds = KINDS.map((k) => ({ id: k.id, label: withCount(k.label, waiting.counts[k.id]) }));
+  const reload = () => { waiting.refetch(); byStatus.refetch(); };
+
   return (
     <Page title="Letter reviews" description="What developers write into allocation letters. No letter uses a version until you approve it. Look for amounts and bank details: every figure must come from the estate's cost disclosure, and buyers pay only through HomeTrue.">
-      <TabBar tabs={KINDS} active={kind} onActivate={(k) => set({ kind: k })} ariaLabel="What to review" divider />
+      <TabBar tabs={kinds} active={kind} onActivate={(k) => set({ kind: k })} ariaLabel="What to review" divider />
       <div id={`panel-${kind}`} role="tabpanel" aria-labelledby={`tab-${kind}`} className="space-y-4">
         <Field id="review-status" label="Show" className="max-w-xs">
           <Select id="review-status" inputSize="md" value={status} onChange={(e) => set({ status: e.target.value as ReviewStatus })}>
-            {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {STATUSES.map((s) => <option key={s.value} value={s.value}>{withCount(s.label, byStatus.counts[s.value])}</option>)}
           </Select>
         </Field>
-        {kind === "terms" ? <TermsQueue key={status} status={status} /> : <TemplatesQueue key={status} status={status} />}
+        {kind === "terms" ? <TermsQueue key={status} status={status} onDecided={reload} /> : <TemplatesQueue key={status} status={status} onDecided={reload} />}
       </div>
     </Page>
   );
@@ -69,31 +88,37 @@ function emptyText(status: ReviewStatus, what: string): { title: string; descrip
 
 // ─── Estate conditions ───────────────────────────────────────────────────────
 
-function TermsQueue({ status }: { status: ReviewStatus }) {
+function TermsQueue({ status, onDecided }: { status: ReviewStatus; onDecided: () => void }) {
   const list = useFetch(() => fetchTermsReviews(status), [status]);
+  const reload = () => { list.refetch(); onDecided(); };
   if (list.loading && !list.data) return <Loading label="Loading…" />;
   if (list.error) return <LoadError error={list.errorValue} what="the conditions to review" onRetry={list.refetch} />;
-  if (!list.data!.length) return <EmptyState {...emptyText(status, "estate conditions")} />;
-  return <ul className="space-y-3">{list.data!.map((r) => <TermsCard key={r.termsId} review={r} onReload={list.refetch} />)}</ul>;
+  if (!list.data!.length) return <Card padding="sm"><EmptyState {...emptyText(status, "estate conditions")} /></Card>;
+  return (
+    <DisclosureTable columns={TERMS_COLUMNS} grid={GRID} label="Estate conditions">
+      {list.data!.map((r) => <TermsRow key={r.termsId} review={r} onlyOne={list.data!.length === 1} onReload={reload} />)}
+    </DisclosureTable>
+  );
 }
 
-function TermsCard({ review, onReload }: { review: LetterTermsReview; onReload: () => void }) {
+function TermsRow({ review, onlyOne, onReload }: { review: LetterTermsReview; onlyOne: boolean; onReload: () => void }) {
   const [decided, setDecided] = useState<LetterTermsReview | null>(null);
   const [showGenerated, setShowGenerated] = useState(false);
   const r = decided ?? review;
   const approvedSet = new Set(r.approvedClauses ?? []);
+  const cells = [
+    <span className="font-semibold text-[var(--foreground)]">{r.estateName}</span>,
+    <>
+      <div className="text-sm text-[var(--foreground)]">{r.companyName ?? "Company not shown"}</div>
+      {r.estateState && <div className="text-xs text-[var(--muted-foreground)]">{r.estateState}</div>}
+    </>,
+    <span className="text-sm text-[var(--foreground)]"><span className="lg:hidden">Version </span><span className="font-mono-data">{r.version}</span></span>,
+    <span className="text-sm text-[var(--muted-foreground)]"><span className="lg:hidden">Saved </span>{formatDay(r.savedAt)}</span>,
+    <StatusBadge {...letterReviewBadge(r.status)} />,
+  ];
 
   return (
-    <ListCard className="space-y-4">
-      <div className="flex flex-wrap items-start gap-3">
-        <div className="flex-1 min-w-[200px]">
-          <div className="font-semibold text-[var(--foreground)]">{r.estateName}</div>
-          <div className="text-xs text-[var(--muted-foreground)]">
-            {[r.companyName, r.estateState].filter(Boolean).join(" · ")} · version {r.version}, saved {formatDay(r.savedAt)}
-          </div>
-        </div>
-        <StatusBadge {...letterReviewBadge(r.status)} />
-      </div>
+    <DisclosureRow id={`terms-${r.termsId}`} grid={GRID} cells={cells} defaultOpen={onlyOne && review.status === "pending"}>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div>
@@ -138,34 +163,37 @@ function TermsCard({ review, onReload }: { review: LetterTermsReview; onReload: 
         <Decision id={r.termsId} onApprove={(note) => approveTerms(r.termsId, note)} onReject={(note) => rejectTerms(r.termsId, note)} onDecided={setDecided} onReload={onReload} />
       )}
       {decided && <DecidedNote approved={decided.status === "approved"} onReload={onReload} />}
-    </ListCard>
+    </DisclosureRow>
   );
 }
 
 // ─── Letter wording ──────────────────────────────────────────────────────────
 
-function TemplatesQueue({ status }: { status: ReviewStatus }) {
+function TemplatesQueue({ status, onDecided }: { status: ReviewStatus; onDecided: () => void }) {
   const list = useFetch(() => fetchTemplateReviews(status), [status]);
+  const reload = () => { list.refetch(); onDecided(); };
   if (list.loading && !list.data) return <Loading label="Loading…" />;
   if (list.error) return <LoadError error={list.errorValue} what="the wording to review" onRetry={list.refetch} />;
-  if (!list.data!.length) return <EmptyState {...emptyText(status, "letter wordings")} />;
-  return <ul className="space-y-3">{list.data!.map((r) => <TemplateCard key={r.templateId} review={r} onReload={list.refetch} />)}</ul>;
+  if (!list.data!.length) return <Card padding="sm"><EmptyState {...emptyText(status, "letter wordings")} /></Card>;
+  return (
+    <DisclosureTable columns={TEMPLATE_COLUMNS} grid={GRID} label="Letter wording">
+      {list.data!.map((r) => <TemplateRow key={r.templateId} review={r} onlyOne={list.data!.length === 1} onReload={reload} />)}
+    </DisclosureTable>
+  );
 }
 
-function TemplateCard({ review, onReload }: { review: LetterTemplateReview; onReload: () => void }) {
+function TemplateRow({ review, onlyOne, onReload }: { review: LetterTemplateReview; onlyOne: boolean; onReload: () => void }) {
   const [decided, setDecided] = useState<LetterTemplateReview | null>(null);
   const r = decided ?? review;
+  const cells = [
+    <span className="font-semibold text-[var(--foreground)]">{r.companyName ?? "Company not shown"}</span>,
+    <span className="text-sm text-[var(--foreground)]">{r.source === "branch" ? `${r.branchName ?? "A branch"}'s own wording` : "Company wording"}</span>,
+    <span className="text-sm text-[var(--foreground)]"><span className="lg:hidden">Version </span><span className="font-mono-data">{r.version}</span></span>,
+    <span className="text-sm text-[var(--muted-foreground)]"><span className="lg:hidden">Saved </span>{formatDay(r.savedAt)}</span>,
+    <StatusBadge {...letterReviewBadge(r.status)} />,
+  ];
   return (
-    <ListCard className="space-y-4">
-      <div className="flex flex-wrap items-start gap-3">
-        <div className="flex-1 min-w-[200px]">
-          <div className="font-semibold text-[var(--foreground)]">{r.companyName ?? "Company not shown"}</div>
-          <div className="text-xs text-[var(--muted-foreground)]">
-            {r.source === "branch" ? `${r.branchName ?? "A branch"}'s own wording` : "Company wording"} · version {r.version}, saved {formatDay(r.savedAt)}
-          </div>
-        </div>
-        <StatusBadge {...letterReviewBadge(r.status)} />
-      </div>
+    <DisclosureRow id={`template-${r.templateId}`} grid={GRID} cells={cells} defaultOpen={onlyOne && review.status === "pending"}>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div>
           <h3 className="text-xs font-medium text-[var(--muted-foreground)] mb-2">Under review (version {r.version})</h3>
@@ -192,7 +220,7 @@ function TemplateCard({ review, onReload }: { review: LetterTemplateReview; onRe
         <Decision id={r.templateId} onApprove={(note) => approveTemplate(r.templateId, note)} onReject={(note) => rejectTemplate(r.templateId, note)} onDecided={setDecided} onReload={onReload} />
       )}
       {decided && <DecidedNote approved={decided.status === "approved"} onReload={onReload} />}
-    </ListCard>
+    </DisclosureRow>
   );
 }
 
