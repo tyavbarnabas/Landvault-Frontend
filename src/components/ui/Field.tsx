@@ -37,7 +37,7 @@ export function Select({ inputSize = "lg", className, ...rest }: React.SelectHTM
   return <select className={cx(CONTROL, SIZE[inputSize], className)} {...rest} />;
 }
 
-export function Textarea({ inputSize = "md", className, ...rest }: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { inputSize?: InputSize }) {
+export function Textarea({ inputSize = "md", className, ...rest }: React.ComponentProps<"textarea"> & { inputSize?: InputSize }) {
   return <textarea className={cx(CONTROL, SIZE[inputSize], className)} {...rest} />;
 }
 

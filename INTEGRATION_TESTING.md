@@ -65,6 +65,10 @@ to fetch". The dev panel (bottom right) turns red when the origin is wrong.
 - document vault: receipts and allocation letters, downloaded as PDF or one
   stacked JPEG with the bearer token. Read-only: voiding and reissuing are
   mock-only (the demo resale and upgrade flows)
+- public document verification (`/verify/:code`, no login)
+- allocation letter setup (Portal → Letters): letterheads, signatory,
+  signature/logo/seal uploads, letter wording; per estate, its conditions,
+  the preview and the director's approval
 
 **Retired when live**
 - `/estates` plot-grid browse. Real plots have boundaries, not grid positions,

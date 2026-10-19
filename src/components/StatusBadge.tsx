@@ -8,6 +8,7 @@ import type { InvitationStatus, StaffStatus } from "../services/staffService";
 import type { OnboardingRequestStatus } from "../services/onboardingRequestsService";
 import type { BoundaryChangeStatus } from "../services/portalEstatesService";
 import type { TitleStatus } from "../services/estateTitleService";
+import type { VersionReviewStatus } from "../services/lettersService";
 import Badge, { type BadgeVariant } from "./ui/Badge";
 import type { PayoutStatus, RefundStatus, SettlementAccountStatus } from "../services/paymentTypes";
 
@@ -150,4 +151,21 @@ export function titleStatusBadge(status: TitleStatus): { label: string; variant:
     case "rejected": return { label: "Not confirmed", variant: "error" };
     case "pending": return { label: "Waiting for review", variant: "warning" };
   }
+}
+
+// HomeTrue's review of a letter template or an estate's conditions.
+export function letterReviewBadge(status: VersionReviewStatus): { label: string; variant: BadgeVariant } {
+  switch (status) {
+    case "approved": return { label: "Approved by HomeTrue", variant: "success" };
+    case "rejected": return { label: "Changes needed", variant: "error" };
+    case "pending": return { label: "Waiting for HomeTrue", variant: "warning" };
+    case "superseded": return { label: "Replaced before review", variant: "neutral" };
+  }
+}
+
+// Whether an estate's allocation letter is approved — and so whether it can be listed and sold.
+export function letterApprovalBadge(approval: { approved: boolean; approvedAt: string | null; changedSinceApproval: string[] }): { label: string; variant: BadgeVariant } {
+  if (approval.approved) return { label: "Letter approved", variant: "success" };
+  if (approval.changedSinceApproval.length) return { label: "Needs approving again", variant: "warning" };
+  return { label: "Letter not approved", variant: "warning" };
 }

@@ -55,6 +55,8 @@ const CreatePortalPlots = lazy(() => import("./pages/portal/estates/CreatePortal
 const PortalEstateDisclosure = lazy(() => import("./pages/portal/estates/PortalEstateDisclosure"));
 const PortalEstatePhotos = lazy(() => import("./pages/portal/estates/PortalEstatePhotos"));
 const PortalEstateTitle = lazy(() => import("./pages/portal/estates/PortalEstateTitle"));
+const PortalEstateLetter = lazy(() => import("./pages/portal/estates/PortalEstateLetter"));
+const PortalLetters = lazy(() => import("./pages/portal/letters/PortalLetters"));
 const EditPortalEstate = lazy(() => import("./pages/portal/estates/EditPortalEstate"));
 const StateOverride = lazy(() => import("./pages/admin/estates/StateOverride"));
 const AdminPayoutAccounts = lazy(() => import("./pages/admin/payments/PayoutAccounts"));
@@ -283,6 +285,8 @@ function AppRoutes() {
       <Route path="/portal/estates/:estateId/disclosure" element={<PortalPage><PortalEstateDisclosure /></PortalPage>} />
       <Route path="/portal/estates/:estateId/photos" element={<PortalPage><PortalEstatePhotos /></PortalPage>} />
       <Route path="/portal/estates/:estateId/title" element={<PortalPage><PortalEstateTitle /></PortalPage>} />
+      <Route path="/portal/estates/:estateId/letter" element={<PortalPage><PermissionGate anyOf={["portal.documents.view"]}><PortalEstateLetter /></PermissionGate></PortalPage>} />
+      <Route path="/portal/letters" element={<PortalPage><PermissionGate anyOf={["portal.documents.view"]}><PortalLetters /></PermissionGate></PortalPage>} />
       <Route path="/portal/estates/:estateId/edit" element={<PortalPage><EditPortalEstate /></PortalPage>} />
       <Route path="/portal/branches" element={<PortalPage><PermissionGate anyOf={["portal.branches.manage"]}><PortalBranches /></PermissionGate></PortalPage>} />
       <Route path="/portal/branches/new" element={<PortalPage><PermissionGate anyOf={["portal.branches.manage"]}><NewPortalBranch /></PermissionGate></PortalPage>} />

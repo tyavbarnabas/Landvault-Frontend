@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useApp } from "../contexts/AppContext"
-import { TITLE_REVIEW_PERMISSION, isBuyer, isPlatformStaff, isPortalStaff } from "../services/authService";
+import { DOCUMENTS_VIEW_PERMISSION, TITLE_REVIEW_PERMISSION, isBuyer, isPlatformStaff, isPortalStaff } from "../services/authService";
 import ErrorBoundary from "./ErrorBoundary"
 import { isLive } from "../lib/backends";
 
@@ -55,6 +55,7 @@ const NAV_SECTIONS = [
       { path: "/portal/estates", label: "Estates", icon: MapIcon, permission: "portal.estates.view" },
       { path: "/portal/staff", label: "Staff", icon: UsersIcon, permission: ["portal.staff.invite", "portal.staff.request"] },
       { path: "/portal/branches", label: "Branches", icon: BriefcaseIcon, permission: "portal.branches.manage" },
+      { path: "/portal/letters", label: "Letters", icon: LetterIcon, permission: DOCUMENTS_VIEW_PERMISSION },
       { path: "/portal/finance", label: "Finance", icon: TagIcon, permission: "portal.payments.verify" },
       { path: "/portal/payout-account", label: "Payout account", icon: FolderIcon, permission: "portal.settlement.manage" },
     ],
@@ -151,6 +152,15 @@ function BriefcaseIcon() {
     >
       <rect x="2" y="7" width="20" height="14" rx="2" />
       <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+    </svg>
+  )
+}
+// A sheet with a folded corner and lines: a letter.
+function LetterIcon() {
+  return (
+    <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" />
+      <path d="M14 3v5h5M9 13h6M9 17h6" />
     </svg>
   )
 }

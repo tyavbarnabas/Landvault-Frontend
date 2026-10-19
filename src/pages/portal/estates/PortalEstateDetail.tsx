@@ -14,13 +14,16 @@ import { Field, inputClass } from "../../../components/portal/formParts";
 import { canManageEstates } from "../../../services/authService";
 import { useApp } from "../../../contexts/AppContext";
 import PublicationPanel from "../../../components/portal/PublicationPanel";
-import StatusBadge, { boundaryChangeBadge, portalEstateStatusBadge, titleStatusBadge } from "../../../components/StatusBadge";
+import StatusBadge, { boundaryChangeBadge, letterApprovalBadge, portalEstateStatusBadge, titleStatusBadge } from "../../../components/StatusBadge";
 import EstateBoundaryMap from "../../../components/map/EstateBoundaryMap";
 import { usePortalScope } from "../usePortalScope";
 import { ownershipLabel, useBranchNames } from "../useBranchNames";
 import { ReadOnlyNotice } from "./PortalEstateInventory";
 import { PHOTO_LIMIT, fetchEstatePhotos } from "../../../services/estatePhotosService";
 import { fetchEstateTitle } from "../../../services/estateTitleService";
+import { fetchLetterApproval } from "../../../services/lettersService";
+import { DOCUMENTS_VIEW_PERMISSION } from "../../../services/authService";
+import { describeChanges } from "./PortalEstateLetter";
 
 export default function PortalEstateDetail() {
   const { estateId } = useParams<{ estateId: string }>();
@@ -176,6 +179,8 @@ export default function PortalEstateDetail() {
       </section>
 
       {scope && <TitleSummary estateId={estate.id} scope={scope} canManage={canManage} />}
+
+      {scope && user?.permissions?.includes(DOCUMENTS_VIEW_PERMISSION) && <LetterSummary estateId={estate.id} scope={scope} />}
 
       <section>
         <h2 className="text-sm font-semibold text-[var(--foreground)] mb-3">Features</h2>
@@ -469,6 +474,36 @@ function TitleSummary({ estateId, scope, canManage }: { estateId: string; scope:
         <p className="text-sm text-[var(--muted-foreground)]">
           No title recorded. Buyers see "Title not recorded" until you add one and upload its documents for HomeTrue to check.
         </p>
+      )}
+    </section>
+  );
+}
+
+// Whether buyers' allocation letters are approved; the setup is its own page.
+function LetterSummary({ estateId, scope }: { estateId: string; scope: PortalScope }) {
+  const approval = useFetch(() => fetchLetterApproval(estateId, scope), [estateId, scope.tenantId, scope.branchId]);
+  const a = approval.data;
+  return (
+    <section className="mb-8">
+      <div className="flex items-center justify-between gap-4 mb-3">
+        <h2 className="text-sm font-semibold text-[var(--foreground)]">Allocation letter</h2>
+        <Link to={`/portal/estates/${estateId}/letter`} className="text-xs font-semibold text-[var(--accent)] hover:underline">Conditions, preview and approval →</Link>
+      </div>
+      {approval.loading && !a ? (
+        <p className="text-sm text-[var(--muted-foreground)]">Loading…</p>
+      ) : approval.error || !a ? (
+        <p className="text-sm text-[var(--muted-foreground)]">The letter's status couldn't be loaded.</p>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          <StatusBadge {...letterApprovalBadge(a)} />
+          <span className="text-sm text-[var(--muted-foreground)]">
+            {a.approved
+              ? "Buyers get their letter when finance verifies the sale."
+              : a.changedSinceApproval.length
+                ? `${describeChanges(a.changedSinceApproval)} changed. Until it's approved again the estate can't be listed or sold.`
+                : "Until it's approved the estate can't be listed and finance can't allocate plots."}
+          </span>
+        </div>
       )}
     </section>
   );

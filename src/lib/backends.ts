@@ -71,6 +71,9 @@ export const SERVICES = {
   // Receipts and allocation letters, and the public verify page. Read-only:
   // the backend issues them; voiding/reissuing isn't built (mock flows only).
   documents: { label: "Document vault & verification", status: "live", paths: ["/api/documents"] },
+  // The developer's letter setup (letterheads, wording, each estate's
+  // conditions, preview and approval) and HomeTrue's reviews of it.
+  letters: { label: "Allocation letter setup & reviews", status: "live", paths: ["/api/portal/letterheads", "/api/portal/letter-templates", "/api/admin/letter-terms-reviews", "/api/admin/letter-template-reviews"] },
   // Dev-only test routes (backend dev profile, Super Admin). Real uploads go
   // through each feature's own routes, via src/lib/uploadFile.ts.
   devStorage: { label: "File uploads (dev test routes)", status: "live", paths: ["/api/dev/storage"] },
@@ -183,6 +186,7 @@ export function serviceForPath(path: string): ServiceKey | null {
   if (best?.key === "portalEstates") {
     if (/\/(price-tiers|blocks|plots)(\/|$|\?)/.test(path)) return "portalInventory";
     if (/\/(fees|refund-terms|default-terms)(\/|$|\?)/.test(path)) return "estateDisclosure";
+    if (/\/letter-(terms|approval|preview)(\/|$|\?)/.test(path)) return "letters";
   }
   return best?.key ?? null;
 }
