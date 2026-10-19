@@ -26,6 +26,7 @@ import { AlertIcon, BuildingIcon, CheckIcon, ChevronRightIcon, FileCheckIcon, Ma
 import ReceiptDownload from "../../components/documents/ReceiptDownload";
 import PlotStatusBadge from "../../components/portfolio/PlotStatusBadge";
 import ArrearsBanner from "../../components/portfolio/ArrearsBanner";
+import { plotTitleStatus, titleState } from "../../lib/titleState";
 import PaymentSchedule from "../../components/portfolio/PaymentSchedule";
 import PaymentMethodSelector from "../../components/checkout/PaymentMethodSelector";
 import VerificationProgress, { type VerificationStageStatus } from "../../components/checkout/VerificationProgress";
@@ -102,8 +103,7 @@ export default function PlotView() {
   // With nothing to pay and no actions (every live plot today), the overview
   // takes the full width, like the cards above it.
   const sidebar = canPay || hasActions;
-  // Mock plots predate titleStatus and carry only titleVerified.
-  const titleStatus = plot.titleStatus ?? (plot.titleVerified ? "verified" : null);
+  const titleStatus = plotTitleStatus(plot);
   const purchasePayment = plot.payments[0];
 
   const resetPaymentForm = () => {
@@ -524,15 +524,6 @@ export default function PlotView() {
       </div>
     </div>
   );
-}
-
-// What HomeTrue's review of the title said. Rejected reads "not confirmed":
-// HomeTrue looked and couldn't confirm it.
-function titleState(titleType: OwnedPlot["titleType"], status: OwnedPlot["titleStatus"]) {
-  if (!titleType) return null;
-  if (status === "verified") return { tone: "success" as const, chip: "bg-[var(--success-surface)] text-[var(--success-text)]", badge: `${titleType} verified`, head: `${titleType} verified by HomeTrue`, body: "HomeTrue checked the title documents." };
-  if (status === "rejected") return { tone: "error" as const, chip: "bg-[var(--error-surface)] text-[var(--error-text)]", badge: "Title not confirmed", head: `${titleType} — not confirmed`, body: "HomeTrue reviewed the title documents and couldn't confirm them. Ask the developer what's outstanding." };
-  return { tone: "warning" as const, chip: "bg-[var(--warning-surface)] text-[var(--warning-text)]", badge: `${titleType} declared`, head: `${titleType} — declared by the developer`, body: "HomeTrue is checking the title documents." };
 }
 
 function Section({ title, subtitle, children }: { title?: string; subtitle?: string; children: React.ReactNode }) {

@@ -6,13 +6,15 @@ import TextLink from "./TextLink";
 
 const WIDTH = { sm: "max-w-md", md: "max-w-xl", lg: "max-w-3xl", xl: "max-w-5xl" } as const;
 
-export default function Page({ title, description, eyebrow, back, width = "xl", titleSize = "lg", className, children }: {
+export default function Page({ title, description, eyebrow, back, actions, width = "xl", titleSize = "lg", className, children }: {
   title: React.ReactNode;
   description?: React.ReactNode;
   // Small line above the title, e.g. a reference number.
   eyebrow?: React.ReactNode;
   // "← Parent page" link above the title, for sub-pages.
   back?: { to: string; label: string };
+  // Buttons on the title's right (wrapping under it on a phone).
+  actions?: React.ReactNode;
   width?: keyof typeof WIDTH;
   titleSize?: "md" | "lg";
   className?: string;
@@ -23,8 +25,13 @@ export default function Page({ title, description, eyebrow, back, width = "xl", 
       <header className="mb-6">
         {back && <TextLink to={back.to} muted className="inline-block text-sm mb-2">← {back.label}</TextLink>}
         {eyebrow && <div className="text-xs text-[var(--muted-foreground)] mb-1 font-mono-data">{eyebrow}</div>}
-        <h1 className={cx("font-display text-[var(--foreground)]", titleSize === "lg" ? "text-3xl mb-1" : "text-2xl")}>{title}</h1>
-        {description && <p className="text-sm text-[var(--muted-foreground)]">{description}</p>}
+        <div className={actions ? "flex flex-wrap items-end justify-between gap-4" : undefined}>
+          <div>
+            <h1 className={cx("font-display text-[var(--foreground)]", titleSize === "lg" ? "text-3xl mb-1" : "text-2xl")}>{title}</h1>
+            {description && <p className="text-sm text-[var(--muted-foreground)]">{description}</p>}
+          </div>
+          {actions}
+        </div>
       </header>
       {children}
     </div>

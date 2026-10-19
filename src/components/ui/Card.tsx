@@ -6,7 +6,7 @@ import { Link } from "react-router-dom";
 import { cx } from "./cx";
 import { TONE_FILL, type Tone } from "./tones";
 
-const PADDING = { sm: "p-3", md: "p-4", lg: "p-5" } as const;
+const PADDING = { none: "", sm: "p-3", md: "p-4", lg: "p-5" } as const;
 
 export interface CardProps extends React.HTMLAttributes<HTMLElement> {
   as?: "div" | "li" | "section" | "article" | "dl";
