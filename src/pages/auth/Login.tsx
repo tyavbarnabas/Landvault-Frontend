@@ -1,6 +1,17 @@
+// Sign in, from the Figma "Sign-in & landing" proposal: email and password,
+// then — only when the backend asks — the authenticator code in six boxes,
+// with the recovery-code route kept in view.
+
 import { useState } from "react";
 import PasswordInput from "../../components/auth/PasswordInput";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import CodeInput from "../../components/auth/CodeInput";
+import AuthShell, { AuthHeading } from "../../components/auth/AuthShell";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import Alert from "../../components/ui/Alert";
+import Button from "../../components/ui/Button";
+import TextLink from "../../components/ui/TextLink";
+import { ErrorText, Field, Input } from "../../components/ui/Field";
+import { LockIcon } from "../../components/icons";
 import { useApp } from "../../contexts/AppContext";
 import { completePendingWishlistIntent } from "../../lib/pendingWishlist";
 import { consumePendingIntent } from "../../lib/pendingIntent";
@@ -124,82 +135,76 @@ export default function Login() {
 
   return (
     <AuthShell>
-      <div className="w-full max-w-sm mx-auto">
-        <h1 className="font-display text-3xl text-[var(--foreground)] mb-1">Sign in</h1>
-        <p className="text-[var(--muted-foreground)] text-sm mb-8">
-          New here? <Link to="/register" className="text-[var(--accent)] hover:underline">Create an account</Link>
-        </p>
+      {step === "credentials" ? (
+        <>
+          <AuthHeading title="Sign in">
+            New to HomeTrue? <TextLink to="/register" className="font-medium">Create an account</TextLink>
+          </AuthHeading>
 
+          {/* Why the last session ended — a suspension, or a session that
+              expired — said once, then cleared on the next sign-in. */}
+          {signOutNotice && (
+            <Alert role="status" className="mb-5 flex items-start justify-between gap-3">
+              <span>{signOutNotice}</span>
+              <Button variant="linkMuted" onClick={clearSignOutNotice} className="text-xs shrink-0">Dismiss</Button>
+            </Alert>
+          )}
 
-        {/* Why the last session ended — a suspension, or a session that
-            expired — said once, then cleared on the next sign-in. */}
-        {signOutNotice && (
-          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-4" role="status">
-            {signOutNotice}{" "}
-            <button type="button" onClick={clearSignOutNotice} className="underline text-xs">Dismiss</button>
-          </p>
-        )}
-
-        {step === "credentials" ? (
-          <form onSubmit={handleCredentials} className="space-y-4">
-            <Field label="Email" type="email" value={email} onChange={setEmail} placeholder="emeka@example.com" />
-            <div>
-              <label htmlFor="login-password" className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Password</label>
-              <PasswordInput id="login-password" value={password} onChange={setPassword} autoComplete="current-password" />
-            </div>
-            {error && <p className="text-red-600 text-sm">{error}</p>}
-            <div className="text-right">
-              <Link to="/forgot-password" className="text-xs text-[var(--muted-foreground)] hover:text-[var(--accent)]">Forgot password?</Link>
-            </div>
-            <button type="submit" disabled={loading} className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium disabled:opacity-60 hover:opacity-90 transition-opacity">
-              {loading ? "Signing in…" : "Sign in"}
-            </button>
+          <form onSubmit={handleCredentials} className="space-y-4" noValidate>
+            <Field id="login-email" label="Email">
+              <Input id="login-email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="emeka@example.com" />
+            </Field>
+            <Field id="login-password" label="Password"
+              hint={<TextLink to="/forgot-password" muted>Forgot password? Reset it by email</TextLink>}>
+              <PasswordInput id="login-password" value={password} onChange={setPassword} autoComplete="current-password" describedBy="login-password-hint" />
+            </Field>
+            {error && <ErrorText>{error}</ErrorText>}
+            <Button type="submit" size="lg" fullWidth disabled={loading}>{loading ? "Signing in…" : "Sign in"}</Button>
           </form>
-        ) : (
-          <form onSubmit={handleChallenge} className="space-y-4">
-            <div className="bg-[var(--secondary)] rounded-lg p-4 text-sm text-[var(--muted-foreground)]">
-              {usingRecoveryCode
-                ? "Enter one of the recovery codes you saved when you turned on two-factor authentication. Each code works once."
-                : "Enter the 6-digit code from your authenticator app to finish signing in."}
-            </div>
 
-            <Field
-              label={usingRecoveryCode ? "Recovery code" : "Authenticator code"}
-              type="text"
-              value={code}
-              onChange={setCode}
-              placeholder={usingRecoveryCode ? "xxxx-xxxx" : "000000"}
-              maxLength={usingRecoveryCode ? 12 : 6}
-            />
+          <p className="mt-6 flex gap-2.5 rounded-lg bg-[var(--secondary)] p-3 text-xs text-[var(--secondary-foreground)]">
+            <span className="mt-0.5 shrink-0"><LockIcon size={14} /></span>
+            If your account uses two-factor authentication, we'll ask for your code next. Developer staff sign in here too — your portal opens automatically.
+          </p>
+        </>
+      ) : (
+        <>
+          <AuthHeading title={usingRecoveryCode ? "Use a recovery code" : "Enter your code"}>
+            {usingRecoveryCode
+              ? "Enter one of the recovery codes you saved when you turned on two-factor authentication. Each code works once."
+              : "Open your authenticator app and enter the 6-digit code for HomeTrue."}
+          </AuthHeading>
 
-            {error && <p className={`text-sm ${lockedOut ? "text-amber-700" : "text-red-600"}`}>{error}</p>}
+          <form onSubmit={handleChallenge} className="space-y-4" noValidate>
+            {usingRecoveryCode ? (
+              <Field id="login-code" label="Recovery code">
+                <Input id="login-code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="xxxx-xxxx" maxLength={12} autoComplete="off" kind="code" />
+              </Field>
+            ) : (
+              <Field id="login-code" label="Authenticator code">
+                <CodeInput id="login-code" value={code} onChange={setCode} invalid={!!error && !lockedOut} autoFocus />
+              </Field>
+            )}
 
-            <button type="submit" disabled={loading || lockedOut} className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium disabled:opacity-60 hover:opacity-90 transition-opacity">
-              {loading ? "Verifying…" : "Verify & sign in"}
-            </button>
+            {error && (lockedOut ? <Alert role="alert">{error}</Alert> : <ErrorText>{error}</ErrorText>)}
+
+            <Button type="submit" size="lg" fullWidth disabled={loading || lockedOut}>{loading ? "Verifying…" : "Verify and sign in"}</Button>
 
             {/* Discoverable on purpose: someone reaching for this has lost
                 their phone and is already having a bad day. */}
-            <button
-              type="button"
-              onClick={() => { setUsingRecoveryCode((v) => !v); setCode(""); setError(""); }}
-              className="w-full py-2 text-sm text-[var(--accent)] hover:underline"
-            >
-              {usingRecoveryCode ? "Use my authenticator app instead" : "I've lost my phone — use a recovery code"}
-            </button>
-
-            <button type="button" onClick={restart} className="w-full py-2 text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
-              ← Start again
-            </button>
+            <div className="flex flex-col items-start gap-3 pt-1">
+              <Button variant="link" className="font-medium" onClick={() => { setUsingRecoveryCode((v) => !v); setCode(""); setError(""); }}>
+                {usingRecoveryCode ? "Use my authenticator app instead" : "Lost your phone? Use a recovery code"}
+              </Button>
+              <Button variant="linkMuted" onClick={restart}>← Use a different account</Button>
+            </div>
 
             {!isLive("auth") && (
-              <p className="text-xs text-[var(--muted-foreground)] text-center">
-                Demo mode: the authenticator code is {MOCK_DEMO_CODES.totp}.
-              </p>
+              <p className="text-xs text-[var(--muted-foreground)]">Demo mode: the authenticator code is {MOCK_DEMO_CODES.totp}.</p>
             )}
           </form>
-        )}
-      </div>
+        </>
+      )}
     </AuthShell>
   );
 }
@@ -219,51 +224,4 @@ function messageForLoginError(error: unknown): string {
     default:
       return "Invalid email or password.";
   }
-}
-
-function Field({ label, type, value, onChange, placeholder, maxLength }: { label: string; type: string; value: string; onChange: (v: string) => void; placeholder: string; maxLength?: number }) {
-  return (
-    <div>
-      <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">{label}</label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        maxLength={maxLength}
-        className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]"
-      />
-    </div>
-  );
-}
-
-export function AuthShell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="min-h-full grid lg:grid-cols-2">
-      {/* Form side */}
-      <div className="flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-sm">
-          <Link to="/" className="flex items-center gap-2 mb-10">
-            <span className="font-display text-xl text-[var(--foreground)]">HomeTrue</span>
-          </Link>
-          {children}
-        </div>
-      </div>
-
-      {/* Image side */}
-      <div className="hidden lg:block relative bg-[var(--primary)] overflow-hidden">
-        <img
-          src="https://images.unsplash.com/photo-1486325212027-8081e485255e?w=900&h=1200&fit=crop&auto=format"
-          alt="Aerial view of an estate"
-          className="w-full h-full object-cover opacity-40"
-        />
-        <div className="absolute inset-0 flex flex-col justify-end p-12">
-          <div className="text-white">
-            <p className="font-display text-2xl leading-relaxed mb-3">Verified titles. Live plot maps. One record, start to finish.</p>
-            <p className="text-white/60 text-sm">Every reservation, payment, and document is tracked from allocation through to title transfer.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
 }

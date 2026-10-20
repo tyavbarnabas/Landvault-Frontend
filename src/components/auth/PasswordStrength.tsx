@@ -3,11 +3,12 @@
 // typing, not from an error after submitting.
 
 import type { PasswordAssessment } from "../../lib/passwordPolicy";
+import { CheckIcon } from "../icons";
 
 const METER = {
-  weak: { label: "Weak", filled: 1, color: "bg-red-500", text: "text-red-700" },
-  fair: { label: "Fair", filled: 2, color: "bg-amber-500", text: "text-amber-800" },
-  strong: { label: "Strong", filled: 3, color: "bg-emerald-600", text: "text-emerald-700" },
+  weak: { label: "Weak", filled: 1, color: "bg-[var(--error)]", text: "text-[var(--error-text)]" },
+  fair: { label: "Fair", filled: 2, color: "bg-[var(--warning)]", text: "text-[var(--warning-text)]" },
+  strong: { label: "Strong", filled: 3, color: "bg-[var(--success)]", text: "text-[var(--success-text)]" },
 } as const;
 
 export default function PasswordStrength({ id, assessment, started }: { id: string; assessment: PasswordAssessment; started: boolean }) {
@@ -26,8 +27,8 @@ export default function PasswordStrength({ id, assessment, started }: { id: stri
       )}
       <ul className="space-y-0.5">
         {assessment.checks.map((c) => (
-          <li key={c.id} className={`text-xs flex items-center gap-1.5 ${c.met ? "text-emerald-700" : "text-[var(--muted-foreground)]"}`}>
-            <span aria-hidden="true" className="w-3 text-center">{c.met ? "✓" : "•"}</span>
+          <li key={c.id} className={`text-xs flex items-center gap-1.5 ${c.met ? "text-[var(--success-text)]" : "text-[var(--muted-foreground)]"}`}>
+            <span aria-hidden="true" className="w-3 flex justify-center">{c.met ? <CheckIcon size={12} /> : "•"}</span>
             {c.label}
             <span className="sr-only">{c.met ? " — done" : " — not yet"}</span>
           </li>

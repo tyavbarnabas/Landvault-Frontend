@@ -5,11 +5,13 @@
 // blocking would strand the bootstrapped Super Admin, who cannot set up 2FA
 // without signing in first. So this screen is somewhere the user is SENT, and
 // they can leave it — the requirement is met by finishing, not by trapping them.
+// Laid out from the Figma "Sign-in & landing" proposal.
 
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
 import { landingRouteFor } from "../../services/authService";
 import TwoFactorSetup from "../../components/auth/TwoFactorSetup";
+import Page from "../../components/ui/Page";
 
 export default function TwoFactorSetupPage() {
   const navigate = useNavigate();
@@ -17,14 +19,13 @@ export default function TwoFactorSetupPage() {
   const home = landingRouteFor(user);
 
   return (
-    <div className="p-6 max-w-lg mx-auto">
-      <h1 className="font-display text-3xl text-[var(--foreground)] mb-1">Set up two-factor authentication</h1>
-      <p className="text-sm text-[var(--muted-foreground)] mb-6">
-        {user?.mustSetUpTwoFa
-          ? "Your account has platform-wide access, so it needs a second factor as well as a password."
-          : "Add a second step to signing in, so your password alone isn't enough."}
-      </p>
-
+    <Page
+      width="sm"
+      title="Set up two-factor authentication"
+      description={user?.mustSetUpTwoFa
+        ? "Your account has platform-wide access, so it needs a code as well as a password."
+        : "Add a second step to signing in, so your password alone isn't enough."}
+    >
       <TwoFactorSetup onEnabled={() => navigate(home)} onCancel={() => navigate(home)} />
 
       {user?.mustSetUpTwoFa && (
@@ -32,6 +33,6 @@ export default function TwoFactorSetupPage() {
           You can carry on without finishing this for now, but you'll be brought back here next time you sign in.
         </p>
       )}
-    </div>
+    </Page>
   );
 }

@@ -204,7 +204,7 @@ function AppRoutes() {
   return (
     <Routes>
       {/* Public */}
-      <Route path="/" element={<Landing />} />
+      <Route path="/" element={<MarketplaceLayout><Landing /></MarketplaceLayout>} />
       <Route path="/login" element={<Login />} />
       <Route path="/list-your-company" element={<Suspense fallback={<PageLoading />}><ListYourCompany /></Suspense>} />
       <Route path="/register" element={<Register />} />

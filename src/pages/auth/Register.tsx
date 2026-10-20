@@ -1,8 +1,20 @@
+// Create an account, from the Figma "Sign-in & landing" proposal: labelled
+// steps (two live — your details, where you're based — and the demo's email
+// code as a third), the password rules ticking off as you type, and Back
+// beside the final button.
+
 import { useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
 import type { Currency } from "../../data/mockData";
-import { AuthShell } from "./Login";
+import AuthShell, { AuthHeading } from "../../components/auth/AuthShell";
+import CodeInput from "../../components/auth/CodeInput";
+import Alert from "../../components/ui/Alert";
+import Button from "../../components/ui/Button";
+import TextLink from "../../components/ui/TextLink";
+import { ErrorText, Field, Input, Select } from "../../components/ui/Field";
+import { cx } from "../../components/ui/cx";
+import { CheckIcon } from "../../components/icons";
 import { completePendingWishlistIntent } from "../../lib/pendingWishlist";
 import { consumePendingIntent } from "../../lib/pendingIntent";
 import { isLive } from "../../lib/backends";
@@ -96,61 +108,66 @@ export default function Register() {
       }
   };
 
+  const steps = STEPS.filter((st) => !LIVE || st.id !== "otp");
+  const current = steps.findIndex((st) => st.id === step);
+
   return (
     <AuthShell>
-      <h1 className="font-display text-3xl text-[var(--foreground)] mb-1">Create account</h1>
-      <p className="text-[var(--muted-foreground)] text-sm mb-8">
-        Already registered? <Link to="/login" className="text-[var(--accent)] hover:underline">Sign in</Link>
-      </p>
+      <AuthHeading title={step === "details" ? "Create your account" : step === "country" ? "Where are you based?" : "Confirm your email"}>
+        {step === "details" && <>Already have one? <TextLink to="/login" className="font-medium">Sign in</TextLink></>}
+        {step === "country" && "So we can show prices in a currency you know, and the right identity check when you buy."}
+        {step === "otp" && <>A 6-digit code was sent to <span className="font-medium text-[var(--foreground)]">{form.email}</span>. Enter it to confirm your account.</>}
+      </AuthHeading>
 
-      {/* Progress */}
-      <div className="flex gap-1.5 mb-8">
-        {(["details", "country", "otp"] as Step[]).map((s, i) => (
-          <div key={s} className={`h-1 flex-1 rounded-full transition-colors ${i <= ["details", "country", "otp"].indexOf(step) ? "bg-[var(--primary)]" : "bg-[var(--border)]"}`} />
+      <ol className="flex items-center gap-3 mb-7" aria-label="Sign-up steps">
+        {steps.map((st, i) => (
+          <li key={st.id} className="flex items-center gap-3" aria-current={i === current ? "step" : undefined}>
+            {i > 0 && <span className="w-6 sm:w-10 h-px bg-[var(--border)]" aria-hidden="true" />}
+            <span className="flex items-center gap-2">
+              <span className={cx("w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold",
+                i <= current ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : "bg-[var(--muted)] text-[var(--muted-foreground)]")}>
+                {i < current ? <CheckIcon size={12} /> : i + 1}
+              </span>
+              {/* Three steps (demo) only fit with the current one named. */}
+              <span className={cx("text-sm whitespace-nowrap", i === current ? "font-semibold text-[var(--foreground)]" : cx("text-[var(--muted-foreground)] hidden", steps.length === 2 && "sm:inline"))}>{st.label}</span>
+            </span>
+          </li>
         ))}
-      </div>
+      </ol>
 
       {step === "details" && (
-        <form onSubmit={handleDetails} className="space-y-4">
+        <form onSubmit={handleDetails} className="space-y-4" noValidate>
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">First name</label>
-              <input value={form.firstName} onChange={set("firstName")} placeholder="Emeka" className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Last name</label>
-              <input value={form.lastName} onChange={set("lastName")} placeholder="Okonkwo" className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm" />
-            </div>
+            <Field id="reg-first" label="First name">
+              <Input id="reg-first" autoComplete="given-name" value={form.firstName} onChange={set("firstName")} placeholder="Emeka" />
+            </Field>
+            <Field id="reg-last" label="Last name">
+              <Input id="reg-last" autoComplete="family-name" value={form.lastName} onChange={set("lastName")} placeholder="Okonkwo" />
+            </Field>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Email address</label>
-            <input type="email" value={form.email} onChange={set("email")} placeholder="emeka@example.com" className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">{LIVE ? "Phone" : "Phone (optional)"}</label>
-            <input value={form.phone} onChange={set("phone")} placeholder="+44 7700 900123" className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm" />
-          </div>
-          <div>
-            <label htmlFor="reg-password" className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Password</label>
+          <Field id="reg-email" label="Email">
+            <Input id="reg-email" type="email" autoComplete="email" value={form.email} onChange={set("email")} placeholder="emeka@example.com" />
+          </Field>
+          <Field id="reg-phone" label={LIVE ? "Phone" : "Phone (optional)"} hint="With your country code. Used only about your purchases.">
+            <Input id="reg-phone" type="tel" autoComplete="tel" value={form.phone} onChange={set("phone")} placeholder="+234 803 000 0000" aria-describedby="reg-phone-hint" />
+          </Field>
+          <Field id="reg-password" label="Password">
             {/* No confirm field: the eye lets you check what you typed, and a
                 mistyped password is recoverable with "Forgot password". */}
             <PasswordInput id="reg-password" value={form.password} onChange={(v) => setForm((f) => ({ ...f, password: v }))}
               autoComplete="new-password" placeholder="Choose a strong password" describedBy="reg-password-guide" />
             <PasswordStrength id="reg-password-guide" assessment={assessPassword(form.password, form)} started={form.password.length > 0} />
-          </div>
-          {error && <p className="text-red-600 text-sm">{error}</p>}
-          <button type="submit" className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium hover:opacity-90 transition-opacity">
-            Continue
-          </button>
+          </Field>
+          {error && <ErrorText>{error}</ErrorText>}
+          <Button type="submit" size="lg" fullWidth>Continue</Button>
+          <p className="text-xs text-[var(--muted-foreground)]">No documents needed now. HomeTrue checks your identity only when you buy.</p>
         </form>
       )}
 
       {step === "country" && (
-        <form onSubmit={handleCountry} className="space-y-4">
-          <p className="text-sm text-[var(--muted-foreground)]">Tell us where you're based so we can show the right pricing and onboarding path.</p>
-          <div>
-            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Country of residence</label>
-            <select value={form.country} onChange={set("country")} className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm">
+        <form onSubmit={handleCountry} className="space-y-4" noValidate>
+          <Field id="reg-country" label="Country you live in">
+            <Select id="reg-country" autoComplete="country" value={form.country} onChange={set("country")}>
               <option value="NG">Nigeria</option>
               <option value="GB">United Kingdom</option>
               <option value="US">United States</option>
@@ -159,46 +176,46 @@ export default function Register() {
               <option value="ZA">South Africa</option>
               {/* The backend takes a two-letter country code only. */}
               {!LIVE && <option value="OTHER">Other</option>}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Display currency</label>
-            <select value={form.currency} onChange={set("currency")} className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm">
-              <option value="NGN">NGN — Nigerian Naira (₦)</option>
-              <option value="USD">USD — US Dollar ($)</option>
-              <option value="GBP">GBP — British Pound (£)</option>
+            </Select>
+          </Field>
+          <Field id="reg-currency" label="Show prices alongside naira in" hint="Estates price in naira. This adds an approximate amount beside it.">
+            <Select id="reg-currency" value={form.currency} onChange={set("currency")} aria-describedby="reg-currency-hint">
+              <option value="NGN">NGN — Nigerian naira (₦)</option>
+              <option value="USD">USD — US dollar ($)</option>
+              <option value="GBP">GBP — British pound (£)</option>
               <option value="EUR">EUR — Euro (€)</option>
-            </select>
-          </div>
+            </Select>
+          </Field>
           {form.country !== "NG" && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
-              Diaspora path selected. You'll verify with an international passport, and can pay in your chosen currency.
-            </div>
+            <Alert tone="info">Buying from outside Nigeria: you'll verify with your international passport when you buy. Payments are made through HomeTrue.</Alert>
           )}
-          <button type="submit" disabled={loading} className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium disabled:opacity-60 hover:opacity-90 transition-opacity">
-            {LIVE ? (loading ? "Creating account…" : "Create account") : (loading ? "Sending code…" : "Send verification code")}
-          </button>
-          {LIVE && error && <p className="text-red-600 text-sm">{error}</p>}
-          <button type="button" onClick={() => setStep("details")} className="w-full py-2 text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]">← Back</button>
+          {LIVE && error && <ErrorText>{error}</ErrorText>}
+          <div className="flex gap-3">
+            <Button size="lg" variant="secondary" onClick={() => setStep("details")}>Back</Button>
+            <Button type="submit" size="lg" className="flex-1" disabled={loading}>
+              {LIVE ? (loading ? "Creating account…" : "Create account") : (loading ? "Sending code…" : "Send verification code")}
+            </Button>
+          </div>
         </form>
       )}
 
       {step === "otp" && (
-        <form onSubmit={handleOtp} className="space-y-4">
-          <div className="bg-[var(--secondary)] rounded-lg p-4 text-sm text-[var(--muted-foreground)]">
-            A 6-digit code was sent to <span className="font-medium text-[var(--foreground)]">{form.email}</span>. Enter it to confirm your account.
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Verification code</label>
-            <input value={otp} onChange={(e) => setOtp(e.target.value)} placeholder="000000" maxLength={6} className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm font-mono-data tracking-widest text-center text-lg" />
-          </div>
-          {error && <p className="text-red-600 text-sm">{error}</p>}
-          <button type="submit" disabled={loading} className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium disabled:opacity-60 hover:opacity-90 transition-opacity">
-            {loading ? "Creating account…" : "Confirm & create account"}
-          </button>
-          <p className="text-xs text-center text-[var(--muted-foreground)]">Didn't receive it? <button type="button" className="text-[var(--accent)] hover:underline">Resend code</button></p>
+        <form onSubmit={handleOtp} className="space-y-4" noValidate>
+          <Field id="reg-otp" label="Verification code">
+            <CodeInput id="reg-otp" value={otp} onChange={setOtp} autoFocus />
+          </Field>
+          {error && <ErrorText>{error}</ErrorText>}
+          <Button type="submit" size="lg" fullWidth disabled={loading}>{loading ? "Creating account…" : "Confirm and create account"}</Button>
+          {/* Demo only: live sign-up has no emailed code, so nothing is sent. */}
+          <p className="text-xs text-[var(--muted-foreground)]">Demo mode: any 6 digits work.</p>
         </form>
       )}
     </AuthShell>
   );
 }
+
+const STEPS: { id: Step; label: string }[] = [
+  { id: "details", label: "Your details" },
+  { id: "country", label: "Where you're based" },
+  { id: "otp", label: "Confirm your email" },
+];

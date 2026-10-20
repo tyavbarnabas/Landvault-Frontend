@@ -9,6 +9,8 @@
 // permanently, with no recovery codes, because those come from confirmation.
 // So this component never enables on step one, and abandoning it leaves 2FA off.
 //
+// Laid out from the Figma "Sign-in & landing" proposal as two step cards.
+//
 // The secret is returned by `setup` and nowhere else. It is never logged and
 // never persisted — it lives in component state for as long as this screen is
 // open, and goes away with it.
@@ -20,6 +22,12 @@ import {
   type TwoFactorSetup as Enrolment,
 } from "../../services/authService";
 import RecoveryCodes from "./RecoveryCodes";
+import CodeInput from "./CodeInput";
+import Alert from "../ui/Alert";
+import Button from "../ui/Button";
+import Card from "../ui/Card";
+import { ErrorText, Field } from "../ui/Field";
+import { Loading } from "../ui/Page";
 
 type Stage = "loading" | "scan" | "confirm" | "codes" | "failed";
 
@@ -83,14 +91,13 @@ export default function TwoFactorSetup({ onEnabled, onCancel }: { onEnabled: () 
     }
   };
 
-  if (stage === "loading") return <p className="text-sm text-[var(--muted-foreground)]">Preparing setup…</p>;
+  if (stage === "loading") return <Loading label="Preparing setup…" />;
 
   if (stage === "failed") {
     return (
-      <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
-        <p className="text-sm text-[var(--foreground)] mb-2">Couldn't start two-factor setup.</p>
-        <p className="text-sm text-[var(--muted-foreground)]">Two-factor authentication has not been changed. Please try again.</p>
-      </div>
+      <Alert tone="error" title="Couldn't start two-factor setup">
+        Two-factor authentication has not been changed. Please try again.
+      </Alert>
     );
   }
 
@@ -99,72 +106,53 @@ export default function TwoFactorSetup({ onEnabled, onCancel }: { onEnabled: () 
   }
 
   return (
-    <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 space-y-5">
-      <div>
-        <h3 className="text-sm font-semibold text-[var(--foreground)] mb-1">Step 1 — add HomeTrue to your authenticator app</h3>
-        <p className="text-xs text-[var(--muted-foreground)]">
-          Scan this with Google Authenticator, 1Password, Authy or similar. Two-factor authentication is
-          <span className="font-medium text-[var(--foreground)]"> not on yet</span> — it switches on once you enter a code below.
-        </p>
-      </div>
-
-      {qrDataUrl && (
-        <div className="flex justify-center">
-          {/* The QR encodes the same secret shown below it. */}
-          <img src={qrDataUrl} alt="QR code for adding this account to an authenticator app" className="rounded-lg bg-white p-2" width={220} height={220} />
-        </div>
-      )}
-
-      {/* Manual entry: some people type it, and some apps scan badly on a small
-          screen. Hidden until asked for, so it isn't on display by default. */}
-      <div className="text-center">
-        {showSecret ? (
-          <div>
-            <div className="text-xs text-[var(--muted-foreground)] mb-1">Enter this key manually instead:</div>
-            <code className="font-mono-data text-sm text-[var(--foreground)] tracking-wider break-all">{enrolment?.secret}</code>
-            <p className="text-xs text-[var(--muted-foreground)] mt-1">If your app asks, choose <span className="font-medium">Time based</span>.</p>
-          </div>
-        ) : (
-          <button type="button" onClick={() => setShowSecret(true)} className="text-xs text-[var(--accent)] hover:underline">
-            Can't scan it? Enter a key manually
-          </button>
+    <div className="space-y-4">
+      <Card as="section" aria-labelledby="twofa-step1" className="flex flex-col sm:flex-row gap-5">
+        {qrDataUrl && (
+          // The QR encodes the same secret shown below it.
+          <img src={qrDataUrl} alt="QR code for adding this account to an authenticator app" className="rounded-lg bg-white p-2 self-center shrink-0" width={168} height={168} />
         )}
-      </div>
-
-      <form onSubmit={confirm} className="space-y-3 border-t border-[var(--border)] pt-5">
-        <div>
-          <h3 className="text-sm font-semibold text-[var(--foreground)] mb-1">Step 2 — confirm the pairing</h3>
-          <p className="text-xs text-[var(--muted-foreground)]">
-            Enter the 6-digit code your app is showing now. We check it before turning anything on, so a failed scan can't lock you out.
+        <div className="space-y-2 min-w-0">
+          <h3 id="twofa-step1" className="text-sm font-semibold text-[var(--foreground)]">1 · Scan it with your authenticator app</h3>
+          <p className="text-sm text-[var(--muted-foreground)]">
+            Google Authenticator, 1Password, Authy or similar. Two-factor authentication is
+            <span className="font-medium text-[var(--foreground)]"> not on yet</span> — it switches on once you enter a code below.
           </p>
-        </div>
-        <label htmlFor="twofa-confirm" className="block text-xs font-medium text-[var(--muted-foreground)]">Authenticator code</label>
-        <input
-          id="twofa-confirm"
-          type="text"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          maxLength={6}
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          placeholder="000000"
-          className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm font-mono-data tracking-widest"
-        />
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <div className="flex gap-3">
-          <button type="submit" disabled={busy} className="flex-1 py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold disabled:opacity-60 hover:opacity-90">
-            {busy ? "Checking…" : "Turn on two-factor"}
-          </button>
-          {onCancel && (
-            <button type="button" onClick={onCancel} className="px-4 py-2.5 border border-[var(--border)] rounded-md text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
-              Cancel
-            </button>
+          {/* Manual entry: some people type it, and some apps scan badly on a
+              small screen. Hidden until asked for, so it isn't on display. */}
+          {showSecret ? (
+            <div className="rounded-lg bg-[var(--muted)] p-3">
+              <div className="text-xs text-[var(--muted-foreground)] mb-1">Enter this key manually instead:</div>
+              <code className="font-mono-data text-sm text-[var(--foreground)] tracking-wider break-all">{enrolment?.secret}</code>
+              <p className="text-xs text-[var(--muted-foreground)] mt-1">If your app asks, choose <span className="font-medium">Time based</span>.</p>
+            </div>
+          ) : (
+            <Button variant="link" className="text-sm font-medium text-left" onClick={() => setShowSecret(true)}>Can't scan it? Enter a key instead</Button>
           )}
         </div>
-        {!isLive("auth") && (
-          <p className="text-xs text-[var(--muted-foreground)]">Demo mode: enter {MOCK_DEMO_CODES.totp}.</p>
-        )}
-      </form>
+      </Card>
+
+      <Card as="section" aria-labelledby="twofa-step2">
+        <form onSubmit={confirm} className="space-y-3" noValidate>
+          <div>
+            <h3 id="twofa-step2" className="text-sm font-semibold text-[var(--foreground)] mb-1">2 · Enter the code it shows</h3>
+            <p className="text-sm text-[var(--muted-foreground)]">
+              We check it before turning anything on, so a failed scan can't lock you out. Recovery codes come next.
+            </p>
+          </div>
+          <Field id="twofa-confirm" label="Authenticator code">
+            <CodeInput id="twofa-confirm" value={code} onChange={setCode} invalid={!!error} />
+          </Field>
+          {error && <ErrorText>{error}</ErrorText>}
+          <div className="flex gap-3 pt-1">
+            {onCancel && <Button variant="secondary" size="lg" onClick={onCancel}>Not now</Button>}
+            <Button type="submit" size="lg" className="flex-1" disabled={busy}>{busy ? "Checking…" : "Turn on two-factor"}</Button>
+          </div>
+          {!isLive("auth") && (
+            <p className="text-xs text-[var(--muted-foreground)]">Demo mode: enter {MOCK_DEMO_CODES.totp}.</p>
+          )}
+        </form>
+      </Card>
     </div>
   );
 }

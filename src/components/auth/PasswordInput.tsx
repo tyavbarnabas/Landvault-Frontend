@@ -29,7 +29,7 @@ export default function PasswordInput({ id, value, onChange, autoComplete, place
         // Never offer a typed password to spellcheck/autocorrect services.
         spellCheck={false}
         autoCapitalize="none"
-        className={`w-full pl-3 pr-11 py-2.5 bg-[var(--card)] border rounded-md text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] ${invalid ? "border-red-400" : "border-[var(--border)]"}`}
+        className={`w-full pl-3 pr-11 py-2.5 bg-[var(--card)] border rounded-md text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] ${invalid ? "border-[var(--error-border)]" : "border-[var(--border)]"}`}
       />
       <button
         type="button"

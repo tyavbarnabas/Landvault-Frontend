@@ -9,16 +9,25 @@
 // The preview comes first: the company, role and branch are shown before
 // anything is committed. An unknown, expired, revoked or already-used link
 // all get ONE message — telling them apart would reveal which links existed.
+// Laid out from the Figma "Sign-in & landing" proposal.
 
 import { assessPassword } from "../../lib/passwordPolicy";
 import PasswordInput from "../../components/auth/PasswordInput";
 import PasswordStrength from "../../components/auth/PasswordStrength";
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
 import { landingRouteFor } from "../../services/authService";
 import { INVALID_INVITATION_MESSAGE, previewInvitation, tokenFromHash, type InvitationPreview } from "../../services/staffService";
-import { AuthShell } from "./Login";
+import AuthShell, { AuthHeading } from "../../components/auth/AuthShell";
+import Alert from "../../components/ui/Alert";
+import Button from "../../components/ui/Button";
+import TextLink from "../../components/ui/TextLink";
+import { InfoBox } from "../../components/ui/Card";
+import { ErrorText, Field } from "../../components/ui/Field";
+import { Loading } from "../../components/ui/Page";
+import { BuildingIcon } from "../../components/icons";
+import { formatDayTime } from "../../lib/formatDate";
 
 // Read once, at module evaluation per navigation, before the hash is cleared.
 function readToken(): string | null {
@@ -67,41 +76,39 @@ export default function AcceptInvitation() {
 
   return (
     <AuthShell>
-      <div className="w-full max-w-sm mx-auto">
-        <h1 className="font-display text-3xl text-[var(--foreground)] mb-1">Join your team</h1>
-
-        {invalid ? (
-          <>
-            <p className="text-sm text-[var(--muted-foreground)] mb-6" role="alert">{INVALID_INVITATION_MESSAGE}</p>
-            <Link to="/login" className="text-sm text-[var(--accent)] hover:underline">Go to sign in</Link>
-          </>
-        ) : !preview ? (
-          <p className="text-sm text-[var(--muted-foreground)]">Checking your invitation…</p>
-        ) : (
-          <>
-            <p className="text-sm text-[var(--muted-foreground)] mb-6">
-              Hi {preview.firstName} — you've been invited to join <span className="text-[var(--foreground)] font-medium">{preview.companyName}</span>{" "}
-              as <span className="text-[var(--foreground)] font-medium">{preview.roleName}</span>
-              {preview.branchName ? <>, in the <span className="text-[var(--foreground)] font-medium">{preview.branchName}</span> branch</> : <>, company-wide</>}.
-            </p>
-            <dl className="text-xs text-[var(--muted-foreground)] mb-6 space-y-1">
-              <div>Your sign-in email: <span className="text-[var(--foreground)]">{preview.email}</span></div>
-              <div>This link expires {new Date(preview.expiresAt).toLocaleString()} and works once.</div>
-            </dl>
-            <form onSubmit={submit} className="space-y-4" noValidate>
-              <div>
-                <label htmlFor="inv-password" className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Choose a password</label>
-                <PasswordInput id="inv-password" value={password} onChange={setPassword} autoComplete="new-password" placeholder="Choose a strong password" describedBy="inv-password-guide" />
-                <PasswordStrength id="inv-password-guide" assessment={assessPassword(password, { email: preview.email })} started={password.length > 0} />
-              </div>
-              {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
-              <button type="submit" disabled={saving} className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium disabled:opacity-60 hover:opacity-90">
-                {saving ? "Setting up your account…" : "Accept and sign in"}
-              </button>
-            </form>
-          </>
-        )}
-      </div>
+      {invalid ? (
+        <>
+          <AuthHeading title="Join your team" />
+          <Alert role="alert" className="mb-6">{INVALID_INVITATION_MESSAGE}</Alert>
+          <TextLink to="/login" className="text-sm font-medium">Go to sign in</TextLink>
+        </>
+      ) : !preview ? (
+        <>
+          <AuthHeading title="Join your team" />
+          <Loading label="Checking your invitation…" />
+        </>
+      ) : (
+        <>
+          <span className="w-11 h-11 rounded-lg bg-[var(--secondary)] text-[var(--primary)] flex items-center justify-center mb-5"><BuildingIcon size={20} /></span>
+          <AuthHeading title={`Join ${preview.companyName}`}>
+            Hi {preview.firstName} — you've been invited to HomeTrue's developer portal.
+          </AuthHeading>
+          <div className="space-y-2 mb-6">
+            <InfoBox label="Role"><div className="font-medium text-[var(--foreground)]">{preview.roleName}</div></InfoBox>
+            <InfoBox label="Branch"><div className="font-medium text-[var(--foreground)]">{preview.branchName ?? "Company-wide"}</div></InfoBox>
+            <InfoBox label="Your sign-in email"><div className="font-medium text-[var(--foreground)] break-all">{preview.email}</div></InfoBox>
+            <InfoBox label="Link expires"><div className="font-medium text-[var(--foreground)]">{formatDayTime(preview.expiresAt)} · works once</div></InfoBox>
+          </div>
+          <form onSubmit={submit} className="space-y-4" noValidate>
+            <Field id="inv-password" label="Choose a password">
+              <PasswordInput id="inv-password" value={password} onChange={setPassword} autoComplete="new-password" placeholder="Choose a strong password" describedBy="inv-password-guide" />
+              <PasswordStrength id="inv-password-guide" assessment={assessPassword(password, { email: preview.email })} started={password.length > 0} />
+            </Field>
+            {error && <ErrorText>{error}</ErrorText>}
+            <Button type="submit" size="lg" fullWidth disabled={saving}>{saving ? "Setting up your account…" : "Accept and sign in"}</Button>
+          </form>
+        </>
+      )}
     </AuthShell>
   );
 }

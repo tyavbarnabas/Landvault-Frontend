@@ -9,6 +9,9 @@
 // These are credentials: never logged, never put in a URL.
 
 import { useState } from "react";
+import Alert from "../ui/Alert";
+import Button from "../ui/Button";
+import Card from "../ui/Card";
 
 export default function RecoveryCodes({ codes, onAcknowledged, title = "Save your recovery codes" }: {
   codes: string[];
@@ -41,13 +44,13 @@ export default function RecoveryCodes({ codes, onAcknowledged, title = "Save you
   };
 
   return (
-    <div className="bg-[var(--card)] border border-amber-200 rounded-xl p-5 space-y-4">
+    <Card as="section" className="space-y-4" aria-labelledby="recovery-heading">
       <div>
-        <h3 className="text-sm font-semibold text-[var(--foreground)] mb-1">{title}</h3>
-        <p className="text-xs text-amber-800 leading-relaxed">
+        <h3 id="recovery-heading" className="text-sm font-semibold text-[var(--foreground)] mb-2">{title}</h3>
+        <Alert>
           This is the only time these codes are shown. They can't be retrieved later — if you lose them you'll have to generate a new set,
           which replaces these. Each code works once, and any one of them gets you in if you lose your phone.
-        </p>
+        </Alert>
       </div>
 
       <ul className="grid grid-cols-2 gap-2 bg-[var(--muted)] rounded-lg p-4">
@@ -57,12 +60,8 @@ export default function RecoveryCodes({ codes, onAcknowledged, title = "Save you
       </ul>
 
       <div className="flex flex-wrap gap-3">
-        <button type="button" onClick={copy} className="px-3 py-1.5 border border-[var(--border)] rounded-md text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted)]">
-          {copied ? "Copied" : "Copy all"}
-        </button>
-        <button type="button" onClick={download} className="px-3 py-1.5 border border-[var(--border)] rounded-md text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted)]">
-          Download as a file
-        </button>
+        <Button variant="secondary" onClick={copy}>{copied ? "Copied" : "Copy all"}</Button>
+        <Button variant="secondary" onClick={download}>Download as a file</Button>
       </div>
 
       {/* An explicit acknowledgement, not just a Continue button — the cost of
@@ -72,14 +71,7 @@ export default function RecoveryCodes({ codes, onAcknowledged, title = "Save you
         I've saved these codes somewhere safe.
       </label>
 
-      <button
-        type="button"
-        onClick={onAcknowledged}
-        disabled={!acknowledged}
-        className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold disabled:opacity-40 hover:opacity-90"
-      >
-        Done
-      </button>
-    </div>
+      <Button size="lg" fullWidth onClick={onAcknowledged} disabled={!acknowledged}>Done</Button>
+    </Card>
   );
 }

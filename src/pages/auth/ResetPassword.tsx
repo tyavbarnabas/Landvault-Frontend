@@ -1,4 +1,5 @@
-// Completes the reset flow that /forgot-password starts. Until now that screen
+// Completes the reset flow that /forgot-password starts (laid out from the
+// Figma "Sign-in & landing" proposal). Until now that screen
 // led nowhere and this one didn't exist.
 //
 // ENUMERATION PROTECTION IS THE POINT HERE: the backend returns the same
@@ -11,8 +12,13 @@ import { assessPassword } from "../../lib/passwordPolicy";
 import PasswordInput from "../../components/auth/PasswordInput";
 import PasswordStrength from "../../components/auth/PasswordStrength";
 import { useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { AuthShell } from "./Login";
+import { useLocation, useNavigate } from "react-router-dom";
+import AuthShell, { AuthHeading } from "../../components/auth/AuthShell";
+import CodeInput from "../../components/auth/CodeInput";
+import Button from "../../components/ui/Button";
+import TextLink from "../../components/ui/TextLink";
+import { ErrorText, Field, Input } from "../../components/ui/Field";
+import { CheckIcon } from "../../components/icons";
 import { MOCK_DEMO_CODES, errorCodeOf, resetPassword } from "../../services/authService";
 import { isLive } from "../../lib/backends";
 
@@ -61,68 +67,41 @@ export default function ResetPassword() {
   if (done) {
     return (
       <AuthShell>
-        <div className="w-full max-w-sm mx-auto">
-          <h1 className="font-display text-3xl text-[var(--foreground)] mb-2">Password updated</h1>
-          <p className="text-sm text-[var(--muted-foreground)] mb-8">You can now sign in with your new password.</p>
-          <button onClick={() => navigate("/login")} className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium hover:opacity-90">
-            Go to sign in
-          </button>
-        </div>
+        <span className="w-11 h-11 rounded-lg bg-[var(--success-surface)] text-[var(--success-text)] flex items-center justify-center mb-5"><CheckIcon size={20} /></span>
+        <AuthHeading title="Password updated">You can now sign in with your new password.</AuthHeading>
+        <Button size="lg" fullWidth onClick={() => navigate("/login")}>Go to sign in</Button>
       </AuthShell>
     );
   }
 
   return (
     <AuthShell>
-      <div className="w-full max-w-sm mx-auto">
-        <h1 className="font-display text-3xl text-[var(--foreground)] mb-1">Set a new password</h1>
-        <p className="text-sm text-[var(--muted-foreground)] mb-8">
-          Enter the code we emailed you, then choose a new password.
-        </p>
+      <AuthHeading title="Set a new password">Enter the code we emailed you, then choose a new password.</AuthHeading>
 
-        <form onSubmit={submit} className="space-y-4">
-          <Field id="reset-email" label="Email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" />
-          <Field id="reset-code" label="Reset code" type="text" value={code} onChange={setCode} placeholder="000000" maxLength={6} />
-          <div>
-            <label htmlFor="reset-password" className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">New password</label>
-            <PasswordInput id="reset-password" value={password} onChange={setPassword} autoComplete="new-password" placeholder="Choose a strong password" describedBy="reset-password-guide" />
-            <PasswordStrength id="reset-password-guide" assessment={assessPassword(password, { email })} started={password.length > 0} />
-          </div>
+      <form onSubmit={submit} className="space-y-4" noValidate>
+        <Field id="reset-email" label="Email">
+          <Input id="reset-email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+        </Field>
+        <Field id="reset-code" label="Reset code">
+          <CodeInput id="reset-code" value={code} onChange={setCode} />
+        </Field>
+        <Field id="reset-password" label="New password">
+          <PasswordInput id="reset-password" value={password} onChange={setPassword} autoComplete="new-password" placeholder="Choose a strong password" describedBy="reset-password-guide" />
+          <PasswordStrength id="reset-password-guide" assessment={assessPassword(password, { email })} started={password.length > 0} />
+        </Field>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <ErrorText>{error}</ErrorText>}
 
-          <button type="submit" disabled={loading} className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium disabled:opacity-60 hover:opacity-90">
-            {loading ? "Updating…" : "Update password"}
-          </button>
-        </form>
+        <Button type="submit" size="lg" fullWidth disabled={loading}>{loading ? "Updating…" : "Update password"}</Button>
+      </form>
 
-        <p className="text-xs text-[var(--muted-foreground)] mt-6">
-          Didn't get a code? <Link to="/forgot-password" className="text-[var(--accent)] hover:underline">Request another</Link>.
-        </p>
+      <p className="text-sm mt-6 text-[var(--muted-foreground)]">
+        Didn't get a code? <TextLink to="/forgot-password" className="font-medium">Request another</TextLink>
+      </p>
 
-        {!isLive("auth") && (
-          <p className="text-xs text-[var(--muted-foreground)] mt-2">Demo mode: the reset code is {MOCK_DEMO_CODES.reset}.</p>
-        )}
-      </div>
+      {!isLive("auth") && (
+        <p className="text-xs text-[var(--muted-foreground)] mt-2">Demo mode: the reset code is {MOCK_DEMO_CODES.reset}.</p>
+      )}
     </AuthShell>
-  );
-}
-
-function Field({ id, label, type, value, onChange, placeholder, maxLength }: {
-  id: string; label: string; type: string; value: string; onChange: (v: string) => void; placeholder: string; maxLength?: number;
-}) {
-  return (
-    <div>
-      <label htmlFor={id} className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">{label}</label>
-      <input
-        id={id}
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        maxLength={maxLength}
-        className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]"
-      />
-    </div>
   );
 }

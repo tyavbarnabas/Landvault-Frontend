@@ -1,4 +1,5 @@
-// Requests a reset code, then hands off to /reset-password. It used to run a
+// Requests a reset code, then hands off to /reset-password. Laid out from
+// the Figma "Sign-in & landing" proposal. It used to run a
 // four-step flow entirely on setTimeout and never reached the backend at all.
 //
 // The response is IDENTICAL whether or not the email has an account — so this
@@ -6,8 +7,12 @@
 // specific would let an attacker enumerate registered addresses.
 
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { AuthShell } from "./Login";
+import { useNavigate } from "react-router-dom";
+import AuthShell, { AuthHeading } from "../../components/auth/AuthShell";
+import Button from "../../components/ui/Button";
+import TextLink from "../../components/ui/TextLink";
+import { ErrorText, Field, Input } from "../../components/ui/Field";
+import { LockIcon } from "../../components/icons";
 import { forgotPassword } from "../../services/authService";
 
 export default function ForgotPassword() {
@@ -35,56 +40,34 @@ export default function ForgotPassword() {
 
   return (
     <AuthShell>
-      <div className="w-full max-w-sm mx-auto">
-        <h1 className="font-display text-3xl text-[var(--foreground)] mb-1">Reset your password</h1>
+      {sent ? (
+        <>
+          <span className="w-11 h-11 rounded-lg bg-[var(--secondary)] text-[var(--primary)] flex items-center justify-center mb-5"><LockIcon size={20} /></span>
+          {/* Deliberately non-committal: the same words for a registered
+              address and an unregistered one. */}
+          <AuthHeading title="Check your email">
+            If there's an account for <span className="text-[var(--foreground)] font-medium">{email}</span>, we've sent it a 6-digit reset code.
+            It can take a minute to arrive.
+          </AuthHeading>
+          <div className="space-y-3">
+            <Button size="lg" fullWidth onClick={() => navigate("/reset-password", { state: { email } })}>Enter the code</Button>
+            <Button size="lg" variant="secondary" fullWidth onClick={submit} disabled={loading}>{loading ? "Sending…" : "Send another code"}</Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <AuthHeading title="Reset your password">Enter your email and we'll send a code to reset your password.</AuthHeading>
+          <form onSubmit={submit} className="space-y-4" noValidate>
+            <Field id="forgot-email" label="Email">
+              <Input id="forgot-email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+            </Field>
+            {error && <ErrorText>{error}</ErrorText>}
+            <Button type="submit" size="lg" fullWidth disabled={loading}>{loading ? "Sending…" : "Send reset code"}</Button>
+          </form>
+        </>
+      )}
 
-        {sent ? (
-          <>
-            {/* Deliberately non-committal: the same words for a registered
-                address and an unregistered one. */}
-            <p className="text-sm text-[var(--muted-foreground)] mb-8">
-              If there's an account for <span className="text-[var(--foreground)]">{email}</span>, we've sent it a reset code. Enter it on
-              the next screen to choose a new password.
-            </p>
-            <button
-              onClick={() => navigate("/reset-password", { state: { email } })}
-              className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium hover:opacity-90"
-            >
-              I have a code
-            </button>
-            <button onClick={submit} disabled={loading} className="w-full py-2 mt-2 text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] disabled:opacity-60">
-              Send another code
-            </button>
-          </>
-        ) : (
-          <>
-            <p className="text-sm text-[var(--muted-foreground)] mb-8">
-              Enter your email and we'll send a code to reset your password.
-            </p>
-            <form onSubmit={submit} className="space-y-4">
-              <div>
-                <label htmlFor="forgot-email" className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Email</label>
-                <input
-                  id="forgot-email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]"
-                />
-              </div>
-              {error && <p className="text-sm text-red-600">{error}</p>}
-              <button type="submit" disabled={loading} className="w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium disabled:opacity-60 hover:opacity-90">
-                {loading ? "Sending…" : "Send reset code"}
-              </button>
-            </form>
-          </>
-        )}
-
-        <p className="text-xs text-[var(--muted-foreground)] mt-6">
-          <Link to="/login" className="text-[var(--accent)] hover:underline">Back to sign in</Link>
-        </p>
-      </div>
+      <p className="text-sm mt-6"><TextLink to="/login" muted>← Back to sign in</TextLink></p>
     </AuthShell>
   );
 }

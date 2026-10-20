@@ -21,9 +21,9 @@ export default function MarketplaceLayout({ children }: { children: React.ReactN
 
   return (
     <div className="min-h-full flex flex-col bg-[var(--background)]">
-      <header className="h-14 border-b border-[var(--border)] bg-[var(--card)] flex items-center px-4 lg:px-6 gap-6 shrink-0">
+      <header className="h-14 border-b border-[var(--border)] bg-[var(--card)] flex items-center px-4 lg:px-6 gap-4 sm:gap-6 shrink-0">
         <Link to="/" className="font-display text-lg text-[var(--foreground)] tracking-tight shrink-0">HomeTrue</Link>
-        <nav className="flex items-center gap-6 flex-1">
+        <nav className="flex items-center gap-6 flex-1 min-w-0">
           <Link to="/marketplace" className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">Marketplace</Link>
           {/* Public destinations that exist; on a phone they live in the footer. */}
           <Link to="/verify" className="hidden md:inline text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">Verify a document</Link>
@@ -46,7 +46,7 @@ export default function MarketplaceLayout({ children }: { children: React.ReactN
         ) : (
           <div className="flex items-center gap-3 shrink-0">
             <Link to="/login" className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">Sign in</Link>
-            <Link to="/register" className="text-sm px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:opacity-90 transition-opacity">Get started</Link>
+            <Link to="/register" className="text-sm px-3 sm:px-4 py-2 whitespace-nowrap bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:opacity-90 transition-opacity">Create account</Link>
           </div>
         )}
       </header>
