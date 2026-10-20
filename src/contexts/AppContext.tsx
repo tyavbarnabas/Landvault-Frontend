@@ -54,6 +54,9 @@ interface AppContextValue {
   // marketplace). Kept on the buyer's account (wishlistService.ts), loaded
   // on sign-in and emptied on sign-out. Saves and removals show at once and
   // are undone if the backend refuses; the promise rejects with its error.
+  // A KYC submission or review changed the buyer's standing; the sidebar
+  // badge follows it without waiting for the next session refresh.
+  kycChanged: (status: User["kycStatus"]) => void;
   wishlist: WishlistItem[];
   wishlistLoaded: boolean;
   reloadWishlist: () => Promise<void>;
@@ -190,6 +193,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void logoutRequest();
   };
 
+  const kycChanged = (status: User["kycStatus"]) => {
+    setUser((prev) => (prev && prev.kycStatus !== status ? { ...prev, kycStatus: status } : prev));
+  };
+
   const passwordChanged = () => {
     setUser((prev) => (prev ? { ...prev, mustChangePassword: false } : prev));
   };
@@ -269,7 +276,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ user, isAuthenticated: !!user, restoringSession, signOutNotice, clearSignOutNotice: () => setSignOutNotice(null), sessionProblem, login, completeTwoFactor, register, acceptInvitation, logout, passwordChanged, savedPlots, toggleSavedPlot, currency, setCurrency, notifications, markNotificationRead, addNotification, wishlist, wishlistLoaded, reloadWishlist, isWishlisted, saveWishlistItem, toggleWishlistItem }}>
+    <AppContext.Provider value={{ user, isAuthenticated: !!user, restoringSession, signOutNotice, clearSignOutNotice: () => setSignOutNotice(null), sessionProblem, login, completeTwoFactor, register, acceptInvitation, logout, passwordChanged, kycChanged, savedPlots, toggleSavedPlot, currency, setCurrency, notifications, markNotificationRead, addNotification, wishlist, wishlistLoaded, reloadWishlist, isWishlisted, saveWishlistItem, toggleWishlistItem }}>
       {children}
     </AppContext.Provider>
   );

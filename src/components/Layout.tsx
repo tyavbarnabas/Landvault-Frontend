@@ -358,15 +358,22 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             operator, nor for a company's own staff) */}
         {buyer && user?.kycStatus === "approved" && (
           <div className="mx-3 mt-3 px-3 py-1.5 bg-white/8 rounded-md flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--success)] shrink-0" />
             <span className="text-[11px] text-white/70">KYC verified</span>
           </div>
         )}
-        {buyer && user?.kycStatus === "under_review" && (
-          <div className="mx-3 mt-3 px-3 py-1.5 bg-amber-500/20 rounded-md flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+        {buyer && (user?.kycStatus === "under_review" || user?.kycStatus === "submitted") && (
+          <Link to="/kyc" className="mx-3 mt-3 px-3 py-1.5 bg-white/8 hover:bg-white/12 rounded-md flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning)] shrink-0" />
             <span className="text-[11px] text-white/70">KYC under review</span>
-          </div>
+          </Link>
+        )}
+        {/* Not sent, or sent back: the way in to the identity check. */}
+        {buyer && (user?.kycStatus === "unsubmitted" || user?.kycStatus === "rejected") && (
+          <Link to="/kyc" className="mx-3 mt-3 px-3 py-1.5 bg-[var(--warning-surface)] hover:opacity-90 rounded-md flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--warning)] shrink-0" />
+            <span className="text-[11px] font-medium text-[var(--warning-text)]">Identity not verified · {user.kycStatus === "rejected" ? "Try again" : "Verify now"}</span>
+          </Link>
         )}
 
         {/* Nav — rendered from whatever the signed-in user's permissions grant */}

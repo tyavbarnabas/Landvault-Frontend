@@ -3,6 +3,9 @@
 // holding a copy (a buyer's family, a lawyer, a bank) can check it here or
 // type the printed code. It shows what HomeTrue issued, never an amount or a
 // full name.
+//
+// Laid out from the Figma "KYC, list your company, verify" proposal: the
+// code box beside who the page is for, and the answer as one result card.
 
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -10,7 +13,9 @@ import { ApiError } from "../../lib/apiClient";
 import { useFetch } from "../../lib/useFetch";
 import { formatDay } from "../../lib/formatDate";
 import { normalizeVerifyCode, verifyDocument, type DocumentVerification } from "../../services/documentsService";
-import Page, { Loading } from "../../components/ui/Page";
+import { Loading } from "../../components/ui/Page";
+import TextLink from "../../components/ui/TextLink";
+import { AlertIcon, CheckIcon, ShieldCheckIcon } from "../../components/icons";
 import Card from "../../components/ui/Card";
 import Alert from "../../components/ui/Alert";
 import Button from "../../components/ui/Button";
@@ -25,15 +30,18 @@ const TYPE_NAMES: Record<DocumentVerification["documentType"], string> = {
 export default function VerifyDocument() {
   const { code } = useParams<{ code?: string }>();
   return (
-    <Page
-      title="Check a HomeTrue document"
-      description="Scan the QR code on a receipt or allocation letter, or type the code printed beside it."
-    >
-      <div className="space-y-6">
-        {code && <Result key={code} code={code} />}
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 space-y-8">
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6 lg:gap-10 items-center">
+        <div>
+          <h1 className="font-display text-3xl sm:text-4xl text-[var(--foreground)] mb-2">Check a HomeTrue document</h1>
+          <p className="text-[var(--muted-foreground)]">
+            For buyers, their families, lawyers and banks: see whether HomeTrue really issued a receipt or allocation letter.
+          </p>
+        </div>
         <CodeForm />
       </div>
-    </Page>
+      {code && <Result key={code} code={code} />}
+    </div>
   );
 }
 
@@ -63,48 +71,79 @@ function Result({ code }: { code: string }) {
 
   if (!verification) {
     return (
-      <Alert tone="error" title="This is not a document HomeTrue issued." role="alert">
-        <p>No HomeTrue receipt or allocation letter has the code <span className="font-mono-data">{formatCode(code)}</span>.</p>
-        <p className="mt-2">Check the code against the printed one. If it still doesn't match, don't rely on this document, and don't pay anyone because of it.</p>
-      </Alert>
+      <ResultCard tone="error" icon={<AlertIcon size={22} />} role="alert"
+        title="Not a document HomeTrue issued"
+        sub={<>No receipt or allocation letter has the code <span className="font-mono-data">{formatCode(code)}</span>.</>}>
+        <h2 className="text-sm font-semibold text-[var(--foreground)] mb-2">What to do</h2>
+        <ul className="list-disc pl-5 space-y-1.5 text-sm text-[var(--foreground)]">
+          <li>Check the code against the printed one — dashes and capitals don't matter.</li>
+          <li>If it still doesn't match, don't rely on this document.</li>
+          <li>Don't pay anyone because of it. HomeTrue never asks for payment into a bank account named in a letter, message or flyer.</li>
+        </ul>
+        <TextLink to="/support" className="inline-block text-sm font-medium mt-3">Report it to HomeTrue support →</TextLink>
+      </ResultCard>
     );
   }
 
   const v = verification;
   const kind = TYPE_NAMES[v.documentType];
   return (
-    <div className="space-y-3">
-      <Alert tone="success" title={`Genuine HomeTrue ${kind}`} role="status">
-        HomeTrue issued this {kind}. Compare the details below with the copy you were shown.
-      </Alert>
+    <ResultCard tone="success" icon={<ShieldCheckIcon size={22} />} role="status"
+      title={`Genuine — HomeTrue issued this ${kind}`} sub="Checked just now against HomeTrue's records.">
       {v.status === "refunded" && v.refundedAt && (
-        <Alert tone="info" role="status">
+        <Alert tone="info" className="mb-4">
           The payment on this receipt was refunded on {formatDay(v.refundedAt)}. The receipt is genuine (the payment was made), but it no longer stands for a purchase.
         </Alert>
       )}
-      <Card as="dl" padding="md" className="text-sm grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
-        <Fact label="Number"><span className="font-mono-data">{v.number}</span></Fact>
-        <Fact label="Issued">{formatDay(v.issuedAt)}</Fact>
-        <Fact label="Issued by">{v.issuedBy}</Fact>
-        {v.developer && <Fact label={v.documentType === "receipt" ? "Seller" : "From"}>{v.developer}</Fact>}
-        {v.estate && <Fact label="Estate">{v.estate}</Fact>}
-        {v.location && <Fact label="Location">{v.location}</Fact>}
-        {v.plot && <Fact label="Plot">{v.plot}</Fact>}
-        {v.holderInitials && <Fact label="Holder's initials">{v.holderInitials}</Fact>}
-      </Card>
-      <p className="text-xs text-[var(--muted-foreground)]">
-        To protect the holder, this page never shows the amount paid or their full name.
-      </p>
-    </div>
+      <div className="grid md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] gap-6">
+        <dl className="divide-y divide-[var(--border)] text-sm">
+          <Fact label="Number"><span className="font-mono-data">{v.number}</span></Fact>
+          <Fact label="Issued">{formatDay(v.issuedAt)}</Fact>
+          <Fact label="Issued by">{v.issuedBy}</Fact>
+          {v.developer && <Fact label={v.documentType === "receipt" ? "Seller" : "From"}>{v.developer}</Fact>}
+          {v.estate && <Fact label="Estate">{[v.estate, v.location].filter(Boolean).join(", ")}</Fact>}
+          {!v.estate && v.location && <Fact label="Location">{v.location}</Fact>}
+          {v.plot && <Fact label="Plot">{v.plot}</Fact>}
+          {v.holderInitials && <Fact label="Holder's initials">{v.holderInitials}</Fact>}
+        </dl>
+        <section aria-labelledby="compare-heading" className="rounded-xl bg-[var(--muted)] p-4 self-start">
+          <h2 id="compare-heading" className="text-sm font-semibold text-[var(--foreground)] mb-2">Compare with your copy</h2>
+          <ul className="space-y-1.5 text-sm text-[var(--foreground)]">
+            {["The number matches the one printed", v.documentType === "receipt" ? "The estate and plot are the ones paid for" : "The estate and plot are the ones you were sold", "The holder's initials match the buyer"].map((t) => (
+              <li key={t} className="flex gap-2"><span className="text-[var(--primary)] mt-0.5 shrink-0"><CheckIcon size={14} /></span>{t}</li>
+            ))}
+          </ul>
+          <p className="text-xs text-[var(--muted-foreground)] mt-3">To protect the holder, this page never shows the amount paid or their full name.</p>
+        </section>
+      </div>
+    </ResultCard>
+  );
+}
+
+// The answer, as one card: a tinted head that says it plainly, then detail.
+function ResultCard({ tone, icon, title, sub, role, children }: {
+  tone: "success" | "error"; icon: React.ReactNode; title: string; sub: React.ReactNode; role: "status" | "alert"; children: React.ReactNode;
+}) {
+  return (
+    <section role={role} className={`rounded-2xl border-2 overflow-hidden bg-[var(--card)] ${tone === "success" ? "border-[var(--success-border)]" : "border-[var(--error-border)]"}`}>
+      <div className={`flex items-center gap-3.5 px-5 sm:px-6 py-4 ${tone === "success" ? "bg-[var(--success-surface)]" : "bg-[var(--error-surface)]"}`}>
+        <span className={`w-11 h-11 shrink-0 rounded-xl flex items-center justify-center ${tone === "success" ? "bg-[var(--success)] text-[var(--success-foreground)]" : "bg-[var(--error)] text-[var(--error-foreground)]"}`}>{icon}</span>
+        <div>
+          <div className={`font-semibold text-lg ${tone === "success" ? "text-[var(--success-text)]" : "text-[var(--error-text)]"}`}>{title}</div>
+          <div className={`text-sm ${tone === "success" ? "text-[var(--success-text)]" : "text-[var(--error-text)]"}`}>{sub}</div>
+        </div>
+      </div>
+      <div className="px-5 sm:px-6 py-5">{children}</div>
+    </section>
   );
 }
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <>
+    <div className="flex items-baseline justify-between gap-4 py-2.5">
       <dt className="text-[var(--muted-foreground)]">{label}</dt>
-      <dd className="text-[var(--foreground)] text-right sm:text-left">{children}</dd>
-    </>
+      <dd className="font-medium text-[var(--foreground)] text-right">{children}</dd>
+    </div>
   );
 }
 
@@ -134,9 +173,9 @@ function CodeForm() {
   };
 
   return (
-    <Card as="section" padding="md">
+    <Card as="section" padding="md" aria-label="Check a code">
       <form onSubmit={submit} noValidate className="space-y-3">
-        <Field id="verify-code" label="Verification code" hint={HINT} error={error ?? undefined}>
+        <Field id="verify-code" label="Type the code printed beside the QR code" hint={HINT} error={error ?? undefined}>
           <Input
             id="verify-code"
             value={value}
@@ -149,7 +188,8 @@ function CodeForm() {
             aria-describedby={describedBy("verify-code", { hint: HINT, error })}
           />
         </Field>
-        <Button type="submit">Check</Button>
+        <Button type="submit" size="lg">Check</Button>
+        <p className="text-xs text-[var(--muted-foreground)]">Or point your phone's camera at the QR code — it opens this page with the answer.</p>
       </form>
     </Card>
   );

@@ -206,7 +206,7 @@ function AppRoutes() {
       {/* Public */}
       <Route path="/" element={<MarketplaceLayout><Landing /></MarketplaceLayout>} />
       <Route path="/login" element={<Login />} />
-      <Route path="/list-your-company" element={<Suspense fallback={<PageLoading />}><ListYourCompany /></Suspense>} />
+      <Route path="/list-your-company" element={<MarketplaceLayout><ListYourCompany /></MarketplaceLayout>} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       {/* Public: the invited person has no account yet. The token rides in
@@ -219,7 +219,8 @@ function AppRoutes() {
       {/* Routed to on mustChangePassword / mustSetUpTwoFa — never blocked on. */}
       <Route path="/change-password" element={<PrivateRoute><ChangePassword /></PrivateRoute>} />
       <Route path="/security/two-factor" element={<AppPage><TwoFactorSetupPage /></AppPage>} />
-      <Route path="/onboarding/kyc" element={<Suspense fallback={<PageLoading />}><KYC /></Suspense>} />
+      <Route path="/kyc" element={<AppPage><KYC /></AppPage>} />
+      <Route path="/onboarding/kyc" element={<Navigate to="/kyc" replace />} />
 
       {/* Checkout — the legacy internal flow is retired; MarketplaceCheckout
           is the one purchase path now that estates/marketplace share one

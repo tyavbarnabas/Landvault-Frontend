@@ -1,143 +1,71 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+// /kyc — verify your identity, once, before a first purchase. From the Figma
+// "KYC, list your company, verify" proposal: the same check checkout runs
+// (KycFlow, kycService), on its own page in the buyer app, with what happens
+// next beside it. It replaces a stand-alone demo page that never submitted.
 
-type DocType = "nin" | "passport";
-type KYCStep = "type" | "upload" | "submitted";
+import { useApp } from "../../contexts/AppContext";
+import { useFetch } from "../../lib/useFetch";
+import { fetchKycStatus } from "../../services/kycService";
+import KycFlow from "../../components/checkout/KycFlow";
+import LoadError from "../../components/LoadError";
+import Page, { Loading } from "../../components/ui/Page";
+import Card from "../../components/ui/Card";
+import { LinkButton } from "../../components/ui/Button";
+import { LockIcon, ShieldCheckIcon } from "../../components/icons";
 
 export default function KYC() {
-  const navigate = useNavigate();
-  const [step, setStep] = useState<KYCStep>("type");
-  const [docType, setDocType] = useState<DocType>("nin");
-  const [idFile, setIdFile] = useState<File | null>(null);
-  const [addressFile, setAddressFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { user } = useApp();
+  const record = useFetch(async () => (user ? fetchKycStatus(user) : null), [user?.email]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setTimeout(() => { setLoading(false); setStep("submitted"); }, 900);
-  };
-
-  return (
-    <div className="min-h-full bg-[var(--background)] flex items-center justify-center px-4 py-16">
-      <div className="w-full max-w-lg">
-        <div className="mb-8">
-          <span className="font-display text-xl text-[var(--foreground)]">HomeTrue</span>
-          <div className="text-xs text-[var(--muted-foreground)] font-mono-data mt-0.5">Identity Verification</div>
-        </div>
-
-        {step === "type" && (
-          <div>
-            <h2 className="font-display text-2xl mb-2">Verify your identity</h2>
-            <p className="text-sm text-[var(--muted-foreground)] mb-6">We need to verify who you are before you can transact. This usually takes 1–2 business days.</p>
-            <div className="grid gap-3">
-              {[
-                { id: "nin", label: "Nigerian NIN + Proof of Address", desc: "For residents of Nigeria. NIN slip or national ID.", flag: "🇳🇬" },
-                { id: "passport", label: "International Passport + Proof of Address", desc: "For diaspora buyers. Valid passport from any country.", flag: "🌍" },
-              ].map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => { setDocType(opt.id as DocType); setStep("upload"); }}
-                  className={`text-left p-4 rounded-xl border-2 transition-colors ${docType === opt.id ? "border-[var(--primary)] bg-[var(--secondary)]" : "border-[var(--border)] hover:border-[var(--primary)]/50"}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{opt.flag}</span>
-                    <div>
-                      <div className="font-medium text-sm text-[var(--foreground)]">{opt.label}</div>
-                      <div className="text-xs text-[var(--muted-foreground)] mt-0.5">{opt.desc}</div>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-            <button onClick={() => navigate("/dashboard")} className="mt-6 w-full py-2 text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
-              Skip for now — I'll verify later
-            </button>
-          </div>
-        )}
-
-        {step === "upload" && (
-          <form onSubmit={handleSubmit}>
-            <button type="button" onClick={() => setStep("type")} className="text-xs text-[var(--muted-foreground)] mb-6 hover:text-[var(--foreground)]">← Back</button>
-            <h2 className="font-display text-2xl mb-2">
-              {docType === "nin" ? "Upload your NIN" : "Upload your passport"}
-            </h2>
-            <p className="text-sm text-[var(--muted-foreground)] mb-6">
-              Files must be JPG, PNG, or PDF and under 5MB each. All documents are encrypted at rest.
-            </p>
-
-            <div className="space-y-4">
-              <UploadField
-                label={docType === "nin" ? "NIN slip or national ID" : "International passport (bio page)"}
-                file={idFile}
-                onFile={setIdFile}
-                accept=".jpg,.jpeg,.png,.pdf"
-              />
-              <UploadField
-                label="Proof of address (utility bill or bank statement, dated within 3 months)"
-                file={addressFile}
-                onFile={setAddressFile}
-                accept=".jpg,.jpeg,.png,.pdf"
-              />
-            </div>
-
-            <div className="mt-6 p-4 bg-[var(--muted)] rounded-lg text-xs text-[var(--muted-foreground)] leading-relaxed">
-              Expected review time: 1–2 business days. You'll receive an email when your status is updated. You can browse estates while your verification is under review.
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading || !idFile || !addressFile}
-              className="mt-6 w-full py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium disabled:opacity-40 hover:opacity-90 transition-opacity"
-            >
-              {loading ? "Submitting…" : "Submit for review"}
-            </button>
-          </form>
-        )}
-
-        {step === "submitted" && (
-          <div className="text-center py-8">
-            <div className="w-16 h-16 rounded-full bg-[var(--secondary)] flex items-center justify-center mx-auto mb-6 text-3xl">✓</div>
-            <h2 className="font-display text-2xl mb-2">Documents submitted</h2>
-            <p className="text-sm text-[var(--muted-foreground)] max-w-sm mx-auto mb-8">
-              Your identity documents are under review. We'll notify you within 1–2 business days. You can browse estates in the meantime.
-            </p>
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 mb-8">
-              <span className="w-2 h-2 rounded-full bg-amber-500" />
-              KYC under review
-            </div>
-            <br />
-            <button onClick={() => navigate("/dashboard")} className="px-6 py-2.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-medium hover:opacity-90 transition-opacity">
-              Go to dashboard
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
+  const page = (children: React.ReactNode) => (
+    <Page title="Verify your identity"
+      description="Needed once, before your first purchase. Browsing, saving estates and booking inspections don't need it.">
+      {children}
+    </Page>
   );
-}
 
-function UploadField({ label, file, onFile, accept }: { label: string; file: File | null; onFile: (f: File) => void; accept: string }) {
-  return (
-    <div>
-      <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">{label}</label>
-      <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-xl px-4 py-6 cursor-pointer transition-colors ${file ? "border-[var(--primary)] bg-[var(--secondary)]" : "border-[var(--border)] hover:border-[var(--primary)]/50"}`}>
-        {file ? (
-          <div className="text-center">
-            <div className="text-2xl mb-1">📄</div>
-            <div className="text-sm font-medium text-[var(--foreground)]">{file.name}</div>
-            <div className="text-xs text-[var(--muted-foreground)]">{(file.size / 1024).toFixed(0)} KB</div>
-          </div>
-        ) : (
-          <div className="text-center">
-            <div className="text-2xl mb-1 text-[var(--muted-foreground)]">⬆</div>
-            <div className="text-sm text-[var(--muted-foreground)]">Click to upload or drag & drop</div>
-            <div className="text-xs text-[var(--muted-foreground)] mt-0.5">JPG, PNG, PDF · max 5 MB</div>
-          </div>
-        )}
-        <input type="file" accept={accept} className="sr-only" onChange={(e) => { if (e.target.files?.[0]) onFile(e.target.files[0]); }} />
-      </label>
-    </div>
+  if (record.loading && !record.data) return page(<Loading label="Checking your verification…" />);
+  if (record.error) return page(<LoadError error={record.errorValue} what="your verification" onRetry={record.refetch} />);
+  if (!record.data) return page(null);
+
+  if (record.data.status === "approved") {
+    return page(
+      <Card className="max-w-xl text-center py-10 space-y-3 border-[var(--success-border)]" role="status">
+        <span className="w-12 h-12 mx-auto rounded-xl bg-[var(--success-surface)] text-[var(--success-text)] flex items-center justify-center"><ShieldCheckIcon size={24} /></span>
+        <h2 className="font-display text-2xl text-[var(--foreground)]">Identity verified</h2>
+        <p className="text-sm text-[var(--muted-foreground)]">You can reserve and buy plots. Nothing else to do here.</p>
+        <LinkButton to="/marketplace">Browse the marketplace</LinkButton>
+      </Card>,
+    );
+  }
+
+  return page(
+    <div className="grid lg:grid-cols-[minmax(0,1fr)_22rem] gap-6 items-start">
+      <Card className="sm:p-6">
+        <KycFlow key={record.data.status} record={record.data} context="page" onApproved={(r) => record.setData(r)} />
+      </Card>
+      <Card as="section" aria-labelledby="kyc-next" className="space-y-4">
+        <h2 id="kyc-next" className="font-semibold text-[var(--foreground)]">What happens next</h2>
+        <ol className="space-y-3">
+          {[
+            ["You send your documents", "Here, once. You can keep browsing while you wait."],
+            ["HomeTrue's team checks them", "A person compares them with your account. You'll see the result on this page."],
+            ["You can reserve and buy", "The badge in the menu turns to “KYC verified”."],
+          ].map(([t, d], i) => (
+            <li key={t} className="flex gap-3">
+              <span className="w-6 h-6 shrink-0 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] text-[11px] font-semibold flex items-center justify-center">{i + 1}</span>
+              <span>
+                <span className="block text-sm font-medium text-[var(--foreground)]">{t}</span>
+                <span className="block text-xs text-[var(--muted-foreground)]">{d}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+        <p className="flex gap-2.5 border-t border-[var(--border)] pt-4 text-xs text-[var(--muted-foreground)]">
+          <span className="text-[var(--primary)] shrink-0"><LockIcon size={15} /></span>
+          Your documents are seen only by HomeTrue's verification team, never by developers or other buyers.
+        </p>
+      </Card>
+    </div>,
   );
 }

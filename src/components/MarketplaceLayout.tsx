@@ -31,12 +31,12 @@ export default function MarketplaceLayout({ children }: { children: React.ReactN
         </nav>
 
         {isAuthenticated ? (
-          <div className="flex items-center gap-4 shrink-0">
-            <Link to="/wishlist" className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors flex items-center gap-1.5">
+          <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+            <Link to="/wishlist" aria-label="Wishlist" className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors flex items-center gap-1.5">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8Z" />
               </svg>
-              Wishlist
+              <span className="hidden sm:inline">Wishlist</span>
             </Link>
             <Link to={landingRouteFor(user)} className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">
               Dashboard
