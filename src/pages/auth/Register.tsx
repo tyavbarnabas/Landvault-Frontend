@@ -9,6 +9,9 @@ import { useApp } from "../../contexts/AppContext";
 import type { Currency } from "../../data/mockData";
 import AuthShell, { AuthHeading } from "../../components/auth/AuthShell";
 import CodeInput from "../../components/auth/CodeInput";
+import PhoneField from "../../components/auth/PhoneField";
+import { dialCountry } from "../../data/dialCodes";
+import { phoneProblem, toInternational } from "../../lib/phone";
 import Alert from "../../components/ui/Alert";
 import Button from "../../components/ui/Button";
 import TextLink from "../../components/ui/TextLink";
@@ -34,7 +37,8 @@ export default function Register() {
   const [searchParams] = useSearchParams();
   const { register, reloadWishlist } = useApp();
   const [step, setStep] = useState<Step>("details");
-  const [form, setForm] = useState({ firstName: "", lastName: "", email: "", phone: "", password: "", country: "NG", currency: "NGN" });
+  const [form, setForm] = useState({ firstName: "", lastName: "", email: "", phone: "", dialIso: "NG", password: "", country: "NG", currency: "NGN" });
+  const [phoneError, setPhoneError] = useState("");
   const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -44,7 +48,7 @@ export default function Register() {
 
   const handleDetails = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.firstName || !form.lastName || !form.email || !form.password || (LIVE && !form.phone.trim())) { setError("Please fill in all required fields."); return; }
+    if (!form.firstName || !form.lastName || !form.email || !form.password) { setError("Please fill in all required fields."); return; }
     const pw = assessPassword(form.password, form);
     if (!pw.acceptable) { setError(pw.problem ?? "Choose a stronger password."); return; }
     setError("");
@@ -54,6 +58,10 @@ export default function Register() {
   const handleCountry = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    // Live sign-up needs a phone; the demo lets it be left out.
+    const problem = !form.phone.trim() ? (LIVE ? "Enter your mobile number." : null) : phoneProblem(form.dialIso, form.phone);
+    setPhoneError(problem ?? "");
+    if (problem) return;
     if (LIVE) { void createAccount(); return; }
     setLoading(true);
     setTimeout(() => { setLoading(false); setStep("otp"); }, 600);
@@ -70,7 +78,9 @@ export default function Register() {
       setLoading(true);
       try {
         await register({
-          firstName: form.firstName.trim(), lastName: form.lastName.trim(), email: form.email.trim(), phone: form.phone.trim(),
+          firstName: form.firstName.trim(), lastName: form.lastName.trim(), email: form.email.trim(),
+          // One international number, e.g. +447700900123.
+          phone: form.phone.trim() ? toInternational(form.dialIso, form.phone) : "",
           password: form.password, country: form.country, currency: form.currency as Currency,
         });
 
@@ -115,7 +125,7 @@ export default function Register() {
     <AuthShell>
       <AuthHeading title={step === "details" ? "Create your account" : step === "country" ? "Where are you based?" : "Confirm your email"}>
         {step === "details" && <>Already have one? <TextLink to="/login" className="font-medium">Sign in</TextLink></>}
-        {step === "country" && "So we can show prices in a currency you know, and the right identity check when you buy."}
+        {step === "country" && "So we can show prices in a currency you know, reach you about a purchase, and use the right identity check when you buy."}
         {step === "otp" && <>A 6-digit code was sent to <span className="font-medium text-[var(--foreground)]">{form.email}</span>. Enter it to confirm your account.</>}
       </AuthHeading>
 
@@ -148,9 +158,6 @@ export default function Register() {
           <Field id="reg-email" label="Email">
             <Input id="reg-email" type="email" autoComplete="email" value={form.email} onChange={set("email")} placeholder="emeka@example.com" />
           </Field>
-          <Field id="reg-phone" label={LIVE ? "Phone" : "Phone (optional)"} hint="With your country code. Used only about your purchases.">
-            <Input id="reg-phone" type="tel" autoComplete="tel" value={form.phone} onChange={set("phone")} placeholder="+234 803 000 0000" aria-describedby="reg-phone-hint" />
-          </Field>
           <Field id="reg-password" label="Password">
             {/* No confirm field: the eye lets you check what you typed, and a
                 mistyped password is recoverable with "Forgot password". */}
@@ -167,7 +174,9 @@ export default function Register() {
       {step === "country" && (
         <form onSubmit={handleCountry} className="space-y-4" noValidate>
           <Field id="reg-country" label="Country you live in">
-            <Select id="reg-country" autoComplete="country" value={form.country} onChange={set("country")}>
+            <Select id="reg-country" autoComplete="country" value={form.country}
+              // The dial code follows the country; it can still be changed.
+              onChange={(e) => { const country = e.target.value; setForm((f) => ({ ...f, country, dialIso: dialCountry(country) ? country : f.dialIso })); }}>
               <option value="NG">Nigeria</option>
               <option value="GB">United Kingdom</option>
               <option value="US">United States</option>
@@ -178,6 +187,10 @@ export default function Register() {
               {!LIVE && <option value="OTHER">Other</option>}
             </Select>
           </Field>
+          <PhoneField id="reg-phone" label={LIVE ? "Mobile number" : "Mobile number (optional)"}
+            dialIso={form.dialIso} onDialIso={(iso) => setForm((f) => ({ ...f, dialIso: iso }))}
+            number={form.phone} onNumber={(v) => { setForm((f) => ({ ...f, phone: v })); setPhoneError(""); }}
+            error={phoneError || undefined} />
           <Field id="reg-currency" label="Show prices alongside naira in" hint="Estates price in naira. This adds an approximate amount beside it.">
             <Select id="reg-currency" value={form.currency} onChange={set("currency")} aria-describedby="reg-currency-hint">
               <option value="NGN">NGN — Nigerian naira (₦)</option>
