@@ -72,8 +72,8 @@ export interface Payout {
   transactionId: string;
   tenantId: string;
   // The company's name, from the backend: trading name, else registered name.
-  // Undefined from a backend that doesn't send it yet; null when none is on record.
-  companyName?: string | null;
+  // Null only when none is on record.
+  companyName: string | null;
   amount: number;
   currency: string;
   partNumber: number;

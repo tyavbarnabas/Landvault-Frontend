@@ -13,8 +13,8 @@
 // Laid out from the Figma money-screen proposal: four figures, the ready
 // sales as a table, a tab of its own for payouts left waiting for their code
 // (otherwise only findable in History), and History as a table with status
-// chips — each payout named by its company (the payout's own companyName;
-// the tenant directory only for a backend that doesn't send it yet).
+// chips — each payout named by its company, from the payout's own
+// companyName, so a role without the tenant directory still sees whose it is.
 
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -41,7 +41,6 @@ import StatusBadge, { payoutStatusBadge } from "../../../components/StatusBadge"
 import ProblemNote, { type MoneyProblem } from "../../../components/payments/ProblemNote";
 import { AlertIcon, DownloadIcon, WalletIcon } from "../../../components/icons";
 import { failedPayouts, type Payout } from "../../../services/financeService";
-import { fetchTenants } from "../../../services/tenantsService";
 import type { PayoutBlocker, PayoutStatus } from "../../../services/paymentTypes";
 import {
   cancelPayout, fetchPayoutHistory, fetchReadyPayouts, resendPayoutOtp, sendPayout, submitPayoutOtp,
@@ -77,14 +76,6 @@ export default function Payouts() {
   const tab = (TAB_IDS.find((t) => t === params.get("tab")) ?? "ready") as Tab;
   const ready = useFetch(() => fetchReadyPayouts(), []);
   const history = useFetch(() => fetchPayoutHistory("all"), []);
-  // Each payout carries its company's name. A backend that doesn't send it yet
-  // leaves it undefined; only then are names looked up in the tenant directory.
-  const needDirectory = canSeeCompanies && (history.data ?? []).some((p) => p.companyName === undefined);
-  const tenants = useFetch(() => (needDirectory ? fetchTenants({}, { limit: 1000 }) : Promise.resolve(null)), [needDirectory]);
-  const names = new Map<string, string>();
-  for (const t of tenants.data?.items ?? []) names.set(t.id, t.displayName);
-  for (const r of ready.data ?? []) if (r.companyName) names.set(r.tenantId, r.companyName);
-
   // Held here, not on a row: a sale whose payout is in flight leaves the
   // ready list on refresh, and its row — with any message on it — goes too.
   const [notice, setNotice] = useState("");
@@ -105,8 +96,8 @@ export default function Payouts() {
       <div id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`} className="space-y-3">
         {notice && <Alert tone="info" role="status" className="font-medium">{notice}</Alert>}
         {tab === "ready" && <Ready list={ready} canSeeCompanies={canSeeCompanies} onChanged={refresh} />}
-        {tab === "awaiting" && <Awaiting list={history} payouts={awaiting} names={names} onChanged={refresh} />}
-        {tab === "history" && <History list={history} names={names} onChanged={refresh} />}
+        {tab === "awaiting" && <Awaiting list={history} payouts={awaiting} onChanged={refresh} />}
+        {tab === "history" && <History list={history} onChanged={refresh} />}
       </div>
     </Page>
   );
@@ -175,7 +166,7 @@ function ReadyRow({ sale, canSeeCompanies, onChanged }: { sale: ReadyPayout; can
   };
 
   const cells = [
-    <span className="font-semibold text-[var(--foreground)]">{sale.companyName ?? "Company name not on record"}</span>,
+    <span className="font-semibold text-[var(--foreground)]">{sale.companyName || "Company not shown"}</span>,
     <>
       <div className="text-sm text-[var(--foreground)]">{sale.estateName}</div>
       <div className="text-xs text-[var(--muted-foreground)]">{sale.plotLabel} · <span className="font-mono-data">{sale.transactionReference}</span></div>
@@ -236,13 +227,13 @@ function ReadyRow({ sale, canSeeCompanies, onChanged }: { sale: ReadyPayout; can
 const PAYOUT_COLUMNS = ["Company", "Amount", "Account", "Started", "Reference", "Status"];
 const PAYOUT_GRID = "lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1.1fr)_auto]";
 
-function Awaiting({ list, payouts, names, onChanged }: { list: UseFetchResult<Payout[]>; payouts: Payout[]; names: Map<string, string>; onChanged: (message?: string) => void }) {
+function Awaiting({ list, payouts, onChanged }: { list: UseFetchResult<Payout[]>; payouts: Payout[]; onChanged: (message?: string) => void }) {
   if (list.loading && !list.data) return <Loading />;
   if (list.error) return <LoadError error={list.errorValue} what="payouts waiting for a code" onRetry={list.refetch} />;
   if (!payouts.length) return <Card padding="sm"><EmptyState title="Nothing waiting for a code" description="A payout started but not finished — no code entered, not cancelled — waits here until it's sent or cancelled." /></Card>;
   return (
     <DisclosureTable columns={PAYOUT_COLUMNS} grid={PAYOUT_GRID} label="Payouts waiting for a code">
-      {payouts.map((p) => <PayoutRow key={p.id} payout={p} company={payoutCompany(p, names)} onChanged={onChanged} />)}
+      {payouts.map((p) => <PayoutRow key={p.id} payout={p} company={payoutCompany(p)} onChanged={onChanged} />)}
     </DisclosureTable>
   );
 }
@@ -252,7 +243,7 @@ const FILTER_LABEL: Record<PayoutStatus, string> = {
   awaiting_otp: "Awaiting code", sending: "Sending", pending: "With the bank", success: "Paid", failed: "Failed", reversed: "Reversed", cancelled: "Cancelled",
 };
 
-function History({ list, names, onChanged }: { list: UseFetchResult<Payout[]>; names: Map<string, string>; onChanged: (message?: string) => void }) {
+function History({ list, onChanged }: { list: UseFetchResult<Payout[]>; onChanged: (message?: string) => void }) {
   const [filter, setFilter] = useState<HistoryFilter>("all");
   if (list.loading && !list.data) return <Loading />;
   if (list.error) return <LoadError error={list.errorValue} what="payout history" onRetry={list.refetch} />;
@@ -267,7 +258,7 @@ function History({ list, names, onChanged }: { list: UseFetchResult<Payout[]>; n
         options={[{ id: "all" as const, label: "All", count: all.length }, ...present.map((s) => ({ id: s, label: FILTER_LABEL[s], count: all.filter((p) => p.status === s).length }))]} />
       {shown.length === 0 ? <Card padding="sm"><EmptyState title="None" description="No payouts with this status." /></Card> : (
         <DisclosureTable columns={PAYOUT_COLUMNS} grid={PAYOUT_GRID} label="Payout history">
-          {shown.map((p) => <PayoutRow key={p.id} payout={p} company={payoutCompany(p, names)} onChanged={onChanged} />)}
+          {shown.map((p) => <PayoutRow key={p.id} payout={p} company={payoutCompany(p)} onChanged={onChanged} />)}
         </DisclosureTable>
       )}
     </>
@@ -275,12 +266,9 @@ function History({ list, names, onChanged }: { list: UseFetchResult<Payout[]>; n
 }
 
 // The payout's own company name (trading name, else registered name); null
-// means none on record, shown neutrally. The directory only for a backend that
-// doesn't send the field yet. Exported for tests.
-export function payoutCompany(p: Payout, directory: Map<string, string>): string {
-  if (p.companyName) return p.companyName;
-  if (p.companyName === null) return "Company not shown";
-  return directory.get(p.tenantId) ?? "Company not shown";
+// means none on record, shown neutrally, never guessed. Exported for tests.
+export function payoutCompany(p: Pick<Payout, "companyName">): string {
+  return p.companyName || "Company not shown";
 }
 
 function PayoutRow({ payout: p, company, onChanged }: { payout: Payout; company: string; onChanged: (message?: string) => void }) {
