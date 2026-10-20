@@ -4,19 +4,24 @@ import { GOV_ID_TYPES, BENEFICIAL_OWNER_THRESHOLD, isBeneficialOwner } from "../
 import { TextField, SelectField, CheckboxField } from "./FormField";
 import RepeatableFieldList from "../../../../components/onboarding/RepeatableFieldList";
 import { newDirector } from "./defaultValues";
+import Alert from "../../../../components/ui/Alert";
+import Badge from "../../../../components/ui/Badge";
+import { ErrorText } from "../../../../components/ui/Field";
 
 export default function Step6Directors() {
   const { register, control, formState: { errors } } = useFormContext<TenantOnboardingValues>();
   const directors = useFieldArray({ control, name: "directors" });
   const watchedDirectors = useWatch({ control, name: "directors" });
+  const totalPct = Math.round((watchedDirectors ?? []).reduce((sum, d) => sum + (Number(d?.ownershipPct) || 0), 0) * 100) / 100;
 
   return (
     <div className="space-y-6">
-      <div className="bg-[var(--secondary)] rounded-lg p-4 text-sm text-[var(--muted-foreground)]">
-        Flagging beneficial owners (≥{BENEFICIAL_OWNER_THRESHOLD}% ownership) for enhanced verification is standard AML practice — it protects the platform from onboarding a front company.
-      </div>
+      <Alert tone="info">
+        Flagging beneficial owners ({BENEFICIAL_OWNER_THRESHOLD}% ownership or more) for enhanced verification is standard AML practice — it
+        protects the platform from onboarding a front company.
+      </Alert>
 
-      {errors.directors?.message && <p role="alert" className="text-red-600 text-sm">{errors.directors.message as string}</p>}
+      {errors.directors?.message && <ErrorText>{errors.directors.message as string}</ErrorText>}
 
       <RepeatableFieldList
         items={directors.fields}
@@ -31,11 +36,12 @@ export default function Step6Directors() {
           const directorErrors = errors.directors?.[i];
           return (
             <div className="space-y-4">
-              {flagged && (
-                <div className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-amber-50 text-amber-700 border-amber-200">
-                  Beneficial owner — requires enhanced verification
-                </div>
-              )}
+              <div className="flex flex-wrap items-center gap-2 pr-16">
+                <span className="font-semibold text-[var(--foreground)]">
+                  {[watchedDirectors?.[i]?.firstName, watchedDirectors?.[i]?.lastName].filter(Boolean).join(" ") || `Director ${i + 1}`}
+                </span>
+                {flagged && <Badge label={`Beneficial owner · ${BENEFICIAL_OWNER_THRESHOLD}%+ · enhanced verification`} variant="info" />}
+              </div>
               <div className="grid sm:grid-cols-3 gap-4">
                 <TextField label="First name" required error={directorErrors?.firstName?.message} {...register(`directors.${i}.firstName`)} />
                 <TextField label="Last name" required error={directorErrors?.lastName?.message} {...register(`directors.${i}.lastName`)} />
@@ -61,6 +67,17 @@ export default function Step6Directors() {
           );
         }}
       />
+
+      {/* Shown so a gap or a double count is easy to spot — not a rule. */}
+      <div className="rounded-lg bg-[var(--muted)] p-3.5">
+        <div className="text-sm font-semibold text-[var(--foreground)]">Ownership recorded: {totalPct}%</div>
+        <div className="h-2 rounded-full bg-[var(--border)] overflow-hidden mt-2 flex" aria-hidden="true">
+          {(watchedDirectors ?? []).map((d, i) => (
+            <span key={i} className={i % 2 ? "bg-[var(--accent)]" : "bg-[var(--primary)]"} style={{ width: `${Math.min(100, Math.max(0, Number(d?.ownershipPct) || 0))}%` }} />
+          ))}
+        </div>
+        <p className="text-xs text-[var(--muted-foreground)] mt-2">Shown so a gap or a double count is easy to spot; it isn't required to add up to 100%.</p>
+      </div>
 
       <CheckboxField
         label="I confirm I am a director of this company and am authorised to register it on HomeTrue."

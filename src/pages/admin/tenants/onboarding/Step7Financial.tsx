@@ -3,6 +3,7 @@ import type { TenantOnboardingValues } from "../../../../lib/onboarding/schema";
 import { GATEWAY_NAMES, accountNameLooksMismatched } from "../../../../lib/onboarding/schema";
 import { NIGERIAN_BANKS } from "../../../../data/nigerianBanks";
 import { TextField, SelectField } from "./FormField";
+import Alert from "../../../../components/ui/Alert";
 
 export default function Step7Financial() {
   const { register, control, setValue, formState: { errors } } = useFormContext<TenantOnboardingValues>();
@@ -26,9 +27,9 @@ export default function Step7Financial() {
           <TextField label="Account name" required error={errors.accountName?.message} {...register("accountName")} />
         </div>
         {mismatch && (
-          <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+          <Alert className="mt-3">
             The account name doesn't closely match the registered company name ("{registeredName}"). This isn't a blocker, but it's a compliance red flag worth a closer look during review.
-          </div>
+          </Alert>
         )}
       </fieldset>
 

@@ -1,7 +1,7 @@
 import { Controller, useFormContext } from "react-hook-form";
 import type { TenantOnboardingValues } from "../../../../lib/onboarding/schema";
 import { TextField } from "./FormField";
-import PhoneInput from "../../../../components/onboarding/PhoneInput";
+import IntlPhoneInput from "../../../../components/onboarding/IntlPhoneInput";
 
 export default function Step3ContactPresence() {
   const { register, control, formState: { errors } } = useFormContext<TenantOnboardingValues>();
@@ -10,10 +10,10 @@ export default function Step3ContactPresence() {
     <div className="space-y-6">
       <TextField label="Company email" type="email" required error={errors.companyEmail?.message} {...register("companyEmail")} />
 
-      <div>
-        <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Company phone <span className="text-red-600">*</span></label>
-        <Controller control={control} name="companyPhone" render={({ field }) => <PhoneInput value={field.value} onChange={field.onChange} error={errors.companyPhone?.message} />} />
-      </div>
+      <Controller control={control} name="companyPhone" render={({ field }) => (
+        <IntlPhoneInput id="company-phone" label="Company phone" value={field.value} onChange={field.onChange} error={errors.companyPhone?.message}
+          purpose="The company's main line." />
+      )} />
 
       <TextField label="Website" placeholder="https://example.com" error={errors.website?.message} {...register("website")} />
 

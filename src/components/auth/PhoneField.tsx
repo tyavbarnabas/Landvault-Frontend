@@ -14,7 +14,7 @@ import { cx } from "../ui/cx";
 
 const COMMON = COMMON_DIAL_ISOS.map((iso) => DIAL_COUNTRIES.find((c) => c.iso === iso)!);
 
-export default function PhoneField({ id, label, dialIso, onDialIso, number, onNumber, error }: {
+export default function PhoneField({ id, label, dialIso, onDialIso, number, onNumber, error, purpose = "Used only about your purchases — and printed on your allocation letter." }: {
   id: string;
   label: string;
   dialIso: string;
@@ -22,11 +22,13 @@ export default function PhoneField({ id, label, dialIso, onDialIso, number, onNu
   number: string;
   onNumber: (value: string) => void;
   error?: string;
+  // What the number is for, said under the field.
+  purpose?: string;
 }) {
   const country = dialCountry(dialIso);
   const hint = number.trim()
-    ? `Saved as ${displayInternational(dialIso, number)}. Used only about your purchases — and printed on your allocation letter.`
-    : "Used only about your purchases — and printed on your allocation letter.";
+    ? `Saved as ${displayInternational(dialIso, number)}. ${purpose}`
+    : purpose;
   return (
     <Field id={id} label={label} hint={error ? undefined : hint} error={error}>
       <div className="flex gap-2">

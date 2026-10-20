@@ -1,10 +1,19 @@
+// Onboard a developer company: eight steps, from the Figma admin onboarding
+// proposal — the steps listed beside one card per step, and a sticky action
+// bar. The rules are the zod schema's, checked step by step as before.
+
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { FormProvider, useForm } from "react-hook-form";
+import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { tenantOnboardingSchema, type TenantOnboardingValues, isBeneficialOwner } from "../../../../lib/onboarding/schema";
 import { getOnboardingDefaultValues, STEP_FIELDS, STEP_LABELS } from "./defaultValues";
-import StepProgress from "../../../../components/onboarding/StepProgress";
+import WizardSteps, { type WizardStepState } from "../../../../components/onboarding/WizardSteps";
+import Page from "../../../../components/ui/Page";
+import Card from "../../../../components/ui/Card";
+import Alert from "../../../../components/ui/Alert";
+import Button from "../../../../components/ui/Button";
+import TextLink from "../../../../components/ui/TextLink";
 import { StepActions } from "./FormField";
 import { createTenantDraft, submitForVerification, type CreateTenantDraftInput, type Director, type Regulatory, type TenantDocument, type FinancialSettlement } from "../../../../services/tenantsService";
 import { convertRequest, fetchOnboardingRequest, wizardPrefill } from "../../../../services/onboardingRequestsService";
@@ -74,6 +83,7 @@ export default function OnboardingWizard() {
     mode: "onSubmit",
   });
   const { trigger, getValues, reset } = form;
+  const values = useWatch({ control: form.control }) as Partial<TenantOnboardingValues>;
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [furthestIndex, setFurthestIndex] = useState(0);
@@ -256,43 +266,100 @@ export default function OnboardingWizard() {
 
   const isLastStep = currentIndex === STEP_LABELS.length - 1;
   const StepComponent = STEPS[currentIndex];
+  const missing = stepsMissing(values);
+  // Where each step stands: where you are, something to fix (an error the
+  // last check found, or — on the review — anything still missing), done once
+  // passed, otherwise still to do.
+  const errorKeys = Object.keys(form.formState.errors);
+  const states: WizardStepState[] = STEP_LABELS.map((_, i) => {
+    if (i === currentIndex) return "current";
+    const fields = STEP_FIELDS[i].map((f) => String(f).split(".")[0]);
+    if (fields.some((f) => errorKeys.includes(f)) || (isLastStep && missing.some((m) => m.step === i))) return "fix";
+    return i < furthestIndex ? "done" : "todo";
+  });
 
   return (
-    <div className="p-6 max-w-3xl mx-auto pb-16">
-      {fromRequest && (
-        <div className="mb-4 rounded-lg bg-[var(--muted)] p-3 text-xs text-[var(--foreground)]" role="status">
-          Converting {requestCompany ? `${requestCompany}'s` : "an"} onboarding request. What they told us is filled in; check it and complete the rest. Submitting creates the company, invites its first Executive Director and closes the request.
-        </div>
-      )}
-      {draftNotice && (
-        <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800 flex items-center justify-between">
-          <span>Resumed from a saved draft. Files aren't stored in drafts — please re-attach any documents you'd uploaded before.</span>
-          <button type="button" onClick={() => setDraftNotice(false)} className="text-blue-800 font-medium ml-3 shrink-0">Dismiss</button>
-        </div>
-      )}
-      {submitError && (
-        <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-800" role="alert">{submitError}</div>
-      )}
-      {savedNotice && (
-        <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-xs text-emerald-800">Draft saved — you can come back and continue later.</div>
-      )}
+    <Page width="xl" back={{ to: "/admin/tenants", label: "Tenants" }} title="Onboard a developer"
+      description="Creates the company as a draft, invites its first Executive Director, and sends it for HomeTrue's verification.">
+      <div className="space-y-3 mb-6 empty:hidden">
+        {fromRequest && (
+          <Alert tone="info" role="status" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+            <span>
+              Converting {requestCompany ? `${requestCompany}'s` : "an"} onboarding request. What they told us is filled in — check it and
+              complete the rest. Submitting also closes the request.
+            </span>
+            <TextLink to={`/admin/onboarding-requests/${encodeURIComponent(fromRequest)}`} className="font-medium shrink-0">View the request →</TextLink>
+          </Alert>
+        )}
+        {draftNotice && (
+          <Alert tone="info" className="flex items-center justify-between gap-3">
+            <span>Resumed from a saved draft. Files aren't stored in drafts — please re-attach any documents you'd uploaded before.</span>
+            <Button variant="linkMuted" onClick={() => setDraftNotice(false)} className="shrink-0">Dismiss</Button>
+          </Alert>
+        )}
+        {submitError && <Alert tone="error" role="alert">{submitError}</Alert>}
+      </div>
 
-      <StepProgress steps={STEP_LABELS} currentIndex={currentIndex} furthestIndex={furthestIndex} onStepClick={goToStep} />
+      <div className="grid lg:grid-cols-[16rem_minmax(0,1fr)] gap-6 items-start">
+        <WizardSteps steps={STEP_LABELS} states={states} currentIndex={currentIndex} furthestIndex={furthestIndex} onStepClick={goToStep}
+          aside={<Button variant="link" className="text-sm font-medium" onClick={handleSaveForLater}>Save a draft on this device</Button>} />
 
-      <FormProvider {...form}>
-        <form onSubmit={(e) => e.preventDefault()}>
-          {isLastStep ? <Step8Review onEditStep={goToStep} /> : <StepComponent />}
+        <FormProvider {...form}>
+          <form onSubmit={(e) => e.preventDefault()} noValidate>
+            <Card as="section" aria-labelledby="step-heading" className="sm:p-6">
+              <p className="font-mono-data text-xs text-[var(--muted-foreground)]">Step {currentIndex + 1} of {STEP_LABELS.length}</p>
+              <h2 id="step-heading" className="text-xl font-semibold text-[var(--foreground)] mt-0.5">{STEP_LABELS[currentIndex]}</h2>
+              <p className="text-sm text-[var(--muted-foreground)] mt-1 mb-6">{STEP_DESCRIPTIONS[currentIndex]}</p>
+              {isLastStep ? <Step8Review onEditStep={goToStep} missing={missing} /> : <StepComponent />}
+            </Card>
 
-          <StepActions
-            isFirst={currentIndex === 0}
-            isSubmitting={submitting}
-            nextLabel={isLastStep ? "Submit for verification" : "Continue"}
-            onBack={() => goToStep(Math.max(0, currentIndex - 1))}
-            onNext={handleNext}
-            onSaveForLater={handleSaveForLater}
-          />
-        </form>
-      </FormProvider>
-    </div>
+            <StepActions
+              isFirst={currentIndex === 0}
+              isSubmitting={submitting}
+              backLabel={STEP_LABELS[currentIndex - 1]}
+              nextLabel={isLastStep ? "Submit for verification" : `Continue: ${STEP_LABELS[currentIndex + 1]} →`}
+              nextDisabled={isLastStep && missing.length > 0}
+              savedNotice={savedNotice}
+              onBack={() => goToStep(Math.max(0, currentIndex - 1))}
+              onNext={handleNext}
+              onSaveForLater={handleSaveForLater}
+            />
+          </form>
+        </FormProvider>
+      </div>
+    </Page>
   );
+}
+
+// What each step is for, under its title.
+const STEP_DESCRIPTIONS = [
+  "As it appears on the CAC certificate. HomeTrue checks these against the documents in step 4.",
+  "The person HomeTrue deals with. They become the company's first Executive Director, invited by email when you submit.",
+  "How buyers and HomeTrue reach the company itself.",
+  "PDF, JPG or PNG, up to 10 MB each. HomeTrue checks each one before the company is verified.",
+  "The company's anti-money-laundering registration and the state and industry regulators it's registered with.",
+  "Everyone on the CAC record. Anyone holding 25% or more is a beneficial owner and gets enhanced verification.",
+  "The company's bank account for sale proceeds, and how it takes payments.",
+  "Check everything once. Anything still missing is listed first, and submitting waits until it's fixed.",
+];
+
+// Named in the review's list where the schema's message doesn't say which.
+const FIELD_NAMES: Record<string, string> = {
+  cacCertificate: "CAC certificate", cacStatusReport: "CAC status report", tinDocument: "TIN document",
+  proofOfAddress: "Proof of registered address", scumlCertificate: "SCUML certificate", phone: "Mobile number", companyPhone: "Company phone",
+};
+
+// Steps 1–7 with something the schema refuses, for the review: which step,
+// and the first problem in it. The two confirmations on the review itself are
+// checked when Submit is pressed.
+export function stepsMissing(values: Partial<TenantOnboardingValues>): { step: number; message: string }[] {
+  const result = tenantOnboardingSchema.safeParse(values);
+  if (result.success) return [];
+  const found = new Map<number, string>();
+  for (const issue of result.error.issues) {
+    const key = String(issue.path[0] ?? "");
+    const step = STEP_FIELDS.findIndex((fields) => fields.some((f) => String(f).split(".")[0] === key));
+    if (step >= 0 && step < STEP_LABELS.length - 1 && !found.has(step)) found.set(step, FIELD_NAMES[key] ? `${FIELD_NAMES[key]} — ${issue.message.toLowerCase().replace(/\.$/, "")}.` : issue.message);
+  }
+  return [...found.entries()].sort(([a], [b]) => a - b).map(([step, message]) => ({ step, message }));
 }

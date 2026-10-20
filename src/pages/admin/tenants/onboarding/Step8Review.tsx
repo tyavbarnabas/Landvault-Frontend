@@ -1,7 +1,14 @@
+// The wizard's last step: everything entered, as cards with Edit links,
+// anything still missing first, and what submitting will do.
+
 import { useFormContext, useWatch } from "react-hook-form";
 import type { TenantOnboardingValues } from "../../../../lib/onboarding/schema";
 import { CheckboxField } from "./FormField";
 import { STEP_LABELS } from "./defaultValues";
+import Card from "../../../../components/ui/Card";
+import Alert from "../../../../components/ui/Alert";
+import Button from "../../../../components/ui/Button";
+import { displayInternational, splitInternational } from "../../../../lib/phone";
 
 function SummaryRow({ label, value }: { label: string; value: React.ReactNode }) {
   if (!value) return null;
@@ -14,10 +21,10 @@ function SummaryRow({ label, value }: { label: string; value: React.ReactNode })
 }
 
 function fileLabel(f: File | null | undefined) {
-  return f ? f.name : "— not uploaded —";
+  return f ? f.name : "Not uploaded";
 }
 
-export default function Step8Review({ onEditStep }: { onEditStep: (index: number) => void }) {
+export default function Step8Review({ onEditStep, missing }: { onEditStep: (index: number) => void; missing: { step: number; message: string }[] }) {
   const { register, control, formState: { errors } } = useFormContext<TenantOnboardingValues>();
   const v = useWatch({ control }) as Partial<TenantOnboardingValues>;
 
@@ -39,14 +46,14 @@ export default function Step8Review({ onEditStep }: { onEditStep: (index: number
         { label: "Name", value: v.firstName || v.lastName ? `${v.firstName ?? ""} ${v.lastName ?? ""}`.trim() : undefined },
         { label: "Role", value: v.roleTitle },
         { label: "Work email", value: v.workEmail },
-        { label: "Phone", value: v.phone },
+        { label: "Mobile", value: v.phone ? showPhone(v.phone) : undefined },
       ],
     },
     {
       title: STEP_LABELS[2], stepIndex: 2,
       rows: [
         { label: "Company email", value: v.companyEmail },
-        { label: "Company phone", value: v.companyPhone },
+        { label: "Company phone", value: v.companyPhone ? showPhone(v.companyPhone) : undefined },
         { label: "Website", value: v.website },
       ],
     },
@@ -89,23 +96,58 @@ export default function Step8Review({ onEditStep }: { onEditStep: (index: number
     },
   ];
 
-  return (
-    <div className="space-y-6">
-      {sections.map((section) => (
-        <div key={section.title} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-sm font-semibold">{section.title}</div>
-            <button type="button" onClick={() => onEditStep(section.stepIndex)} className="text-xs text-[var(--accent)] font-medium hover:underline">
-              Edit
-            </button>
-          </div>
-          <div className="divide-y divide-[var(--border)]">
-            {section.rows.map((r) => <SummaryRow key={r.label} {...r} />)}
-          </div>
-        </div>
-      ))}
+  const company = v.tradingName || v.registeredName || "The company";
+  const contact = [v.firstName, v.lastName].filter(Boolean).join(" ") || "the primary contact";
 
-      <div className="space-y-3 pt-2">
+  return (
+    <div className="space-y-5">
+      {missing.length > 0 && (
+        <Alert tone="error" title={`${missing.length} ${missing.length === 1 ? "step needs" : "steps need"} attention before you can submit`}>
+          <ul className="mt-1 space-y-1">
+            {missing.map((m) => (
+              <li key={m.step} className="flex flex-wrap gap-x-2">
+                <span className="font-medium">{STEP_LABELS[m.step]}:</span> {m.message}
+                <Button variant="link" className="text-sm font-medium" onClick={() => onEditStep(m.step)}>Fix it →</Button>
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      )}
+
+      <div className="grid md:grid-cols-2 gap-4">
+        {sections.map((section) => {
+          const needsFix = missing.some((m) => m.step === section.stepIndex);
+          return (
+            <Card key={section.title} as="section" padding="md" className={needsFix ? "border-[var(--error-border)]" : undefined}>
+              <div className="flex items-center justify-between gap-3 mb-1">
+                <h3 className="text-sm font-semibold text-[var(--foreground)]">{section.title}</h3>
+                <Button variant="link" className="text-sm font-medium" onClick={() => onEditStep(section.stepIndex)} aria-label={`Edit ${section.title}`}>Edit</Button>
+              </div>
+              <div className="divide-y divide-[var(--border)]">
+                {section.rows.map((r) => <SummaryRow key={r.label} {...r} />)}
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+
+      <section aria-labelledby="submit-heading" className="rounded-xl bg-[var(--secondary)] p-5">
+        <h3 id="submit-heading" className="text-sm font-semibold text-[var(--foreground)] mb-3">When you submit</h3>
+        <ol className="space-y-2">
+          {[
+            `${company} is created as a draft company.`,
+            `${contact} is invited by email as its first Executive Director.`,
+            "It goes to HomeTrue's verification with these documents. Converting a request also closes it.",
+          ].map((t, i) => (
+            <li key={i} className="flex gap-2.5 text-sm text-[var(--foreground)]">
+              <span className="w-5 h-5 shrink-0 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] text-[11px] font-semibold flex items-center justify-center">{i + 1}</span>
+              {t}
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <div className="space-y-3">
         <CheckboxField
           label="I confirm the information provided in this application is accurate and complete."
           error={errors.accuracyAttestation?.message}
@@ -120,3 +162,5 @@ export default function Step8Review({ onEditStep }: { onEditStep: (index: number
     </div>
   );
 }
+
+const showPhone = (international: string) => { const { iso, number } = splitInternational(international); return displayInternational(iso, number); };

@@ -21,7 +21,7 @@ export default function RepeatableFieldList<T>({ items, onAdd, onRemove, addLabe
             <button
               type="button"
               onClick={() => onRemove(i)}
-              className="absolute top-3 right-3 text-xs text-red-600 hover:underline"
+              className="absolute top-3 right-3 text-xs text-[var(--error-text)] hover:underline"
             >
               Remove
             </button>

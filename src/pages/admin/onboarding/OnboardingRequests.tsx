@@ -188,63 +188,82 @@ export function OnboardingRequestDetail() {
   };
 
   return (
-    <Page title={r.companyName} back={back} width="lg" eyebrow={`Sent ${formatDate(r.createdAt)}`}>
-      <div className="flex flex-wrap items-center gap-3 mb-6">
-        <StatusBadge label={badge.label} variant={badge.variant} />
-        {r.needsAttention && <StatusBadge label={ATTENTION_TEXT} variant="error" />}
-        {r.status === "converted" && r.organizationId && <TextLink to={`/admin/tenants/${r.organizationId}`} className="text-sm">Open the tenant →</TextLink>}
-      </div>
-
-      <div className="space-y-6">
-        <Card as="section" className="space-y-3" aria-labelledby="req-contact">
-          <h2 id="req-contact" className="font-semibold text-[var(--foreground)]">Contact</h2>
-          {open && <ContactButtons request={r} />}
-          <div className="grid sm:grid-cols-2 gap-3">
-            <InfoBox label="Name">{r.contactName}{r.contactRole ? `, ${r.contactRole}` : ""}</InfoBox>
-            <InfoBox label="Prefers">{contactMethodLabel(r.preferredContactMethod)}{r.preferredContactTime ? ` · ${r.preferredContactTime}` : ""}</InfoBox>
-            <InfoBox label="Email"><a href={`mailto:${r.contactEmail}`} className="text-[var(--accent)] hover:underline break-all">{r.contactEmail}</a></InfoBox>
-            <InfoBox label="Phone"><a href={`tel:${r.contactPhone.replace(/[^+\d]/g, "")}`} className="text-[var(--accent)] hover:underline">{r.contactPhone}</a></InfoBox>
-          </div>
-        </Card>
-
-        <Card as="section" className="space-y-3" aria-labelledby="req-company">
-          <h2 id="req-company" className="font-semibold text-[var(--foreground)]">Company</h2>
-          <div className="grid sm:grid-cols-2 gap-3">
-            <InfoBox label="RC number"><span className="font-mono-data">{r.rcNumber ?? "Not given"}</span></InfoBox>
-            <InfoBox label="Estates (their estimate)">{r.estimatedEstateCount ?? "Not given"}</InfoBox>
-            <InfoBox label="Office address" className="sm:col-span-2">{r.companyAddress ?? "Not given"}</InfoBox>
-            <InfoBox label="States" className="sm:col-span-2">{r.statesOfOperation.length ? r.statesOfOperation.join(", ") : "Not given"}</InfoBox>
-          </div>
-          {r.message && <InfoBox label="Their message"><p className="whitespace-pre-line text-sm">{r.message}</p></InfoBox>}
-        </Card>
-
-        {(r.contactedAt || r.declineReason) && (
-          <Card as="section" className="space-y-2 text-sm" aria-labelledby="req-history">
-            <h2 id="req-history" className="font-semibold text-[var(--foreground)]">What's happened</h2>
-            {r.contactedAt && <p>Last contacted {formatDate(r.contactedAt)}{r.contactNote ? `: ${r.contactNote}` : "."}</p>}
-            {r.status === "declined" && <p>Declined {formatDate(r.decidedAt)}: {r.declineReason}</p>}
-            {r.status === "converted" && <p>Converted into a tenant {formatDate(r.decidedAt)}.</p>}
-          </Card>
-        )}
-
-        {open && canManage && (
-          <Card as="section" className="space-y-4" aria-labelledby="req-actions">
-            <h2 id="req-actions" className="font-semibold text-[var(--foreground)]">Next step</h2>
-            <Field id="req-note" label="Record a contact (optional note)" hint="What was said, or what they're sending next.">
-              <Textarea id="req-note" rows={2} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} />
-            </Field>
-            <div className="flex flex-wrap gap-3">
-              <Button variant="secondary" onClick={recordContact} disabled={busy}>{busy ? "Saving…" : "Mark as contacted"}</Button>
-              <Button onClick={() => navigate(`/admin/tenants/new?fromRequest=${encodeURIComponent(r.id)}`)}>Convert into a tenant…</Button>
-              <Button variant="linkDanger" onClick={() => { setDeclining(true); setMessage(null); }}>Decline…</Button>
+    <Page back={back} width="xl"
+      title={<span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">{r.companyName}<span className="font-[family-name:var(--font-body)] inline-flex flex-wrap gap-2"><StatusBadge label={badge.label} variant={badge.variant} />{r.needsAttention && <StatusBadge label={ATTENTION_TEXT} variant="warning" />}</span></span>}
+      description={`Sent ${formatDate(r.createdAt)} from the List your company form${r.statesOfOperation.length ? ` · ${r.statesOfOperation.join(", ")}` : ""}`}>
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_22rem] gap-6 items-start">
+        <div className="space-y-5">
+          <Card as="section" className="space-y-3" aria-labelledby="req-contact">
+            <h2 id="req-contact" className="font-semibold text-[var(--foreground)]">Who to speak to</h2>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <InfoBox label="Name">{r.contactName}{r.contactRole ? `, ${r.contactRole}` : ""}</InfoBox>
+              <InfoBox label="Prefers">{contactMethodLabel(r.preferredContactMethod)}{r.preferredContactTime ? ` · ${r.preferredContactTime}` : ""}</InfoBox>
+              <InfoBox label="Email"><a href={`mailto:${r.contactEmail}`} className="text-[var(--accent)] hover:underline break-all">{r.contactEmail}</a></InfoBox>
+              <InfoBox label="Phone"><a href={`tel:${r.contactPhone.replace(/[^+\d]/g, "")}`} className="text-[var(--accent)] hover:underline">{r.contactPhone}</a></InfoBox>
             </div>
-            <p className="text-xs text-[var(--muted-foreground)]">
-              Converting opens the tenant wizard filled in from this request. The company is created and its first Executive Director invited only when you submit it.
-            </p>
-            {message && (message.tone === "error" ? <ErrorText>{message.text}</ErrorText> : <p className="text-sm text-[var(--muted-foreground)]" role="status">{message.text}</p>)}
           </Card>
-        )}
-        {open && !canManage && <Alert tone="info">You can read requests but not act on them.</Alert>}
+
+          <Card as="section" className="space-y-3" aria-labelledby="req-company">
+            <h2 id="req-company" className="font-semibold text-[var(--foreground)]">The company, as they described it</h2>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <InfoBox label="RC number"><span className="font-mono-data">{r.rcNumber ?? "Not given"}</span></InfoBox>
+              <InfoBox label="Estates (their estimate)">{r.estimatedEstateCount ?? "Not given"}</InfoBox>
+              <InfoBox label="Office address" className="sm:col-span-2">{r.companyAddress ?? "Not given"}</InfoBox>
+              <InfoBox label="States" className="sm:col-span-2">{r.statesOfOperation.length ? r.statesOfOperation.join(", ") : "Not given"}</InfoBox>
+            </div>
+            {r.message && <InfoBox label="Their message"><p className="whitespace-pre-line text-sm">{r.message}</p></InfoBox>}
+            <p className="text-xs text-[var(--muted-foreground)]">Nothing here is checked yet — HomeTrue verifies the company only once it's onboarded.</p>
+          </Card>
+
+          <Card as="section" aria-labelledby="req-history">
+            <h2 id="req-history" className="font-semibold text-[var(--foreground)] mb-3">What's happened</h2>
+            <ol className="space-y-2.5 text-sm">
+              <HistoryItem when={formatDate(r.createdAt)}>Request sent from the public form.</HistoryItem>
+              {r.contactedAt && <HistoryItem when={formatDate(r.contactedAt)}>Contacted{r.contactNote ? `: ${r.contactNote}` : "."}</HistoryItem>}
+              {r.status === "declined" && <HistoryItem when={formatDate(r.decidedAt)}>Declined: {r.declineReason}</HistoryItem>}
+              {r.status === "converted" && (
+                <HistoryItem when={formatDate(r.decidedAt)}>
+                  Converted into a tenant.{r.organizationId && <> <TextLink to={`/admin/tenants/${r.organizationId}`} className="font-medium">Open the tenant →</TextLink></>}
+                </HistoryItem>
+              )}
+              {r.needsAttention && <HistoryItem when="Now" warn>No contact yet — 2 working days have passed.</HistoryItem>}
+            </ol>
+          </Card>
+        </div>
+
+        <Card as="section" aria-labelledby="req-actions" className="space-y-4 lg:sticky lg:top-6">
+          <h2 id="req-actions" className="font-semibold text-[var(--foreground)]">Next step</h2>
+          {!open ? (
+            <p className="text-sm text-[var(--muted-foreground)]">
+              {r.status === "converted" ? "This request has been converted into a tenant." : "This request was declined. It's kept for the record."}
+            </p>
+          ) : (
+            <>
+              <p className="text-sm text-[var(--muted-foreground)]">Contact them the way they prefer, record it, then convert or decline.</p>
+              <ContactButtons request={r} />
+              {canManage ? (
+                <>
+                  <div className="border-t border-[var(--border)] pt-4 space-y-3">
+                    <Field id="req-note" label="What was said (optional)" hint="Or what they're sending next.">
+                      <Textarea id="req-note" rows={3} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} aria-describedby="req-note-hint" />
+                    </Field>
+                    <Button variant="secondary" fullWidth onClick={recordContact} disabled={busy}>{busy ? "Saving…" : "Mark as contacted"}</Button>
+                    {message && (message.tone === "error" ? <ErrorText>{message.text}</ErrorText> : <p className="text-sm text-[var(--muted-foreground)]" role="status">{message.text}</p>)}
+                  </div>
+                  <div className="border-t border-[var(--border)] pt-4 space-y-2">
+                    <Button fullWidth onClick={() => navigate(`/admin/tenants/new?fromRequest=${encodeURIComponent(r.id)}`)}>Convert into a tenant →</Button>
+                    <p className="text-xs text-[var(--muted-foreground)]">
+                      Opens the onboarding wizard filled in from this request. The company is created and its first Executive Director invited only when you submit it.
+                    </p>
+                    <Button variant="linkDanger" onClick={() => { setDeclining(true); setMessage(null); }}>Decline this request…</Button>
+                  </div>
+                </>
+              ) : (
+                <Alert tone="info">You can read requests but not act on them.</Alert>
+              )}
+            </>
+          )}
+        </Card>
       </div>
 
       {declining && (
@@ -252,6 +271,16 @@ export function OnboardingRequestDetail() {
           onDeclined={(updated) => { setRequest(updated); setDeclining(false); }} />
       )}
     </Page>
+  );
+}
+
+function HistoryItem({ when, warn, children }: { when: string; warn?: boolean; children: React.ReactNode }) {
+  return (
+    <li className="flex items-baseline gap-3">
+      <span aria-hidden="true" className={`w-2.5 h-2.5 shrink-0 rounded-full translate-y-0.5 ${warn ? "bg-[var(--warning)]" : "bg-[var(--primary)]"}`} />
+      <span className="font-mono-data text-xs text-[var(--muted-foreground)] w-24 shrink-0">{when}</span>
+      <span className={warn ? "text-[var(--warning-text)]" : "text-[var(--foreground)]"}>{children}</span>
+    </li>
   );
 }
 
@@ -265,17 +294,22 @@ function ContactButtons({ request }: { request: OnboardingRequest }) {
     { id: "phone", label: "Call", href: links.phone, external: false },
     { id: "meeting", label: "Schedule a meeting", href: links.meeting, external: true },
   ].sort((a, b) => Number(b.id === request.preferredContactMethod) - Number(a.id === request.preferredContactMethod));
+  const [first, ...rest] = buttons;
+  const cls = "inline-flex items-center justify-center rounded-md px-3 py-2 text-sm";
   return (
-    <div className="flex flex-wrap gap-2">
-      {buttons.map((b) => {
-        const preferred = b.id === request.preferredContactMethod;
-        return (
+    <div className="space-y-2">
+      <a href={first.href} {...(first.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+        className={`${cls} w-full bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold hover:opacity-90`}>
+        {first.label}{first.id === request.preferredContactMethod ? " · their preference" : ""}
+      </a>
+      <div className="grid grid-cols-3 gap-2">
+        {rest.map((b) => (
           <a key={b.id} href={b.href} {...(b.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-            className={`px-3 py-1.5 rounded-md text-sm ${preferred ? "bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold hover:opacity-90" : "border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--muted)]"}`}>
-            {b.label}{preferred ? " · their preference" : ""}
+            className={`${cls} border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--muted)]`}>
+            {b.id === "meeting" ? "Meeting" : b.label}
           </a>
-        );
-      })}
+        ))}
+      </div>
     </div>
   );
 }

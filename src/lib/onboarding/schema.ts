@@ -8,6 +8,7 @@
 // independent of whether the form is valid.
 
 import { z } from "zod";
+import { internationalPhoneProblem } from "../phone";
 import { NIGERIAN_STATES } from "../../data/nigerianStates";
 import { NIGERIAN_BANKS } from "../../data/nigerianBanks";
 
@@ -20,7 +21,7 @@ const ACCEPTED_FILE_TYPES = ["application/pdf", "image/jpeg", "image/png"];
 
 export function fileSchema(required: boolean) {
   const base = z
-    .instanceof(File)
+    .instanceof(File, { error: "Upload this document." })
     .refine((f) => f.size <= MAX_FILE_SIZE, "File must be 10MB or smaller.")
     .refine((f) => ACCEPTED_FILE_TYPES.includes(f.type), "Only PDF, JPG, or PNG files are accepted.");
   return required ? base : base.nullable().optional();
@@ -64,7 +65,8 @@ export const primaryContactSchema = z.object({
   lastName: z.string().min(1, "Last name is required."),
   roleTitle: z.string().min(1, "Role / job title is required."),
   workEmail: z.string().email("Enter a valid work email."),
-  phone: z.string().min(8, "Enter a valid phone number."),
+  // One international number (E.164), as the backend stores phones.
+  phone: z.string().superRefine((v, ctx) => { const problem = internationalPhoneProblem(v); if (problem) ctx.addIssue({ code: "custom", message: problem }); }),
   govIdType: z.enum(GOV_ID_TYPES),
   govIdNumber: z.string().min(4, "Government ID number is required."),
 });
@@ -74,7 +76,7 @@ export type PrimaryContactValues = z.infer<typeof primaryContactSchema>;
 
 export const companyPresenceSchema = z.object({
   companyEmail: z.string().email("Enter a valid company email."),
-  companyPhone: z.string().min(8, "Enter a valid company phone number."),
+  companyPhone: z.string().superRefine((v, ctx) => { const problem = internationalPhoneProblem(v); if (problem) ctx.addIssue({ code: "custom", message: problem }); }),
   website: z.string().url("Enter a valid URL, e.g. https://example.com").optional().or(z.literal("")),
   socials: z.object({
     instagram: z.string().optional(),

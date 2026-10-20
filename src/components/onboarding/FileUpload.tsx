@@ -1,3 +1,9 @@
+// One document to upload: PDF, JPG or PNG, up to 10 MB, checked here before
+// it's accepted.
+
+import Badge from "../ui/Badge";
+import Button from "../ui/Button";
+import { FileCheckIcon, FileTextIcon } from "../icons";
 import { useRef, useState } from "react";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -40,14 +46,12 @@ export default function FileUpload({ label, required, helperText, file, onChange
     onChange(candidate);
   };
 
+  const problem = localError || error;
   return (
     <div>
-      <label className="flex items-baseline gap-1.5 mb-1">
-        <span className="text-xs font-medium text-[var(--foreground)]">{label}</span>
-        <span className={`text-[10px] ${required ? "text-red-600" : "text-[var(--muted-foreground)]"}`}>{required ? "Required" : "Optional"}</span>
-      </label>
-      {helperText && <p className="text-xs text-[var(--muted-foreground)] mb-2">{helperText}</p>}
-
+      {/* One row per document, from the Figma onboarding proposal: what it is,
+          whether it's required, and — once chosen — the file itself. Drop a
+          file anywhere on the row. */}
       <div
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
@@ -56,42 +60,40 @@ export default function FileUpload({ label, required, helperText, file, onChange
           setDragOver(false);
           validateAndSet(e.dataTransfer.files?.[0]);
         }}
-        className={`flex flex-col items-center justify-center border-2 border-dashed rounded-xl px-4 py-6 transition-colors ${
-          file ? "border-[var(--primary)] bg-[var(--secondary)]" : dragOver ? "border-[var(--primary)] bg-[var(--secondary)]/50" : "border-[var(--border)]"
+        className={`flex flex-wrap sm:flex-nowrap items-center gap-3.5 rounded-lg border p-3.5 transition-colors ${
+          problem ? "border-[var(--error-border)]" : dragOver ? "border-[var(--primary)] bg-[var(--secondary)]" : "border-[var(--border)]"
         }`}
       >
+        <span className={`w-9 h-9 shrink-0 rounded-lg flex items-center justify-center ${file ? "bg-[var(--success-surface)] text-[var(--success-text)]" : "bg-[var(--secondary)] text-[var(--primary)]"}`}>
+          {file ? <FileCheckIcon size={18} /> : <FileTextIcon size={18} />}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-[var(--foreground)]">{label}</span>
+            {required !== undefined && <Badge label={required ? "Required" : "Optional"} variant="neutral" />}
+          </div>
+          <div className={`text-xs mt-0.5 truncate ${file ? "font-mono-data text-[var(--muted-foreground)]" : "text-[var(--muted-foreground)]"}`}>
+            {file ? `${file.name} · ${formatSize(file.size)}` : helperText ?? "PDF, JPG or PNG · up to 10 MB"}
+          </div>
+        </div>
         {file ? (
-          <div className="flex items-center gap-3 w-full">
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-[var(--foreground)] truncate">{file.name}</div>
-              <div className="text-xs text-[var(--muted-foreground)]">{formatSize(file.size)}</div>
-            </div>
-            <button type="button" onClick={() => { onChange(null); if (inputRef.current) inputRef.current.value = ""; }} className="text-xs text-red-600 hover:underline shrink-0">
-              Remove
-            </button>
+          <div className="flex items-center gap-3 shrink-0">
+            <Button variant="link" className="text-sm font-medium" onClick={() => inputRef.current?.click()}>Replace</Button>
+            <Button variant="linkMuted" className="text-sm" onClick={() => { onChange(null); if (inputRef.current) inputRef.current.value = ""; }}>Remove</Button>
           </div>
         ) : (
-          <>
-            <p className="text-sm text-[var(--muted-foreground)] mb-2 text-center">
-              Drag &amp; drop, or{" "}
-              <button type="button" onClick={() => inputRef.current?.click()} className="text-[var(--accent)] font-medium hover:underline">
-                browse
-              </button>
-            </p>
-            <p className="text-[10px] text-[var(--muted-foreground)]">PDF, JPG, or PNG · up to 10MB</p>
-          </>
+          <Button variant="secondary" className="shrink-0" onClick={() => inputRef.current?.click()}>Choose file</Button>
         )}
         <input
           ref={inputRef}
           type="file"
           accept={Object.keys(ACCEPTED_TYPES).join(",")}
           className="sr-only"
+          aria-label={`${label}${required ? " (required)" : ""}`}
           onChange={(e) => validateAndSet(e.target.files?.[0])}
         />
       </div>
-      {(localError || error) && (
-        <p role="alert" className="text-red-600 text-xs mt-1.5">{localError || error}</p>
-      )}
+      {problem && <p role="alert" className="text-[var(--error-text)] text-xs mt-1.5">{problem}</p>}
     </div>
   );
 }

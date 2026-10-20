@@ -2,18 +2,18 @@ import { Controller, useFormContext } from "react-hook-form";
 import type { TenantOnboardingValues } from "../../../../lib/onboarding/schema";
 import { GOV_ID_TYPES } from "../../../../lib/onboarding/schema";
 import { TextField, SelectField } from "./FormField";
-import PhoneInput from "../../../../components/onboarding/PhoneInput";
+import IntlPhoneInput from "../../../../components/onboarding/IntlPhoneInput";
+import Alert from "../../../../components/ui/Alert";
 
 export default function Step2PrimaryContact() {
   const { register, control, formState: { errors } } = useFormContext<TenantOnboardingValues>();
 
   return (
     <div className="space-y-6">
-      <div className="bg-[var(--secondary)] rounded-lg p-4 text-sm text-[var(--muted-foreground)]">
-        This person becomes the tenant's Executive Director. They'll receive an invitation email to set their own password — the link
-        works once, for 72 hours. Use an email that has no HomeTrue account yet (a work address, not a personal buyer account), or
-        creating the tenant is refused.
-      </div>
+      <Alert tone="info">
+        They'll receive an invitation email to set their own password — the link works once, for 72 hours. Use an email that has no
+        HomeTrue account yet (a work address, not a personal buyer account), or creating the tenant is refused.
+      </Alert>
 
       <div className="grid sm:grid-cols-2 gap-4">
         <TextField label="First name" required error={errors.firstName?.message} {...register("firstName")} />
@@ -24,10 +24,10 @@ export default function Step2PrimaryContact() {
 
       <TextField label="Work email" type="email" required placeholder="name@company.com" error={errors.workEmail?.message} {...register("workEmail")} />
 
-      <div>
-        <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1.5">Phone <span className="text-red-600">*</span></label>
-        <Controller control={control} name="phone" render={({ field }) => <PhoneInput value={field.value} onChange={field.onChange} error={errors.phone?.message} />} />
-      </div>
+      <Controller control={control} name="phone" render={({ field }) => (
+        <IntlPhoneInput id="contact-phone" label="Mobile number" value={field.value} onChange={field.onChange} error={errors.phone?.message}
+          purpose="It becomes the first Executive Director's phone." />
+      )} />
 
       <div className="grid sm:grid-cols-2 gap-4">
         <SelectField label="Government ID type" required error={errors.govIdType?.message} {...register("govIdType")}>
