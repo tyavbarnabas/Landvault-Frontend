@@ -112,9 +112,11 @@ export default function Register() {
         navigate(returnUrl || "/marketplace?welcome=1");
       } catch (err) {
         setLoading(false);
-        // The backend's reason (e.g. the email is already registered) beats a
-        // generic retry message.
-        setError(err instanceof ApiError && err.message ? err.message : "Registration failed. Please try again.");
+        // The backend's own words: a refused phone goes on the phone field,
+        // anything else (e.g. the email is already registered) under the form.
+        const problems = registerErrors(err);
+        setPhoneError(problems.phone ?? "");
+        setError(problems.form ?? "");
       }
   };
 
@@ -232,3 +234,20 @@ const STEPS: { id: Step; label: string }[] = [
   { id: "country", label: "Where you're based" },
   { id: "otp", label: "Confirm your email" },
 ];
+
+const FIELD_NAMES: Record<string, string> = {
+  firstName: "First name", lastName: "Last name", email: "Email", password: "Password", country: "Country", currency: "Currency",
+};
+
+// What a refused sign-up says, and where: the backend answers 400
+// VALIDATION_ERROR with `fieldErrors` keyed by field (`message` may be null).
+// Exported for tests.
+export function registerErrors(err: unknown): { phone?: string; form?: string } {
+  if (!(err instanceof ApiError)) return { form: "Registration failed. Please try again." };
+  const fields = err.body?.fieldErrors ?? {};
+  const others = Object.entries(fields).filter(([k]) => k !== "phone");
+  const form = others.length
+    ? others.map(([k, v]) => `${FIELD_NAMES[k] ?? k}: ${v}`).join(" ")
+    : fields.phone ? undefined : err.body?.message || "Registration failed. Please try again.";
+  return { phone: fields.phone, form };
+}
