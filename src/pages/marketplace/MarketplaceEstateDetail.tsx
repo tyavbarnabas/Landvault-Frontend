@@ -12,7 +12,7 @@ import { useApp } from "../../contexts/AppContext";
 import { formatAmount } from "../../data/mockData";
 import { formatDay } from "../../lib/formatDate";
 import {
-  fetchListingById, fetchSimilarListings, fromPrice, cheapestTier, pricePerSqm, type Listing, type PriceTier,
+  fetchListingById, fetchSimilarListings, cheapestTier, pricePerSqm, type Listing, type PriceTier,
 } from "../../services/marketplaceService";
 import { fetchCostDisclosure, isGrandfathered, tierCommitmentForSize, type EstateCostDisclosure, type TierCommitment } from "../../services/costDisclosureService";
 import WishlistButton from "../../components/marketplace/WishlistButton";
@@ -92,7 +92,7 @@ export default function MarketplaceEstateDetail() {
 
       <div className="mt-6">
         <EstateGallery key={listing.id} photos={listing.photos} estateName={listing.name}>
-          <WishlistButton listingId={listing.id} listingType="primary" fromPrice={fromPrice(listing)} className="w-10 h-10 flex items-center justify-center rounded-full bg-white/90 backdrop-blur hover:bg-white shadow-sm" />
+          <WishlistButton listingId={listing.id} listingType="primary" className="w-10 h-10 flex items-center justify-center rounded-full bg-white/90 backdrop-blur hover:bg-white shadow-sm" />
         </EstateGallery>
       </div>
 

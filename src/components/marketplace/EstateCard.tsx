@@ -5,7 +5,7 @@
 // shown as a checked one.
 
 import { Link } from "react-router-dom";
-import { formatAmount } from "../../data/mockData";
+import { formatAmount, type Currency } from "../../data/mockData";
 import { formatCompactCurrency } from "../../lib/formatCurrency";
 import { fromPrice, cheapestTier, pricePerSqm, type Listing } from "../../services/marketplaceService";
 import { fetchCostDisclosure, tierCommitmentForLandPrice } from "../../services/costDisclosureService";
@@ -20,6 +20,8 @@ interface EstateCardProps {
   listing: Listing;
   // Only meaningful on the Wishlist page.
   priceChangeSinceSaved?: number;
+  // The currency the change is in (the listing's own, not the display one).
+  priceChangeCurrency?: Currency;
 }
 
 function ImageIcon() {
@@ -37,7 +39,7 @@ export function titleChip(listing: Pick<Listing, "titleType" | "titleStatus">): 
   }
 }
 
-export default function EstateCard({ listing, priceChangeSinceSaved }: EstateCardProps) {
+export default function EstateCard({ listing, priceChangeSinceSaved, priceChangeCurrency }: EstateCardProps) {
   const from = fromPrice(listing);
   const { data: disclosure } = useFetch(() => fetchCostDisclosure(listing.id), [listing.id]);
   const commitment = tierCommitmentForLandPrice(disclosure, from);
@@ -62,7 +64,7 @@ export default function EstateCard({ listing, priceChangeSinceSaved }: EstateCar
           </div>
         )}
         <div className="absolute top-3 left-3"><ListingTypeBadge type="primary" /></div>
-        <div className="absolute top-3 right-3"><WishlistButton listingId={listing.id} listingType="primary" fromPrice={from} /></div>
+        <div className="absolute top-3 right-3"><WishlistButton listingId={listing.id} listingType="primary" /></div>
       </div>
 
       <div className="flex flex-col flex-1 p-4 gap-3">
@@ -77,7 +79,7 @@ export default function EstateCard({ listing, priceChangeSinceSaved }: EstateCar
               <span className="font-mono-data font-medium text-lg text-[var(--foreground)]" title={formatAmount(from, "NGN")}>from {formatCompactCurrency(from)}</span>
               {priceChangeSinceSaved !== undefined && priceChangeSinceSaved !== 0 && (
                 <span className={`text-xs font-medium ${priceChangeSinceSaved < 0 ? "text-[var(--success-text)]" : "text-[var(--warning-text)]"}`}>
-                  {priceChangeSinceSaved < 0 ? "↓" : "↑"} {formatCompactCurrency(Math.abs(priceChangeSinceSaved))}
+                  {priceChangeSinceSaved < 0 ? "↓" : "↑"} {formatCompactCurrency(Math.abs(priceChangeSinceSaved), priceChangeCurrency)}
                 </span>
               )}
             </div>

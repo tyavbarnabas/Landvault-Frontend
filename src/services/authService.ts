@@ -157,6 +157,13 @@ function can(user: AuthUser | null | undefined, permission: string): boolean {
   return user?.permissions?.includes(permission) ?? false;
 }
 
+// Buyers: browsing, and keeping a wishlist on the account.
+export const MARKETPLACE_VIEW_PERMISSION = "client.marketplace.view";
+
+export function canUseMarketplace(user: AuthUser | null | undefined): boolean {
+  return can(user, MARKETPLACE_VIEW_PERMISSION);
+}
+
 // A company's own staff. Holding the portal permission is what makes someone
 // portal staff — the backend never labels them with a distinct role.
 export function isPortalStaff(user: AuthUser | null | undefined): boolean {

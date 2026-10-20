@@ -111,12 +111,11 @@ export function listingRoute(item: MarketplaceListing): string {
   return item.listingType === "primary" ? `/marketplace/${item.data.id}` : `/marketplace/resale/${item.data.id}`;
 }
 
-// Re-reads a saved wishlist entry from whichever side actually owns it, and
-// hands back the tagged union. Every caller re-fetches live rather than
-// trusting the saved copy — WishlistItem.priceAtSave is a historical marker
-// for the delta only, never "the price". Returns null when the listing is
-// gone entirely (delisted, or an id that no longer resolves).
-export async function fetchWishlistListing(saved: WishlistItem): Promise<MarketplaceListing | null> {
+// Reads a saved wishlist entry's listing from whichever side owns it, for
+// what the wishlist call doesn't carry (photos, sizes, title), and hands back
+// the tagged union. Returns null when the listing is gone entirely
+// (delisted, or an id that no longer resolves).
+export async function fetchWishlistListing(saved: Pick<WishlistItem, "listingType" | "listingId">): Promise<MarketplaceListing | null> {
   if (saved.listingType === "resale") {
     const listing = await fetchResaleListingById(saved.listingId);
     if (!listing) return null;

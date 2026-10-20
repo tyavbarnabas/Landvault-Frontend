@@ -61,6 +61,8 @@ to fetch". The dev panel (bottom right) turns red when the origin is wrong.
 - staff, roles and invitations
 - **the purchase flow, as one group**: marketplace listings, plots (from the
   estate map), the public cost disclosure, reservations, and transactions
+- the buyer's wishlist, kept on the account (`/api/marketplace/wishlist`):
+  developer estates only; resale can't be saved until resale exists
 - portfolio (outright purchases; installment plans have no backend yet)
 - document vault: receipts and allocation letters, downloaded as PDF or one
   stacked JPEG with the bearer token. Read-only: voiding and reissuing are

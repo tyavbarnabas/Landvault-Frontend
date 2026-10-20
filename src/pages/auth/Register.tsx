@@ -20,7 +20,7 @@ type Step = "details" | "country" | "otp";
 export default function Register() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { register, toggleWishlistItem } = useApp();
+  const { register, reloadWishlist } = useApp();
   const [step, setStep] = useState<Step>("details");
   const [form, setForm] = useState({ firstName: "", lastName: "", email: "", phone: "", password: "", country: "NG", currency: "NGN" });
   const [otp, setOtp] = useState("");
@@ -65,7 +65,7 @@ export default function Register() {
         // Complete a pending wishlist intent (see WishlistButton.tsx) before
         // returning the user to wherever they were. KYC belongs at purchase,
         // not signup — see below when there's no returnUrl to honor.
-        await completePendingWishlistIntent(toggleWishlistItem);
+        await completePendingWishlistIntent(reloadWishlist);
 
         // Resume a Reserve/Inspect/Enquire/Make-an-offer intent (see
         // pendingIntent.ts) by jumping straight to the target action, not

@@ -163,7 +163,7 @@ export default function MarketplaceResaleDetail() {
 
           <div className="space-y-2">
             <Button size="lg" fullWidth disabled={!isAvailable} onClick={() => { if (requireAuth()) setShowOffer(true); }}>Make an offer</Button>
-            <WishlistButton listingId={listing.id} listingType="resale" fromPrice={listing.asking} label="Save to wishlist"
+            <WishlistButton listingId={listing.id} listingType="resale" label="Save to wishlist"
               className="w-full inline-flex items-center justify-center gap-2 rounded-md border border-[var(--border)] bg-[var(--card)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors" />
           </div>
 

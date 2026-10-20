@@ -1,6 +1,9 @@
+import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useApp } from "../../contexts/AppContext";
 import type { WishlistItem } from "../../services/marketplaceService";
+import { wishlistErrorMessage } from "../../services/wishlistService";
+import Alert from "../ui/Alert";
 
 export const PENDING_WISHLIST_INTENT_KEY = "landvault_pending_wishlist_intent";
 
@@ -12,22 +15,30 @@ export interface PendingWishlistIntent {
 interface WishlistButtonProps {
   listingId: string;
   listingType: WishlistItem["listingType"];
-  fromPrice: number;
   className?: string;
   // Visible text beside the heart, e.g. "Save estate" — the whole button is
   // then the click target, and the text says "Saved" once it is.
   label?: string;
 }
 
-// Optimistic (local state, no network round-trip to wait for). When the
-// visitor isn't signed in, stashes the intent and routes through signup with
-// a returnUrl — Register.tsx completes the toggle once signup succeeds and
-// sends them right back here. See AppContext's toggleWishlistItem.
-export default function WishlistButton({ listingId, listingType, fromPrice, className, label }: WishlistButtonProps) {
+// Optimistic: the heart fills at once and the save goes to the buyer's
+// account (AppContext's toggleWishlistItem); if the backend refuses, it
+// empties again and says why. When the visitor isn't signed in, stashes the
+// intent and routes through signup with a returnUrl — Register.tsx completes
+// the save once signup succeeds and sends them right back here.
+export default function WishlistButton({ listingId, listingType, className, label }: WishlistButtonProps) {
   const { isAuthenticated, isWishlisted, toggleWishlistItem } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
   const wishlisted = isWishlisted(listingId);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(""), 6000);
+    return () => clearTimeout(t);
+  }, [error]);
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault(); // cards wrap this in a <Link> — don't navigate on heart taps
@@ -38,13 +49,20 @@ export default function WishlistButton({ listingId, listingType, fromPrice, clas
       navigate(`/register?returnUrl=${encodeURIComponent(location.pathname)}`);
       return;
     }
-    toggleWishlistItem(listingId, fromPrice, listingType);
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    toggleWishlistItem(listingId, listingType)
+      .catch((err) => setError(wishlistErrorMessage(err)))
+      .finally(() => setBusy(false));
   };
 
   return (
+    <span className="relative inline-flex">
     <button
       type="button"
       aria-pressed={wishlisted}
+      aria-busy={busy || undefined}
       aria-label={label ? undefined : wishlisted ? "Remove from wishlist" : "Save to wishlist"}
       onClick={handleClick}
       className={className ?? "w-8 h-8 flex items-center justify-center rounded-full bg-white/90 backdrop-blur hover:bg-white shadow-sm transition-colors"}
@@ -54,5 +72,9 @@ export default function WishlistButton({ listingId, listingType, fromPrice, clas
       </svg>
       {label && <span>{wishlisted ? "Saved" : label}</span>}
     </button>
+    {error && (
+      <Alert tone="error" role="alert" className="absolute right-0 top-full mt-1.5 z-20 w-60 text-xs font-normal text-left shadow-sm">{error}</Alert>
+    )}
+    </span>
   );
 }

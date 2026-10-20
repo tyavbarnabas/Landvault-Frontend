@@ -117,20 +117,36 @@ export interface ListingPhoto {
   caption: string | null;
 }
 
+// One saved listing, as the backend's wishlist returns it
+// (/api/marketplace/wishlist; see wishlistService.ts). Enough to render the
+// wishlist on its own: the name, today's from-price and what's left.
 export interface WishlistItem {
-  listingId: string;
   // "primary" | "resale" — a plain string literal here, not an import from
   // marketplaceFeedService.ts, to avoid that file's own import of this one
-  // becoming a cycle. Which service to re-fetch from (marketplaceService vs
-  // resaleService) is decided by this field on the Wishlist page.
+  // becoming a cycle. The backend accepts "primary" only until resale exists.
   listingType: "primary" | "resale";
+  listingId: string;
+  // The current name while listed; the name when saved once it isn't.
+  name: string;
   savedAt: string;
-  // Historical marker ONLY, for the price-change delta indicator on the
-  // Wishlist page. Never used to render "the price" — that's always read
-  // live via fetchListingById (or resaleService's, for a resale item). This
-  // is what "never snapshot the price" and "show a delta since saved" both
-  // mean at once: one number remembered purely for comparison, not display.
-  priceAtSave: number;
+  // A marker ONLY, for "↓ ₦1.0M since saved" — never rendered as the price.
+  // Compared with currentPrice only when the two currencies match.
+  priceAtSave: number | null;
+  currency: "NGN" | "USD" | null;
+  // On the marketplace now. False never says why.
+  available: boolean;
+  currentPrice: number | null;
+  currentCurrency: "NGN" | "USD" | null;
+  // 0 = listed but sold out; null when not available.
+  plotsRemaining: number | null;
+}
+
+// The change since it was saved, or null when there's nothing comparable:
+// no price either side, or the cheapest price is now in another currency.
+export function priceChangeSinceSaved(item: WishlistItem): number | null {
+  if (item.priceAtSave === null || item.currentPrice === null) return null;
+  if (!item.currency || item.currency !== item.currentCurrency) return null;
+  return item.currentPrice - item.priceAtSave;
 }
 
 export interface ListingFilters {

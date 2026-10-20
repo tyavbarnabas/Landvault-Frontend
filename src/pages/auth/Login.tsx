@@ -20,7 +20,7 @@ type Step = "credentials" | "challenge";
 export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { login, completeTwoFactor, toggleWishlistItem, signOutNotice, clearSignOutNotice } = useApp();
+  const { login, completeTwoFactor, reloadWishlist, signOutNotice, clearSignOutNotice } = useApp();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [step, setStep] = useState<Step>("credentials");
@@ -35,7 +35,7 @@ export default function Login() {
   // never blocked on: the backend deliberately doesn't block login for these,
   // because a bootstrapped Super Admin has to be able to sign in to fix them.
   const finish = async (user: AuthUser) => {
-    await completePendingWishlistIntent(toggleWishlistItem);
+    await completePendingWishlistIntent(reloadWishlist);
 
     const pendingAction = consumePendingIntent();
     if (pendingAction) {

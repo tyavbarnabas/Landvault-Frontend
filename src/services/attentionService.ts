@@ -28,14 +28,13 @@
 // This one belongs to a single buyer, and every item carries a verb and one
 // specific destination.
 
-import { formatAmount, type OwnedPlot } from "../data/mockData";
+import { formatAmount, formatInCurrency, type OwnedPlot } from "../data/mockData";
 import { apiClient } from "../lib/apiClient";
 import { isMock } from "../lib/backends";
 import { fetchOwnedPlots, urgencyRank } from "./portfolioService";
 import { fetchMyUpgradeRequests } from "./upgradeService";
 import { fetchDocuments } from "./documentsService";
-import { fetchWishlistListing, listingDisplayName, listingFromPrice, listingRoute } from "./marketplaceFeedService";
-import type { WishlistItem } from "./marketplaceService";
+import { priceChangeSinceSaved, type WishlistItem } from "./marketplaceService";
 import { isActivelyOwned } from "../pages/portfolio/Portfolio";
 import { fetchMyPurchases, type Purchase } from "./paymentsService";
 import { describePurchase, purchaseStage, type PurchaseStage } from "../lib/purchaseStatus";
@@ -100,9 +99,9 @@ interface RankedItem {
 }
 
 export interface FetchAttentionParams {
-  // Wishlist state lives in AppContext (client-side) in mock mode, so it's
-  // passed in rather than fetched. The real endpoint reads it from the
-  // authenticated principal and this param goes away.
+  // The wishlist AppContext has already loaded, passed in rather than
+  // fetched again. The real endpoint reads it from the authenticated
+  // principal and this param goes away.
   wishlist: WishlistItem[];
   // Documents issued after this timestamp count as new. Undefined on a
   // first-ever visit: with no baseline, nothing is "new" — better than
@@ -231,35 +230,28 @@ function describeDueIn(days: number): string {
 }
 
 async function priceChangeItems(wishlist: WishlistItem[]): Promise<AttentionItem[]> {
-  const resolved = await Promise.all(
-    wishlist.map(async (saved) => {
-      const listing = await fetchWishlistListing(saved);
-      if (!listing) return null;
-      // Resale listings that are no longer purchasable are the wishlist
-      // page's concern (it renders them as "no longer available"), not a
-      // price move to act on.
-      if (listing.listingType === "resale" && listing.data.status !== "active") return null;
-      const change = listingFromPrice(listing) - saved.priceAtSave;
-      if (change === 0) return null;
-      return { listing, change };
+  // The wishlist call already carries today's price beside the saved one; a
+  // listing that has left the marketplace is the wishlist page's concern
+  // ("no longer available"), not a price move to act on.
+  return wishlist
+    .flatMap((saved) => {
+      const change = priceChangeSinceSaved(saved);
+      return saved.available && change ? [{ saved, change }] : [];
     })
-  );
-
-  return resolved
-    .filter((r): r is NonNullable<typeof r> => r !== null)
     .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
     .slice(0, MAX_PRICE_CHANGE_ITEMS)
-    .map(({ listing, change }) => ({
-      id: `price-change:${listing.listingType}:${listing.data.id}`,
-      type: "price_change" as const,
-      severity: "normal" as const,
-      title: listingDisplayName(listing),
-      // NGN, matching every other marketplace price surface (EstateCard /
-      // ListingCard) — listing prices are one NGN-denominated ledger; the
-      // display-currency selector never reinterprets them.
-      detail: `${change < 0 ? "Down" : "Up"} ${formatAmount(Math.abs(change), "NGN")} since you saved it — now from ${formatAmount(listingFromPrice(listing), "NGN")}.`,
-      targetRoute: listingRoute(listing),
-    }));
+    .map(({ saved, change }) => {
+      // Comparable only within one currency, so both are in it.
+      const currency = saved.currentCurrency ?? "NGN";
+      return {
+        id: `price-change:${saved.listingType}:${saved.listingId}`,
+        type: "price_change" as const,
+        severity: "normal" as const,
+        title: saved.name,
+        detail: `${change < 0 ? "Down" : "Up"} ${formatInCurrency(Math.abs(change), currency)} since you saved it — now from ${formatInCurrency(saved.currentPrice ?? 0, currency)}.`,
+        targetRoute: saved.listingType === "primary" ? `/marketplace/${saved.listingId}` : `/marketplace/resale/${saved.listingId}`,
+      };
+    });
 }
 
 // Worst first. Within a rank, whatever is due soonest leads; anything with no

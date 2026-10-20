@@ -6,7 +6,7 @@
 // `item.listingType`, so a caller never has to branch itself.
 
 import { Link } from "react-router-dom";
-import { formatAmount } from "../../data/mockData";
+import { formatAmount, type Currency } from "../../data/mockData";
 import { formatCompactCurrency } from "../../lib/formatCurrency";
 import type { MarketplaceListing } from "../../services/marketplaceFeedService";
 import { titleLabel } from "../../services/marketplaceService";
@@ -19,16 +19,17 @@ interface ListingCardProps {
   item: MarketplaceListing;
   // Only meaningful on the Wishlist page — see EstateCard's own note on this.
   priceChangeSinceSaved?: number;
+  priceChangeCurrency?: Currency;
 }
 
-export default function ListingCard({ item, priceChangeSinceSaved }: ListingCardProps) {
+export default function ListingCard({ item, priceChangeSinceSaved, priceChangeCurrency }: ListingCardProps) {
   if (item.listingType === "primary") {
-    return <EstateCard listing={item.data} priceChangeSinceSaved={priceChangeSinceSaved} />;
+    return <EstateCard listing={item.data} priceChangeSinceSaved={priceChangeSinceSaved} priceChangeCurrency={priceChangeCurrency} />;
   }
-  return <ResaleListingCard listing={item.data} priceChangeSinceSaved={priceChangeSinceSaved} />;
+  return <ResaleListingCard listing={item.data} priceChangeSinceSaved={priceChangeSinceSaved} priceChangeCurrency={priceChangeCurrency} />;
 }
 
-function ResaleListingCard({ listing, priceChangeSinceSaved }: { listing: ResaleListing; priceChangeSinceSaved?: number }) {
+function ResaleListingCard({ listing, priceChangeSinceSaved, priceChangeCurrency }: { listing: ResaleListing; priceChangeSinceSaved?: number; priceChangeCurrency?: Currency }) {
   const perSqm = listing.asking / listing.sqm;
 
   return (
@@ -45,7 +46,7 @@ function ResaleListingCard({ listing, priceChangeSinceSaved }: { listing: Resale
           <ListingTypeBadge type="resale" />
         </div>
         <div className="absolute top-2.5 right-2.5">
-          <WishlistButton listingId={listing.id} listingType="resale" fromPrice={listing.asking} />
+          <WishlistButton listingId={listing.id} listingType="resale" />
         </div>
         {listing.isCorner && (
           <div className="absolute bottom-2.5 right-2.5 bg-[var(--accent)] text-white text-[11px] px-2 py-0.5 rounded-full">Corner ★</div>
@@ -60,7 +61,7 @@ function ResaleListingCard({ listing, priceChangeSinceSaved }: { listing: Resale
           <span className="font-semibold font-mono-data text-lg text-[var(--foreground)]" title={formatAmount(listing.asking, "NGN")}>{formatCompactCurrency(listing.asking)}</span>
           {priceChangeSinceSaved !== undefined && priceChangeSinceSaved !== 0 && (
             <span className={`text-xs font-medium ${priceChangeSinceSaved < 0 ? "text-[var(--success-text)]" : "text-[var(--warning-text)]"}`}>
-              {priceChangeSinceSaved < 0 ? "↓" : "↑"} {formatCompactCurrency(Math.abs(priceChangeSinceSaved))}
+              {priceChangeSinceSaved < 0 ? "↓" : "↑"} {formatCompactCurrency(Math.abs(priceChangeSinceSaved), priceChangeCurrency)}
             </span>
           )}
         </div>

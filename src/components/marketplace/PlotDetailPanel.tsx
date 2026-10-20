@@ -16,7 +16,7 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { formatAmount, formatInCurrency } from "../../data/mockData";
 import type { Listing } from "../../services/marketplaceService";
-import { pricePerSqm, fromPrice, titleLabel } from "../../services/marketplaceService";
+import { pricePerSqm, titleLabel } from "../../services/marketplaceService";
 import type { ListingPlot } from "../../services/marketplacePlotsService";
 import { plotLabel, priceForPlot } from "../../services/marketplacePlotsService";
 import { useApp } from "../../contexts/AppContext";
@@ -157,7 +157,7 @@ export default function PlotDetailPanel({ plot, listing, onClose, onOpenEnquiry 
         </Button>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-1">
           <Button variant="link" onClick={handleEnquire} className="inline-flex items-center gap-1.5"><MessageIcon size={14} />Ask the developer</Button>
-          <WishlistButton listingId={listing.id} listingType="primary" fromPrice={fromPrice(listing)} label="Save estate"
+          <WishlistButton listingId={listing.id} listingType="primary" label="Save estate"
             className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--accent)] hover:underline" />
         </div>
       </div>

@@ -1,14 +1,15 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from "react";
 import type { Currency } from "../data/mockData";
 import {
   login as loginRequest, logout as logoutRequest, register as registerRequest,
   verifyTwoFactor as verifyTwoFactorRequest, restoreSession, signOutReason,
-  MOCK_CLIENT_USER, type AuthUser, type LoginOutcome, type RegisterInput,
+  MOCK_CLIENT_USER, canUseMarketplace, type AuthUser, type LoginOutcome, type RegisterInput,
 } from "../services/authService";
 import { IS_MOCK_MODE, onSessionEvent } from "../lib/apiClient";
 import { acceptInvitation as acceptInvitationRequest } from "../services/staffService";
 import { fetchNotifications, markNotificationRead as markNotificationReadRequest, addNotification as addNotificationRequest, type Notification } from "../services/notificationsService";
 import type { WishlistItem } from "../services/marketplaceService";
+import { fetchWishlist, removeFromWishlist, saveToWishlist } from "../services/wishlistService";
 
 export type { Notification };
 
@@ -50,11 +51,15 @@ interface AppContextValue {
   addNotification: (input: Omit<Notification, "id" | "read">) => Promise<void>;
   // Marketplace wishlist — separate from savedPlots (that's individual plots
   // in one company's inventory; this is estate-level across the national
-  // marketplace). See marketplaceService.ts's WishlistItem for why
-  // `priceAtSave` isn't the same thing as "the displayed price."
+  // marketplace). Kept on the buyer's account (wishlistService.ts), loaded
+  // on sign-in and emptied on sign-out. Saves and removals show at once and
+  // are undone if the backend refuses; the promise rejects with its error.
   wishlist: WishlistItem[];
+  wishlistLoaded: boolean;
+  reloadWishlist: () => Promise<void>;
   isWishlisted: (listingId: string) => boolean;
-  toggleWishlistItem: (listingId: string, currentFromPrice: number, listingType: WishlistItem["listingType"]) => void;
+  saveWishlistItem: (listingId: string, listingType: WishlistItem["listingType"]) => Promise<void>;
+  toggleWishlistItem: (listingId: string, listingType: WishlistItem["listingType"]) => Promise<void>;
 }
 
 // Mock mode only: signed in on load as the demo buyer for prototype
@@ -142,6 +147,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }), []);
   const [savedPlots, setSavedPlots] = useState<string[]>(["peaceland:2-7", "sunrise-gardens:5-3"]);
   const [wishlist, setWishlist] = useState<WishlistItem[]>([]);
+  const [wishlistLoaded, setWishlistLoaded] = useState(false);
   const [currency, setCurrencyState] = useState<Currency>(() => user?.currency ?? VISITOR_CURRENCY);
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
@@ -192,15 +198,60 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSavedPlots((prev) => prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]);
   };
 
+  // Only the latest load is applied, so a slow first load can't overwrite a
+  // save made (and reloaded) since, and one user's list never lands on the
+  // next. No closure over the user: sign-in calls this before re-rendering.
+  const wishlistLoad = useRef(0);
+  const canSave = canUseMarketplace(user);
+  const reloadWishlist = useCallback(async () => {
+    const seq = ++wishlistLoad.current;
+    try {
+      const items = await fetchWishlist();
+      if (seq === wishlistLoad.current) setWishlist(items);
+    } finally {
+      if (seq === wishlistLoad.current) setWishlistLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    wishlistLoad.current++;
+    setWishlist([]);
+    setWishlistLoaded(!canSave);
+    if (canSave) reloadWishlist().catch(() => {});
+  }, [user?.email, canSave, reloadWishlist]);
+
   const isWishlisted = (listingId: string) => wishlist.some((w) => w.listingId === listingId);
 
-  const toggleWishlistItem = (listingId: string, currentFromPrice: number, listingType: WishlistItem["listingType"]) => {
-    setWishlist((prev) =>
-      prev.some((w) => w.listingId === listingId)
-        ? prev.filter((w) => w.listingId !== listingId)
-        : [...prev, { listingId, listingType, savedAt: new Date().toISOString(), priceAtSave: currentFromPrice }]
-    );
+  const saveWishlistItem = async (listingId: string, listingType: WishlistItem["listingType"]) => {
+    if (isWishlisted(listingId)) return;
+    // Shown at once; the backend's own copy (name, prices) replaces it.
+    const placeholder: WishlistItem = {
+      listingType, listingId, name: "", savedAt: new Date().toISOString(), priceAtSave: null, currency: null,
+      available: true, currentPrice: null, currentCurrency: null, plotsRemaining: null,
+    };
+    setWishlist((prev) => [placeholder, ...prev]);
+    try {
+      const saved = await saveToWishlist(listingType, listingId);
+      setWishlist((prev) => prev.map((w) => (w === placeholder ? saved : w)));
+    } catch (err) {
+      setWishlist((prev) => prev.filter((w) => w !== placeholder));
+      throw err;
+    }
   };
+
+  const removeWishlistItem = async (listingId: string, listingType: WishlistItem["listingType"]) => {
+    const removed = wishlist.find((w) => w.listingId === listingId);
+    setWishlist((prev) => prev.filter((w) => w.listingId !== listingId));
+    try {
+      await removeFromWishlist(listingType, listingId);
+    } catch (err) {
+      if (removed) setWishlist((prev) => (prev.some((w) => w.listingId === listingId) ? prev : [removed, ...prev].sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1))));
+      throw err;
+    }
+  };
+
+  const toggleWishlistItem = (listingId: string, listingType: WishlistItem["listingType"]) =>
+    isWishlisted(listingId) ? removeWishlistItem(listingId, listingType) : saveWishlistItem(listingId, listingType);
 
   const setCurrency = (c: Currency) => {
     setCurrencyState(c);
@@ -218,7 +269,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ user, isAuthenticated: !!user, restoringSession, signOutNotice, clearSignOutNotice: () => setSignOutNotice(null), sessionProblem, login, completeTwoFactor, register, acceptInvitation, logout, passwordChanged, savedPlots, toggleSavedPlot, currency, setCurrency, notifications, markNotificationRead, addNotification, wishlist, isWishlisted, toggleWishlistItem }}>
+    <AppContext.Provider value={{ user, isAuthenticated: !!user, restoringSession, signOutNotice, clearSignOutNotice: () => setSignOutNotice(null), sessionProblem, login, completeTwoFactor, register, acceptInvitation, logout, passwordChanged, savedPlots, toggleSavedPlot, currency, setCurrency, notifications, markNotificationRead, addNotification, wishlist, wishlistLoaded, reloadWishlist, isWishlisted, saveWishlistItem, toggleWishlistItem }}>
       {children}
     </AppContext.Provider>
   );
