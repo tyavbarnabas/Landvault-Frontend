@@ -31,6 +31,7 @@ import Button from "../../../components/ui/Button";
 import Alert from "../../../components/ui/Alert";
 import { ErrorText, Field, Input, Select, describedBy } from "../../../components/ui/Field";
 import { usePortalScope } from "../usePortalScope";
+import EstateSetupPage from "../../../components/portal/EstateSetupPage";
 import { ReadOnlyNotice } from "./PortalEstateInventory";
 
 const MAX_MB = TITLE_DOCUMENT_MAX_BYTES / 1024 / 1024;
@@ -61,12 +62,13 @@ export default function PortalEstateTitle() {
   const showForm = canManage && (editing || !current);
 
   return (
-    <Page
+    <EstateSetupPage
+      estate={estate.data}
+      step="title"
       title="Land title"
-      width="lg"
-      back={{ to: `/portal/estates/${estateId}`, label: estate.data.name }}
       description="Record the estate's title and upload its documents. HomeTrue checks them before buyers see the title as verified."
     >
+      <div className="max-w-3xl">
       {readOnly && <ReadOnlyNotice />}
 
       {justSent && !editing && (
@@ -95,10 +97,11 @@ export default function PortalEstateTitle() {
           scope={scope}
           current={current}
           onCancel={current ? () => setEditing(false) : undefined}
-          onSent={(saved) => { title.setData(saved); setEditing(false); setJustSent(true); }}
+          onSent={(saved) => { title.setData(saved); setEditing(false); setJustSent(true); estate.refetch(); }}
         />
       )}
-    </Page>
+      </div>
+    </EstateSetupPage>
   );
 }
 

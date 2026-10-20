@@ -1,25 +1,27 @@
+// Create an estate as a draft, from the Figma "Portal estate setup" proposal:
+// four short sections (the estate, where it is, pricing and amenities, who it
+// belongs to) and, beside them, the setup steps that come after.
+
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { NIGERIAN_STATES, type NigerianState } from "../../../data/nigerianStates";
 import { createPortalEstate, type GeoJsonPolygon } from "../../../services/portalEstatesService";
 import BoundaryField, { type BoundaryFieldState } from "../../../components/portal/BoundaryField";
 import { serverMessage } from "../../../components/portal/formParts";
+import FormSection from "../../../components/portal/FormSection";
+import AmenityInput from "../../../components/portal/AmenityInput";
+import Page from "../../../components/ui/Page";
+import Card from "../../../components/ui/Card";
+import Button, { LinkButton } from "../../../components/ui/Button";
+import { ErrorText, Field, Input, Select, Textarea } from "../../../components/ui/Field";
+import { cx } from "../../../components/ui/cx";
+import { FileCheckIcon, GridIcon, ImageIcon, MapPinIcon, ReceiptIcon, ShieldCheckIcon } from "../../../components/icons";
 import { usePortalScope } from "../usePortalScope";
 import { useFetch } from "../../../lib/useFetch";
 import { fetchBranches } from "../../../services/branchesService";
 
 // A real Abuja boundary, offered as the example so a developer can see the
 // expected shape — and so a transposed paste is visibly different from this.
-const EXAMPLE_BOUNDARY = `{
-  "type": "Polygon",
-  "coordinates": [[
-    [7.4890, 9.0480],
-    [7.4935, 9.0480],
-    [7.4935, 9.0515],
-    [7.4890, 9.0515],
-    [7.4890, 9.0480]
-  ]]
-}`;
 
 export default function CreatePortalEstate() {
   const navigate = useNavigate();
@@ -33,7 +35,7 @@ export default function CreatePortalEstate() {
   const [state, setState] = useState<NigerianState | "">("");
   const [address, setAddress] = useState("");
   const [cornerPremiumPct, setCornerPremiumPct] = useState("0");
-  const [amenities, setAmenities] = useState("");
+  const [amenities, setAmenities] = useState<string[]>([]);
   // EB-1: "no branch" is a DELIBERATE choice — null until the developer picks
   // one of the two, never an empty dropdown that looks like something is
   // missing. A branch-scoped user always creates in their own branch.
@@ -55,6 +57,7 @@ export default function CreatePortalEstate() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!scope) return;
+    if (!name.trim() || !area.trim() || !city.trim()) { setFormError("Give the estate a name, an area and a city."); return; }
     if (!state) { setFormError("Choose the state this estate is in."); return; }
     if (!branchScoped && ownership === null) { setFormError("Choose whether this estate belongs to the company or to one of its branches."); return; }
     if (!branchScoped && ownership === "branch" && !branchId) { setFormError("Choose the branch this estate belongs to."); return; }
@@ -71,7 +74,7 @@ export default function CreatePortalEstate() {
         state,
         address: address.trim(),
         cornerPremiumPct: Number(cornerPremiumPct) || 0,
-        amenities: amenities.split(",").map((a) => a.trim()).filter(Boolean),
+        amenities,
         boundary: boundary ?? undefined,
         // Left out for a company-level estate; ignored for a branch-scoped user.
         branchId: !branchScoped && ownership === "branch" ? branchId : undefined,
@@ -93,123 +96,134 @@ export default function CreatePortalEstate() {
   };
 
   if (!scope) {
-    return <div className="p-8 text-sm text-[var(--muted-foreground)]">This account isn't linked to a company.</div>;
+    return <Page title="New estate"><p className="text-sm text-[var(--muted-foreground)]">This account isn't linked to a company.</p></Page>;
   }
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <Link to="/portal/estates" className="text-xs text-[var(--accent)] hover:underline">← Estates</Link>
-      <h1 className="font-display text-3xl text-[var(--foreground)] mt-2 mb-1">New estate</h1>
-      <p className="text-sm text-[var(--muted-foreground)] mb-6">
-        Created as a draft. Publishing is a separate step once the inventory, title and fee schedule are in place.
-      </p>
+    <Page width="xl" title="New estate" description="Saved as a draft — nothing is public until you publish it." back={{ to: "/portal/estates", label: "Estates" }}>
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_20rem] gap-6 items-start">
+        <form onSubmit={submit} className="space-y-5" noValidate>
+          <FormSection n={1} title="The estate" description="What buyers see first on the listing.">
+            <Field id="estate-name" label="Estate name" hint="It becomes the estate's web address too.">
+              <Input id="estate-name" inputSize="md" required value={name} onChange={(e) => setName(e.target.value)} aria-describedby="estate-name-hint" />
+            </Field>
+            <Field id="estate-description" label="Description" hint="A short paragraph: where it is, who it's for, how it's sold.">
+              <Textarea id="estate-description" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} aria-describedby="estate-description-hint" />
+            </Field>
+          </FormSection>
 
-      {/* Same card, spacing and buttons as New branch and Invite someone. */}
-      <form onSubmit={submit} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 space-y-4">
-        <Field label="Estate name" value={name} onChange={setName} required />
-        <Field label="Description" value={description} onChange={setDescription} textarea />
+          <FormSection n={2} title="Where it is" description="The boundary is checked against the state you choose, and for overlaps with other estates.">
+            <div className="grid sm:grid-cols-2 gap-4">
+              <Field id="estate-area" label="Area">
+                <Input id="estate-area" inputSize="md" required value={area} onChange={(e) => setArea(e.target.value)} placeholder="Guzape" />
+              </Field>
+              <Field id="estate-city" label="City">
+                <Input id="estate-city" inputSize="md" required value={city} onChange={(e) => setCity(e.target.value)} placeholder="Abuja" />
+              </Field>
+              {/* Required, and not just for the address: it lets the boundary be
+                  checked against this state rather than the whole country, whose
+                  latitude and longitude ranges overlap between 4 and 14. */}
+              <Field id="state" label="State">
+                <Select id="state" inputSize="md" required value={state} onChange={(e) => setState(e.target.value as NigerianState)}>
+                  <option value="">Select a state</option>
+                  {NIGERIAN_STATES.map((st) => <option key={st} value={st}>{st}</option>)}
+                </Select>
+              </Field>
+              <Field id="estate-address" label="Address (optional)">
+                <Input id="estate-address" inputSize="md" value={address} onChange={(e) => setAddress(e.target.value)} />
+              </Field>
+            </div>
+            <BoundaryField onChange={handleBoundaryChange} label="Boundary"
+              intro="You can add it later — an estate stays a draft until it's surveyed and has one." />
+          </FormSection>
 
-        <div className="grid sm:grid-cols-2 gap-4">
-          <Field label="Area" value={area} onChange={setArea} required placeholder="Guzape" />
-          <Field label="City" value={city} onChange={setCity} required placeholder="Abuja" />
-        </div>
+          <FormSection n={3} title="Pricing and amenities" description="Tier and plot prices come next, on Tiers & plots.">
+            <Field id="estate-premium" label="Corner premium (%)" hint="Added to every corner plot's price. Changing it later reprices all corner plots.">
+              <Input id="estate-premium" inputSize="md" type="number" min={0} value={cornerPremiumPct} onChange={(e) => setCornerPremiumPct(e.target.value)} aria-describedby="estate-premium-hint" className="sm:max-w-[12rem]" />
+            </Field>
+            <Field id="estate-amenities" label="Amenities">
+              <AmenityInput id="estate-amenities" value={amenities} onChange={setAmenities} />
+            </Field>
+          </FormSection>
 
-        <div>
-          <label htmlFor="state" className="block text-sm font-medium text-[var(--foreground)] mb-1.5">State</label>
-          <select
-            id="state"
-            required
-            value={state}
-            onChange={(e) => setState(e.target.value as NigerianState)}
-            className="w-full px-3 py-2 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm focus:outline-none focus:border-[var(--accent)]"
-          >
-            <option value="">Select a state</option>
-            {NIGERIAN_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-          {/* Required, and not just for the address: it lets the boundary be
-              checked against this state rather than the whole country, whose
-              latitude and longitude ranges overlap between 4 and 14. */}
-          <p className="text-xs text-[var(--muted-foreground)] mt-1">
-            Required — the boundary is checked against the state you choose, not just against Nigeria as a whole.
-          </p>
-        </div>
-
-        <Field label="Address" value={address} onChange={setAddress} />
-
-        <Field label="Corner premium (%)" value={cornerPremiumPct} onChange={setCornerPremiumPct} type="number" />
-
-        {branchScoped ? (
-          <p className="text-sm text-[var(--muted-foreground)]">
-            This estate will belong to your branch{branches.data?.[0] ? `, ${branches.data[0].name}` : ""}.
-          </p>
-        ) : (
-          <fieldset>
-            <legend className="block text-sm font-medium text-[var(--foreground)] mb-1.5">Who does this estate belong to?</legend>
-            <div className="space-y-2">
-              <label className={`flex items-start gap-2 px-3 py-2 rounded-md border text-sm cursor-pointer ${ownership === "company" ? "border-[var(--accent)] bg-[var(--muted)]" : "border-[var(--border)] bg-[var(--card)]"}`}>
-                <input type="radio" name="ownership" checked={ownership === "company"} onChange={() => setOwnership("company")} className="mt-0.5" />
-                <span>
-                  <span className="text-[var(--foreground)]">The company itself — no branch</span>
-                  <span className="block text-xs text-[var(--muted-foreground)]">For a single-office developer. Branch staff can see it, but only company-wide staff can change it.</span>
-                </span>
-              </label>
-              <label className={`flex items-start gap-2 px-3 py-2 rounded-md border text-sm ${branches.data && branches.data.length === 0 ? "opacity-60" : "cursor-pointer"} ${ownership === "branch" ? "border-[var(--accent)] bg-[var(--muted)]" : "border-[var(--border)] bg-[var(--card)]"}`}>
-                <input type="radio" name="ownership" checked={ownership === "branch"} disabled={branches.data?.length === 0}
-                  onChange={() => setOwnership("branch")} className="mt-0.5" />
-                <span className="flex-1">
-                  <span className="text-[var(--foreground)]">One of your branches</span>
-                  {branches.data?.length === 0 ? (
-                    <span className="block text-xs text-[var(--muted-foreground)]">Your company has no branches yet.</span>
-                  ) : ownership === "branch" && (
-                    <select aria-label="Branch" value={branchId} onChange={(e) => setBranchId(e.target.value)}
-                      className="mt-2 w-full px-3 py-2 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm focus:outline-none focus:border-[var(--accent)]">
+          <FormSection n={4} title="Who it belongs to" description="Decides who can change it. Branch staff can still see a company estate.">
+            {branchScoped ? (
+              <p className="text-sm text-[var(--muted-foreground)]">
+                This estate will belong to your branch{branches.data?.[0] ? `, ${branches.data[0].name}` : ""}.
+              </p>
+            ) : (
+              <fieldset className="space-y-2">
+                <legend className="sr-only">Who does this estate belong to?</legend>
+                <OwnerOption checked={ownership === "company"} onChange={() => setOwnership("company")}
+                  title="The company itself — no branch" body="For a single-office developer. Only company-wide staff can change it." />
+                <OwnerOption checked={ownership === "branch"} onChange={() => setOwnership("branch")} disabled={branches.data?.length === 0}
+                  title="One of your branches" body={branches.data?.length === 0 ? "Your company has no branches yet." : "Its branch staff can manage it."}>
+                  {ownership === "branch" && (branches.data?.length ?? 0) > 0 && (
+                    <Select aria-label="Branch" inputSize="md" value={branchId} onChange={(e) => setBranchId(e.target.value)} className="mt-2">
                       <option value="">Choose a branch</option>
                       {(branches.data ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                    </select>
+                    </Select>
                   )}
+                </OwnerOption>
+              </fieldset>
+            )}
+          </FormSection>
+
+          {formError && <ErrorText>{formError}</ErrorText>}
+
+          <div className="flex gap-3">
+            <Button type="submit" size="lg" disabled={submitting}>{submitting ? "Creating…" : "Create draft estate"}</Button>
+            <LinkButton to="/portal/estates" variant="secondary" size="lg">Cancel</LinkButton>
+          </div>
+        </form>
+
+        <Card as="section" aria-labelledby="after-heading" className="lg:sticky lg:top-6 space-y-4">
+          <div>
+            <h2 id="after-heading" className="font-semibold text-[var(--foreground)]">After you create it</h2>
+            <p className="text-sm text-[var(--muted-foreground)] mt-1">
+              Your draft is set up in these steps, each on its own page. Publishing needs all of them except the title — plus HomeTrue's
+              checks on your company.
+            </p>
+          </div>
+          <ul className="space-y-3">
+            {AFTER.map(({ icon: Icon, title, body }) => (
+              <li key={title} className="flex gap-3">
+                <span className="w-8 h-8 shrink-0 rounded-lg bg-[var(--secondary)] text-[var(--primary)] flex items-center justify-center"><Icon size={15} /></span>
+                <span>
+                  <span className="block text-sm font-medium text-[var(--foreground)]">{title}</span>
+                  <span className="block text-xs text-[var(--muted-foreground)]">{body}</span>
                 </span>
-              </label>
-            </div>
-          </fieldset>
-        )}
-
-        <Field label="Amenities (comma separated)" value={amenities} onChange={setAmenities} placeholder="Perimeter Fencing, Motorable Roads" />
-
-        <BoundaryField onChange={handleBoundaryChange} />
-
-        {formError && <p className="text-sm text-red-700">{formError}</p>}
-
-        <div className="flex gap-3">
-          <button
-            type="submit"
-            disabled={submitting}
-            className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60"
-          >
-            {submitting ? "Creating…" : "Create draft estate"}
-          </button>
-          <Link to="/portal/estates" className="px-4 py-2 border border-[var(--border)] rounded-md text-sm text-[var(--foreground)] hover:bg-[var(--muted)]">
-            Cancel
-          </Link>
-        </div>
-      </form>
-    </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      </div>
+    </Page>
   );
 }
 
-function Field({ label, value, onChange, required, placeholder, type = "text", textarea, disabled }: {
-  label: string; value: string; onChange: (v: string) => void;
-  required?: boolean; placeholder?: string; type?: string; textarea?: boolean; disabled?: boolean;
+const AFTER = [
+  { icon: MapPinIcon, title: "Details & boundary", body: "This page" },
+  { icon: GridIcon, title: "Tiers & plots", body: "Sizes, prices, the plots themselves" },
+  { icon: ImageIcon, title: "Photos", body: "At least one, with a cover" },
+  { icon: ShieldCheckIcon, title: "Land title", body: "Recommended — HomeTrue checks it" },
+  { icon: ReceiptIcon, title: "Fees & terms", body: "Fee schedule and refund terms" },
+  { icon: FileCheckIcon, title: "Allocation letter", body: "Conditions, preview, approval" },
+];
+
+function OwnerOption({ checked, onChange, disabled, title, body, children }: {
+  checked: boolean; onChange: () => void; disabled?: boolean; title: string; body: string; children?: React.ReactNode;
 }) {
-  const id = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-  const shared = "w-full px-3 py-2 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm focus:outline-none focus:border-[var(--accent)] disabled:opacity-60";
   return (
-    <div>
-      <label htmlFor={id} className="block text-sm font-medium text-[var(--foreground)] mb-1.5">{label}</label>
-      {textarea ? (
-        <textarea id={id} rows={3} value={value} onChange={(e) => onChange(e.target.value)} required={required} placeholder={placeholder} className={shared} />
-      ) : (
-        <input id={id} type={type} value={value} onChange={(e) => onChange(e.target.value)} required={required} placeholder={placeholder} disabled={disabled} className={shared} />
-      )}
-    </div>
+    <label className={cx("flex items-start gap-3 rounded-lg border p-3.5 text-sm",
+      disabled ? "opacity-60" : "cursor-pointer",
+      checked ? "border-[var(--ring)] bg-[var(--secondary)]" : "border-[var(--border)] bg-[var(--card)]")}>
+      <input type="radio" name="ownership" checked={checked} onChange={onChange} disabled={disabled} className="mt-1" />
+      <span className="flex-1">
+        <span className="block font-medium text-[var(--foreground)]">{title}</span>
+        <span className="block text-[var(--muted-foreground)]">{body}</span>
+        {children}
+      </span>
+    </label>
   );
 }

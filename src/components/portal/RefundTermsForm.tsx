@@ -104,7 +104,7 @@ export default function RefundTermsForm({ estateId, current, declaredFees, onDec
         <textarea id="refund-notes" rows={2} value={draft.notes} onChange={(e) => set({ notes: e.target.value })} className={inputClass} />
       </Field>
 
-      {serverError && <p className="text-sm text-red-700" role="alert">{serverError}</p>}
+      {serverError && <p className="text-sm text-[var(--error-text)]" role="alert">{serverError}</p>}
 
       <div className="space-y-2">
         <VersionNote nextVersion={(current?.version ?? 0) + 1} />

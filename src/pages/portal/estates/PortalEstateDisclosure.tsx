@@ -26,6 +26,8 @@ import RefundTermsForm from "../../../components/portal/RefundTermsForm";
 import DefaultTermsForm from "../../../components/portal/DefaultTermsForm";
 import DisclosurePreview, { DefaultTermsSummary, RefundSummary } from "../../../components/portal/DisclosurePreview";
 import { usePortalScope } from "../usePortalScope";
+import EstateSetupPage from "../../../components/portal/EstateSetupPage";
+import Page, { Loading } from "../../../components/ui/Page";
 
 type Tab = "fees" | "refund" | "default" | "preview";
 const TABS: Tab[] = ["fees", "refund", "default", "preview"];
@@ -53,7 +55,7 @@ export default function PortalEstateDisclosure() {
     return { estate, fees, refund, defaults, computed };
   }, [scope?.tenantId, scope?.branchId, estateId]);
 
-  if (loaded.loading) return <div className="p-8 text-sm text-[var(--muted-foreground)]">Loading disclosure…</div>;
+  if (loaded.loading && !loaded.data) return <Page title="Fees & terms" width="lg"><Loading label="Loading fees and terms…" /></Page>;
 
   if (loaded.error) return <LoadError error={loaded.errorValue} what="this estate's fees and terms" onRetry={loaded.refetch} />;
 
@@ -73,13 +75,13 @@ export default function PortalEstateDisclosure() {
   const canManage = mayManage && !isReadOnlyForScope(estate, scope);
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <Link to={`/portal/estates/${estateId}`} className="text-xs text-[var(--accent)] hover:underline">← {estate.name}</Link>
-      <h1 className="font-display text-3xl text-[var(--foreground)] mt-2 mb-1">Fees &amp; terms</h1>
-      <p className="text-sm text-[var(--muted-foreground)] mb-6">
-        Declared here, shown to buyers before they commit. The fee schedule and refund terms are required before this estate can be published.
-      </p>
-
+    <EstateSetupPage
+      estate={estate}
+      step="fees"
+      title="Fees & terms"
+      description="Declared here, shown to buyers before they commit. The fee schedule and refund terms are required before this estate can be published."
+    >
+      <div className="max-w-3xl">
       <div className="border-b border-[var(--border)] mb-5">
         <TabBar
           tabs={[
@@ -196,7 +198,8 @@ export default function PortalEstateDisclosure() {
 
         {tab === "preview" && <DisclosurePreview computed={computed} fees={fees} refund={refund} defaults={defaults} />}
       </div>
-    </div>
+      </div>
+    </EstateSetupPage>
   );
 }
 

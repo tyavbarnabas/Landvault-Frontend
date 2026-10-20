@@ -1,6 +1,7 @@
 import { useState } from "react";
 import LoadError from "../../../components/LoadError";
 import { useParams, useSearchParams, Link } from "react-router-dom";
+import EstateSetupPage from "../../../components/portal/EstateSetupPage";
 import { useFetch } from "../../../lib/useFetch";
 import { formatAmount, type Currency } from "../../../data/mockData";
 import { STATUS_COLORS, STATUS_LABELS } from "../../../lib/plotStatus";
@@ -100,7 +101,7 @@ export default function PortalEstateInventory() {
   ];
 
   return (
-    <Page width="xl" back={{ to: `/portal/estates/${estateId}`, label: estate.name }} title="Inventory"
+    <EstateSetupPage estate={estate} step="plots" title="Tiers & plots"
       description="Price by tier, not per plot. Changing a tier's price changes every plot priced by it."
       actions={canManage ? (
         <div className="flex flex-wrap gap-2">
@@ -133,7 +134,7 @@ export default function PortalEstateInventory() {
         {tab === "blocks" && <BlocksPanel estateId={estateId} blocks={blocks} canManage={canManage} onCreated={loaded.refetch} />}
         {tab === "plots" && <PlotsPanel estateId={estateId} plots={plots} blocks={blocks} tiers={tiers} mapData={mapData} canManage={canManage} onChanged={loaded.refetch} />}
       </div>
-    </Page>
+    </EstateSetupPage>
   );
 }
 

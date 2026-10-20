@@ -28,6 +28,7 @@ import { ErrorText } from "../../../components/ui/Field";
 import ClauseListEditor, { indexedErrors } from "../../../components/letters/ClauseListEditor";
 import ReviewState from "../../../components/letters/ReviewState";
 import { usePortalScope } from "../usePortalScope";
+import EstateSetupPage from "../../../components/portal/EstateSetupPage";
 
 const CHANGE_LABELS: Record<LetterChange, string> = {
   terms: "the estate's conditions (HomeTrue approved a new version)",
@@ -67,20 +68,23 @@ export default function PortalEstateLetter() {
   if (approval.error) return <LoadError error={approval.errorValue} what="this estate's letter" onRetry={approval.refetch} />;
   if (terms.error) return <LoadError error={terms.errorValue} what="this estate's conditions" onRetry={terms.refetch} />;
 
-  const refresh = () => { approval.refetch(); terms.refetch(); };
+  // The estate too: approving the letter changes its setup and publishing state.
+  const refresh = () => { approval.refetch(); terms.refetch(); estate.refetch(); };
   return (
-    <Page
+    <EstateSetupPage
+      estate={estate.data}
+      step="letter"
       title="Allocation letter"
-      width="lg"
-      back={{ to: `/portal/estates/${estateId}`, label: estate.data.name }}
       description="HomeTrue issues each buyer's letter the moment finance verifies the sale. Until this estate's letter is approved, it can't be listed and finance can't allocate its plots."
     >
+      <div className="max-w-3xl">
       <div className="space-y-8">
         {holdsManage && !canManage && <Alert role="status">You're working inside one branch. Letters can only be changed or approved with a company-wide view.</Alert>}
         <ApprovalSection estateId={estateId} approval={approval.data!} terms={terms.data!} scope={scope} canManage={canManage} onChanged={refresh} />
         <ConditionsSection estateId={estateId} terms={terms.data!} scope={scope} canManage={canManage} onSaved={refresh} />
       </div>
-    </Page>
+      </div>
+    </EstateSetupPage>
   );
 }
 

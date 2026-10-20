@@ -4,10 +4,12 @@
 // estate's real tier names, and the property names the import reads), check a
 // file — every problem reported at once, nothing written — then import. The
 // import is ALL OR NOTHING and re-checks everything: a preview is not a promise.
+// Laid out from the Figma "Portal estate setup" proposal: the three steps
+// named, the file and its check side by side.
 
 import { useRef, useState } from "react";
 import LoadError from "../../../components/LoadError";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useFetch } from "../../../lib/useFetch";
 import { fetchPortalEstateById } from "../../../services/portalEstatesService";
 import {
@@ -16,8 +18,15 @@ import {
   type PlotImportIssue, type PlotImportOptions, type PlotImportReport,
 } from "../../../services/portalInventoryService";
 import StatusBadge from "../../../components/StatusBadge";
-import { Field, inputClass } from "../../../components/portal/formParts";
 import { usePortalScope } from "../usePortalScope";
+import EstateSetupPage from "../../../components/portal/EstateSetupPage";
+import Page, { Loading } from "../../../components/ui/Page";
+import Card, { InfoBox } from "../../../components/ui/Card";
+import Button from "../../../components/ui/Button";
+import TextLink from "../../../components/ui/TextLink";
+import { ErrorText, Field, Input, Select } from "../../../components/ui/Field";
+import { cx } from "../../../components/ui/cx";
+import { CheckIcon, FileTextIcon } from "../../../components/icons";
 
 // What each backend issue code means in a developer's terms. The server's own
 // message is always shown too; this is the "what to do about it".
@@ -46,17 +55,13 @@ export default function ImportPortalPlots() {
   const [result, setResult] = useState<PlotImportReport | null>(null);
   const [busy, setBusy] = useState<"template" | "preview" | "import" | null>(null);
   const [error, setError] = useState("");
+  const [templateTaken, setTemplateTaken] = useState(false);
 
-  if (estate.loading) return <div className="p-8 text-sm text-[var(--muted-foreground)]">Loading…</div>;
+  if (estate.loading && !estate.data) return <Page title="Import plots"><Loading label="Loading…" /></Page>;
 
   if (estate.error) return <LoadError error={estate.errorValue} what="this estate" onRetry={estate.refetch} />;
   if (!estate.data || !estateId || !scope) {
-    return (
-      <div className="p-8">
-        <p className="text-sm font-medium text-[var(--foreground)] mb-2">Estate not found.</p>
-        <Link to="/portal/estates" className="text-sm text-[var(--accent)] hover:underline">Back to estates</Link>
-      </div>
-    );
+    return <Page title="Estate not found" back={{ to: "/portal/estates", label: "Estates" }}>{null}</Page>;
   }
 
   // Only values actually mapped are sent; the rest still match by label or size.
@@ -75,6 +80,7 @@ export default function ImportPortalPlots() {
       link.download = `${estate.data!.slug || "estate"}-plots-template.geojson`;
       link.click();
       URL.revokeObjectURL(url);
+      setTemplateTaken(true);
     } catch {
       setError("Couldn't download the template. Please try again.");
     } finally {
@@ -116,17 +122,34 @@ export default function ImportPortalPlots() {
     }
   };
 
+  // Where the developer is: 1 get the template, 2 check the file, 3 import.
+  const stage = result?.imported ? 4 : preview?.canImport ? 3 : 2;
+  const steps: { label: string; state: "done" | "current" | "todo" }[] = [
+    { label: "Get the template", state: templateTaken || file ? "done" : "current" },
+    { label: "Check the file", state: stage > 2 ? "done" : templateTaken || file ? "current" : "todo" },
+    { label: "Import", state: stage === 4 ? "done" : stage === 3 ? "current" : "todo" },
+  ];
+
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <Link to={`/portal/estates/${estateId}/inventory?tab=plots`} className="text-xs text-[var(--accent)] hover:underline">← Inventory</Link>
-      <h1 className="font-display text-3xl text-[var(--foreground)] mt-2 mb-1">Import plots from a file</h1>
-      <p className="text-sm text-[var(--muted-foreground)] mb-6">
-        A GeoJSON file from your surveyor, one shape per plot — up to {PLOT_IMPORT_LIMIT} per file. Coordinates must be longitude then
-        latitude in WGS 84, not UTM metres (the usual export from Nigerian survey software — re-export it in QGIS).
-      </p>
+    <EstateSetupPage estate={estate.data} step="plots" title="Import plots from a file"
+      description={`Your surveyor's GeoJSON, one shape per plot, up to ${PLOT_IMPORT_LIMIT}. Longitude then latitude in WGS 84, not UTM metres — re-export it in QGIS if needed. Checking writes nothing; the import is all or nothing.`}>
+      <ol className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-5" aria-label="Import steps">
+        {steps.map((st, i) => (
+          <li key={st.label} className="flex items-center gap-3" aria-current={st.state === "current" ? "step" : undefined}>
+            {i > 0 && <span className="w-8 sm:w-14 h-px bg-[var(--border)]" aria-hidden="true" />}
+            <span className="flex items-center gap-2">
+              <span aria-hidden="true" className={cx("w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold",
+                st.state === "done" ? "bg-[var(--success-surface)] text-[var(--success-text)]" : st.state === "current" ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : "bg-[var(--muted)] text-[var(--muted-foreground)]")}>
+                {st.state === "done" ? <CheckIcon size={12} /> : i + 1}
+              </span>
+              <span className={cx("text-sm", st.state === "current" ? "font-semibold text-[var(--foreground)]" : st.state === "todo" ? "text-[var(--muted-foreground)]" : "text-[var(--foreground)]")}>{st.label}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
 
       {result?.imported ? (
-        <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 space-y-3" role="status">
+        <Card className="space-y-3" role="status">
           <div className="flex items-center gap-3">
             <StatusBadge label="Imported" variant="success" />
             <p className="text-sm font-medium text-[var(--foreground)]">{result.createdCount} {result.createdCount === 1 ? "plot" : "plots"} created.</p>
@@ -139,26 +162,19 @@ export default function ImportPortalPlots() {
               {result.plotOverlapsInEstate} overlapping {result.plotOverlapsInEstate === 1 ? "pair" : "pairs"} of plots were recorded for review.
             </p>
           )}
-          <Link to={`/portal/estates/${estateId}/inventory?tab=plots`} className="inline-block text-sm font-semibold text-[var(--accent)] hover:underline">
-            See the plots →
-          </Link>
-        </div>
+          <TextLink to={`/portal/estates/${estateId}/inventory?tab=plots`} className="inline-block text-sm font-semibold">See the plots →</TextLink>
+        </Card>
       ) : (
-        <div className="space-y-6">
-          <section className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 space-y-3">
-            <h2 className="text-sm font-semibold text-[var(--foreground)]">1. Start from the template</h2>
-            <p className="text-sm text-[var(--muted-foreground)]">
-              It lists this estate's tiers and the property names the import reads (<code>plot_number</code>, <code>block</code>,{" "}
-              <code>tier</code>, <code>corner</code>), with two example plots to replace.
-            </p>
-            <button type="button" onClick={downloadTemplate} disabled={busy !== null}
-              className="px-4 py-2 border border-[var(--border)] rounded-md text-sm text-[var(--foreground)] hover:bg-[var(--muted)] disabled:opacity-60">
-              {busy === "template" ? "Preparing…" : "Download template"}
-            </button>
-          </section>
+        <div className="grid lg:grid-cols-2 gap-5 items-start">
+          <Card as="section" className="space-y-4" aria-label="The file">
+            <div className="rounded-lg bg-[var(--muted)] p-3 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-[var(--muted-foreground)]">
+                The template lists this estate's tiers and the property names the import reads (<code className="font-mono-data">plot_number</code>,{" "}
+                <code className="font-mono-data">block</code>, <code className="font-mono-data">tier</code>, <code className="font-mono-data">corner</code>).
+              </p>
+              <Button variant="secondary" onClick={downloadTemplate} disabled={busy !== null}>{busy === "template" ? "Preparing…" : "Download template"}</Button>
+            </div>
 
-          <section className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 space-y-4">
-            <h2 className="text-sm font-semibold text-[var(--foreground)]">2. Choose the file and check it</h2>
             <div>
               <input ref={fileInput} type="file" accept=".geojson,.json,application/geo+json,application/json" className="sr-only" id="import-file"
                 onChange={async (e) => {
@@ -168,18 +184,23 @@ export default function ImportPortalPlots() {
                   setFileText(chosen ? await chosen.text() : null);
                   invalidate();
                 }} />
-              <label htmlFor="import-file" className="inline-block cursor-pointer px-4 py-2 border border-[var(--border)] rounded-md text-sm text-[var(--foreground)] hover:bg-[var(--muted)]">
-                {file ? "Choose a different file" : "Choose file"}
+              <label htmlFor="import-file"
+                className="flex items-center gap-3 rounded-lg border-2 border-dashed border-[var(--border)] p-4 cursor-pointer hover:border-[var(--primary)] focus-within:shadow-[0_0_0_2px_var(--ring)]">
+                <span className="w-9 h-9 shrink-0 rounded-lg bg-[var(--secondary)] text-[var(--primary)] flex items-center justify-center"><FileTextIcon size={18} /></span>
+                <span className="flex-1 min-w-0">
+                  <span className={cx("block text-sm truncate", file ? "font-mono-data font-medium text-[var(--foreground)]" : "font-semibold text-[var(--foreground)]")}>{file ? file.name : "Choose the surveyor's file"}</span>
+                  <span className="block text-xs text-[var(--muted-foreground)]">{file ? `${(file.size / 1024).toFixed(0)} KB` : ".geojson or .json"}</span>
+                </span>
+                <span className="text-sm font-medium text-[var(--accent)]">{file ? "Change" : "Choose"}</span>
               </label>
-              {file && <span className="ml-3 text-sm text-[var(--foreground)]">{file.name}</span>}
             </div>
 
             <Field id="import-status" label="Imported plots are"
               hint="Every plot in the file gets this. Reserved and sold are reached only through checkout.">
-              <select id="import-status" value={status} onChange={(e) => { setStatus(e.target.value as PlotImportOptions["status"]); invalidate(); }} className={inputClass}>
+              <Select id="import-status" value={status} onChange={(e) => { setStatus(e.target.value as PlotImportOptions["status"]); invalidate(); }} aria-describedby="import-status-hint">
                 <option value="available-dev">Available — development</option>
                 <option value="available-inv">Available — investment</option>
-              </select>
+              </Select>
             </Field>
 
             <details className="text-sm">
@@ -187,7 +208,7 @@ export default function ImportPortalPlots() {
               <div className="grid sm:grid-cols-2 gap-3 mt-3">
                 {(Object.keys(PLOT_IMPORT_DEFAULTS) as (keyof typeof PLOT_IMPORT_DEFAULTS)[]).map((key) => (
                   <Field key={key} id={`col-${key}`} label={COLUMN_LABELS[key]}>
-                    <input id={`col-${key}`} value={columns[key]} className={inputClass}
+                    <Input id={`col-${key}`} inputSize="md" value={columns[key]}
                       onChange={(e) => { setColumns({ ...columns, [key]: e.target.value }); invalidate(); }} />
                   </Field>
                 ))}
@@ -203,26 +224,29 @@ export default function ImportPortalPlots() {
               />
             )}
 
-            <button type="button" onClick={check} disabled={!file || busy !== null}
-              className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
-              {busy === "preview" ? "Checking…" : "Check file"}
-            </button>
-            <p className="text-xs text-[var(--muted-foreground)]">Checking writes nothing.</p>
-          </section>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button onClick={check} disabled={!file || busy !== null}>{busy === "preview" ? "Checking…" : preview ? "Check file again" : "Check file"}</Button>
+              <span className="text-xs text-[var(--muted-foreground)]">Checking writes nothing.</span>
+            </div>
+            {error && <ErrorText>{error}</ErrorText>}
+          </Card>
 
-          {error && <p className="text-sm text-red-700" role="alert">{error}</p>}
-
-          {preview && (
+          {preview ? (
             <ImportReport
               report={preview}
               refused={result !== null && !result.imported}
               importing={busy === "import"}
               onImport={runImport}
             />
+          ) : (
+            <Card as="section" aria-label="Check results" className="text-sm text-[var(--muted-foreground)]">
+              <h2 className="font-semibold text-[var(--foreground)] mb-1">Check results</h2>
+              Choose the file and check it. Every problem in it is listed here at once, and nothing is written until you import.
+            </Card>
           )}
         </div>
       )}
-    </div>
+    </EstateSetupPage>
   );
 }
 
@@ -237,19 +261,20 @@ function ImportReport({ report, refused, importing, onImport }: {
   report: PlotImportReport; refused: boolean; importing: boolean; onImport: () => void;
 }) {
   return (
-    <section className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 space-y-4" aria-label="Check results">
-      <div className="flex items-center gap-3">
+    <Card as="section" className="space-y-4" aria-label="Check results">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-semibold text-[var(--foreground)]">Check results</h2>
         <StatusBadge label={report.canImport ? "Ready to import" : `${report.errors.length} ${report.errors.length === 1 ? "problem" : "problems"} to fix`}
           variant={report.canImport ? "success" : "error"} />
-        <p className="text-sm text-[var(--foreground)]">
-          {report.importableCount} of {report.featureCount} {report.featureCount === 1 ? "plot" : "plots"} can be imported.
-        </p>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <InfoBox label="In the file"><div className="font-display text-2xl text-[var(--foreground)]">{report.featureCount}</div></InfoBox>
+        <InfoBox label="Ready"><div className="font-display text-2xl text-[var(--foreground)]">{report.importableCount}</div></InfoBox>
+        <InfoBox label="To fix"><div className="font-display text-2xl text-[var(--foreground)]">{report.errors.length}</div></InfoBox>
       </div>
 
       {refused && (
-        <p className="text-sm text-red-700" role="alert">
-          The import was refused and nothing was created — the file was checked again and has the problems below.
-        </p>
+        <ErrorText>The import was refused and nothing was created — the file was checked again and has the problems below.</ErrorText>
       )}
 
       {Object.keys(report.plotsPerTier).length > 0 && (
@@ -270,10 +295,9 @@ function ImportReport({ report, refused, importing, onImport }: {
 
       {report.canImport ? (
         <div className="space-y-2">
-          <button type="button" onClick={onImport} disabled={importing}
-            className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
+          <Button onClick={onImport} disabled={importing}>
             {importing ? "Importing…" : `Import ${report.importableCount} ${report.importableCount === 1 ? "plot" : "plots"}`}
-          </button>
+          </Button>
           <p className="text-xs text-[var(--muted-foreground)]">
             All or nothing: everything is checked again, and if anything has changed since this check, nothing is created.
           </p>
@@ -283,14 +307,14 @@ function ImportReport({ report, refused, importing, onImport }: {
           Nothing can be imported until every problem is fixed — a half-imported estate is worse than none. Fix the file and check it again.
         </p>
       )}
-    </section>
+    </Card>
   );
 }
 
 function IssueList({ title, issues, tone }: { title: string; issues: PlotImportIssue[]; tone: "error" | "warning" }) {
   return (
     <div>
-      <div className={`text-xs font-semibold mb-1 ${tone === "error" ? "text-red-700" : "text-amber-700"}`}>{title}</div>
+      <div className={`text-xs font-semibold mb-1 ${tone === "error" ? "text-[var(--error-text)]" : "text-[var(--warning-text)]"}`}>{title}</div>
       <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
         <table className="w-full text-sm">
           <thead>
@@ -347,11 +371,11 @@ function TierMappingSection({ values, tiers, mapping, onChange }: {
           return (
             <li key={value} className="grid sm:grid-cols-[1fr_1.5fr] gap-2 items-center">
               <span className="text-sm font-mono-data text-[var(--foreground)]">{value}</span>
-              <select aria-label={`Tier for ${value}`} value={mapping[value] ?? ""} className={inputClass}
+              <Select aria-label={`Tier for ${value}`} inputSize="md" value={mapping[value] ?? ""}
                 onChange={(e) => onChange({ ...mapping, [value]: e.target.value })}>
                 <option value="">{auto ? `Matches ${tierDisplayLabel(auto)} automatically` : "No match — choose a tier"}</option>
                 {tiers.map((t) => <option key={t.id} value={t.id}>{tierDisplayLabel(t)}</option>)}
-              </select>
+              </Select>
             </li>
           );
         })}

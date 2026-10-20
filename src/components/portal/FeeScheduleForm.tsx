@@ -125,7 +125,7 @@ export default function FeeScheduleForm({ estateId, current, onDeclared }: {
         </div>
       )}
 
-      {serverError && <p className="text-sm text-red-700" role="alert">{serverError}</p>}
+      {serverError && <p className="text-sm text-[var(--error-text)]" role="alert">{serverError}</p>}
 
       <div className="space-y-2">
         <VersionNote nextVersion={current.version + 1} />
@@ -244,7 +244,7 @@ function FeeRow({ index, draft, errors, onChange, onRemove }: {
           error={err("isMandatory")}
           options={YES_NO}
           hint={BUILD_CONDITIONAL.includes(draft.feeType) ? (
-            <span className="text-amber-700">
+            <span className="text-[var(--warning-text)]">
               Charged "only if you build"? If your terms also require buyers to build, this fee is mandatory — the condition can't be avoided,
               so neither can the fee.
             </span>

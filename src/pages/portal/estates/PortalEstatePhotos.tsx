@@ -1,4 +1,6 @@
 // An estate's photos (storage step 2): upload, caption, order, cover, delete.
+// Laid out from the Figma "Portal estate setup" proposal: inside the setup
+// frame, a drop zone and a grid of photo cards, the cover outlined.
 //
 // Everything on screen is what the server last returned. Confirm stores a
 // metadata-stripped copy at a new address, so a local preview would show a
@@ -30,6 +32,9 @@ import EmptyState from "../../../components/ui/EmptyState";
 import Dialog, { DialogActions } from "../../../components/ui/Dialog";
 import { ErrorText, Field, Textarea, describedBy } from "../../../components/ui/Field";
 import { usePortalScope } from "../usePortalScope";
+import EstateSetupPage from "../../../components/portal/EstateSetupPage";
+import { cx } from "../../../components/ui/cx";
+import { ArrowLeftIcon, ChevronRightIcon, ImageIcon } from "../../../components/icons";
 import { ReadOnlyNotice } from "./PortalEstateInventory";
 
 const MAX_MB = PHOTO_MAX_BYTES / 1024 / 1024;
@@ -115,11 +120,11 @@ export default function PortalEstatePhotos() {
   };
 
   return (
-    <Page
+    <EstateSetupPage
+      estate={current}
+      step="photos"
       title="Photos"
-      width="lg"
-      back={{ to: `/portal/estates/${estateId}`, label: current.name }}
-      description="Shown on the marketplace while the estate is listed. The cover is the main image buyers see first."
+      description={`Buyers see them in this order, cover first.${list.length ? ` ${list.length} of ${PHOTO_LIMIT} used.` : ""}`}
     >
       {readOnly && <ReadOnlyNotice />}
 
@@ -149,31 +154,27 @@ export default function PortalEstatePhotos() {
           />
         </Card>
       ) : (
-        <>
-          <p className="text-xs text-[var(--muted-foreground)] mb-3">
-            {list.length} of {PHOTO_LIMIT} photos{canManage ? ". Buyers see them in this order, with the cover first." : "."}
-          </p>
-          <ul className="space-y-3">
-            {list.map((photo, index) => (
-              <PhotoRow
-                key={photo.id}
-                photo={photo}
-                estateName={current.name}
-                canManage={canManage}
-                busy={busy}
-                first={index === 0}
-                last={index === list.length - 1}
-                onMove={(delta) => move(photo.id, delta)}
-                onCover={() => run(() => setCoverPhoto(estateId, photo.id, scope))}
-                onDelete={() => setDeleting(photo)}
-                onCaption={async (caption) => {
-                  const saved = await updatePhotoCaption(estateId, photo.id, caption, scope);
-                  photos.setData((prev) => (prev ?? []).map((p) => (p.id === saved.id ? saved : p)));
-                }}
-              />
-            ))}
-          </ul>
-        </>
+        <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {list.map((photo, index) => (
+            <PhotoCard
+              key={photo.id}
+              photo={photo}
+              position={index + 1}
+              estateName={current.name}
+              canManage={canManage}
+              busy={busy}
+              first={index === 0}
+              last={index === list.length - 1}
+              onMove={(delta) => move(photo.id, delta)}
+              onCover={() => run(() => setCoverPhoto(estateId, photo.id, scope))}
+              onDelete={() => setDeleting(photo)}
+              onCaption={async (caption) => {
+                const saved = await updatePhotoCaption(estateId, photo.id, caption, scope);
+                photos.setData((prev) => (prev ?? []).map((p) => (p.id === saved.id ? saved : p)));
+              }}
+            />
+          ))}
+        </ul>
       )}
 
       {deleting && (
@@ -186,7 +187,7 @@ export default function PortalEstatePhotos() {
           onConfirm={confirmDelete}
         />
       )}
-    </Page>
+    </EstateSetupPage>
   );
 }
 
@@ -204,6 +205,7 @@ function Uploader({ estateId, scope, count, onUploaded }: { estateId: string; sc
   const input = useRef<HTMLInputElement>(null);
   const [queue, setQueue] = useState<QueuedFile[]>([]);
   const [working, setWorking] = useState(false);
+  const [over, setOver] = useState(false);
   const full = count >= PHOTO_LIMIT;
 
   const update = (key: string, patch: Partial<QueuedFile>) => setQueue((q) => q.map((f) => (f.key === key ? { ...f, ...patch } : f)));
@@ -239,15 +241,22 @@ function Uploader({ estateId, scope, count, onUploaded }: { estateId: string; sc
   };
 
   return (
-    <Card className="mb-6 space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold text-[var(--foreground)]">Add photos</h2>
+    <div
+      onDragOver={(e) => { if (!working && !full) { e.preventDefault(); setOver(true); } }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => { e.preventDefault(); setOver(false); if (!working && !full) choose(e.dataTransfer.files); }}
+      className={cx("mb-6 rounded-xl border-2 border-dashed p-5 space-y-3 transition-colors", over ? "border-[var(--primary)] bg-[var(--secondary)]" : "border-[var(--border)]")}
+    >
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+        <span className="w-11 h-11 shrink-0 rounded-lg bg-[var(--secondary)] text-[var(--primary)] flex items-center justify-center"><ImageIcon size={22} /></span>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-sm font-semibold text-[var(--foreground)]">Drop photos here, or choose them</h2>
           <p id="photo-upload-hint" className="text-xs text-[var(--muted-foreground)] mt-0.5">
-            JPG, PNG or WebP, up to {MAX_MB} MB each, {PHOTO_LIMIT} per estate.
+            JPG, PNG or WebP, up to {MAX_MB} MB each, {PHOTO_LIMIT} per estate. Location data, camera details and dates are removed
+            from each photo when it's saved; only its orientation is kept, so phone photos stay upright.
           </p>
         </div>
-        <Button onClick={() => input.current?.click()} disabled={working || full}>
+        <Button onClick={() => input.current?.click()} disabled={working || full} className="shrink-0">
           {working ? "Uploading…" : "Choose photos"}
         </Button>
         <input
@@ -262,11 +271,6 @@ function Uploader({ estateId, scope, count, onUploaded }: { estateId: string; sc
           tabIndex={-1}
         />
       </div>
-
-      <p className="text-xs text-[var(--muted-foreground)]">
-        Location data, camera details and dates are removed from each photo when it's saved. Only its orientation is kept, so phone
-        photos stay upright.
-      </p>
 
       {full && <Alert tone="info">This estate has {PHOTO_LIMIT} photos, the most allowed. Delete one to add another.</Alert>}
 
@@ -300,14 +304,15 @@ function Uploader({ estateId, scope, count, onUploaded }: { estateId: string; sc
           ))}
         </ul>
       )}
-    </Card>
+    </div>
   );
 }
 
 // ─── One photo ───────────────────────────────────────────────────────────────
 
-function PhotoRow({ photo, estateName, canManage, busy, first, last, onMove, onCover, onDelete, onCaption }: {
+function PhotoCard({ photo, position, estateName, canManage, busy, first, last, onMove, onCover, onDelete, onCaption }: {
   photo: EstatePhoto;
+  position: number;
   estateName: string;
   canManage: boolean;
   busy: boolean;
@@ -320,32 +325,30 @@ function PhotoRow({ photo, estateName, canManage, busy, first, last, onMove, onC
 }) {
   const label = photo.caption ?? `${estateName}, photo ${photo.position + 1}`;
   return (
-    <Card as="li" padding="md" className="flex flex-col sm:flex-row gap-4">
-      {/* The server's url: the cleaned copy, never the file as uploaded. */}
-      <img src={photo.url} alt={photo.caption ?? estateName} loading="lazy" className="w-full sm:w-44 aspect-[4/3] object-cover rounded-md bg-[var(--muted)] shrink-0" />
-      <div className="flex-1 min-w-0 space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          {photo.cover && <Badge label="Cover" variant="success" />}
-          <span className="text-xs text-[var(--muted-foreground)]">
-            Added {new Date(photo.uploadedAt).toLocaleDateString()}
-          </span>
-        </div>
-
-        {canManage ? (
-          <CaptionEditor photo={photo} onSave={onCaption} />
-        ) : (
-          <p className={`text-sm ${photo.caption ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]"}`}>{photo.caption ?? "No caption"}</p>
-        )}
-
-        {canManage && (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <Button variant="link" disabled={busy || first} onClick={() => onMove(-1)} aria-label={`Move up: ${label}`}>Move up</Button>
-            <Button variant="link" disabled={busy || last} onClick={() => onMove(1)} aria-label={`Move down: ${label}`}>Move down</Button>
-            {!photo.cover && <Button variant="link" disabled={busy} onClick={onCover} aria-label={`Make cover: ${label}`}>Make cover</Button>}
-            <Button variant="linkDanger" disabled={busy} onClick={onDelete} aria-label={`Delete: ${label}`} className="sm:ml-auto">Delete</Button>
-          </div>
-        )}
+    <Card as="li" padding="sm" className={cx("flex flex-col gap-3", photo.cover && "border-2 border-[var(--ring)]")}>
+      <div className="relative">
+        {/* The server's url: the cleaned copy, never the file as uploaded. */}
+        <img src={photo.url} alt={photo.caption ?? estateName} loading="lazy" className="w-full aspect-[3/2] object-cover rounded-md bg-[var(--muted)]" />
+        <span className="absolute top-2 left-2">
+          {photo.cover ? <Badge label="Cover" variant="success" /> : <Badge label={String(position)} variant="neutral" />}
+        </span>
       </div>
+
+      {canManage ? (
+        <CaptionEditor photo={photo} onSave={onCaption} />
+      ) : (
+        <p className={`text-sm ${photo.caption ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]"}`}>{photo.caption ?? "No caption"}</p>
+      )}
+
+      {canManage && (
+        <div className="flex items-center gap-2 mt-auto">
+          <Button variant="secondary" disabled={busy || first} onClick={() => onMove(-1)} aria-label={`Move earlier: ${label}`}><ArrowLeftIcon size={14} /></Button>
+          <Button variant="secondary" disabled={busy || last} onClick={() => onMove(1)} aria-label={`Move later: ${label}`}><ChevronRightIcon size={14} /></Button>
+          <span className="flex-1" />
+          {!photo.cover && <Button variant="link" className="font-medium" disabled={busy} onClick={onCover} aria-label={`Make cover: ${label}`}>Make cover</Button>}
+          <Button variant="linkDanger" disabled={busy} onClick={onDelete} aria-label={`Delete: ${label}`}>Delete</Button>
+        </div>
+      )}
     </Card>
   );
 }
@@ -357,9 +360,10 @@ function CaptionEditor({ photo, onSave }: { photo: EstatePhoto; onSave: (caption
   const [saved, setSaved] = useState(false);
   const id = `caption-${photo.id}`;
   const dirty = draft.trim() !== (photo.caption ?? "");
-  const hint = photo.caption
-    ? `${draft.length}/${CAPTION_MAX}. Shown under the photo on the marketplace and read aloud by screen readers.`
-    : `Describe what the photo shows, e.g. "The main gate and the paved access road". Buyers see it, and screen readers read it aloud. ${draft.length}/${CAPTION_MAX}.`;
+  // A missing caption is called out: without one, screen readers hear only
+  // the estate's name.
+  const hint = photo.caption || draft ? `${draft.length}/${CAPTION_MAX}` : undefined;
+  const missing = !photo.caption && !draft;
 
   const save = async () => {
     setSaving(true);
@@ -383,16 +387,22 @@ function CaptionEditor({ photo, onSave }: { photo: EstatePhoto; onSave: (caption
           rows={2}
           value={draft}
           maxLength={CAPTION_MAX}
+          placeholder="What the photo shows, e.g. the main gate and the paved access road"
           onChange={(e) => { setDraft(e.target.value); setSaved(false); }}
           aria-describedby={describedBy(id, { hint, error })}
         />
       </Field>
-      <div className="flex items-center gap-3 mt-2">
-        <Button variant="secondary" disabled={!dirty || saving} onClick={save}>
-          {saving ? "Saving…" : !draft.trim() && photo.caption ? "Clear caption" : "Save caption"}
-        </Button>
-        {saved && !dirty && <span role="status" className="text-xs text-[var(--muted-foreground)]">Saved</span>}
-      </div>
+      {missing && <p className="text-xs text-[var(--warning-text)] mt-1">Without a caption, buyers' screen readers only hear the estate's name.</p>}
+      {(dirty || saved) && (
+        <div className="flex items-center gap-3 mt-2">
+          {dirty && (
+            <Button variant="secondary" disabled={saving} onClick={save}>
+              {saving ? "Saving…" : !draft.trim() && photo.caption ? "Clear caption" : "Save caption"}
+            </Button>
+          )}
+          {saved && !dirty && <span role="status" className="text-xs text-[var(--muted-foreground)]">Saved</span>}
+        </div>
+      )}
     </div>
   );
 }

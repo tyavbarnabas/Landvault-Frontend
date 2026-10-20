@@ -15,6 +15,7 @@
 
 import { ESTATES, type Estate, type GeoPoint } from "../data/mockData";
 import { mockHasPhoto } from "../data/mockEstatePhotos";
+import { mockTitle } from "../data/mockEstateTitles";
 import { polygonAreaSqm, polygonOverlap } from "../lib/geometry";
 import { apiClient, ApiError, nullIfNotFound } from "../lib/apiClient";
 import { isMock } from "../lib/backends";
@@ -544,9 +545,9 @@ function fromDetailDto(dto: EstateDetailDto): PortalEstate {
     address: dto.address ?? "",
     titleType: dto.title?.titleType ?? null,
     plotsWithoutBoundary: dto.plotsWithoutBoundary ?? 0,
-    // Title verification lives in verificationChecks, which this slice does
-    // not interpret. Never shown as verified by default.
-    titleVerified: false,
+    // HomeTrue's review of the title, as the detail carries it (any case).
+    // Anything but a verified review reads as not verified.
+    titleVerified: dto.title?.status?.toLowerCase() === "verified",
     priceFrom: ngnPrices.length ? Math.min(...ngnPrices) : 0,
     priceTo: ngnPrices.length ? Math.max(...ngnPrices) : 0,
   };
@@ -624,8 +625,10 @@ async function projectPortalEstate(estate: Estate): Promise<PortalEstate> {
     amenities: estate.amenities,
     address: estate.address ?? "",
     intent: estate.intent === "investment" ? "investment" : "development",
-    titleType: estate.titleType,
-    titleVerified: estate.titleVerified,
+    // From the demo title store, which a title sent from the portal updates:
+    // an estate created in the session has no title until one is recorded.
+    titleType: mockTitle(estate.id)?.titleType ?? null,
+    titleVerified: mockTitle(estate.id)?.status === "verified",
     totalPlots: estate.totalPlots,
     availablePlots: estate.availablePlots,
     soldPlots: plots.filter((p) => p.status === "sold").length,

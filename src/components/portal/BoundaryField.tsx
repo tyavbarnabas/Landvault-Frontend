@@ -1,5 +1,6 @@
 // The estate boundary step: paste it, or upload the file the surveyor sent,
-// and see it on satellite imagery before saving.
+// and see it on satellite imagery before saving. From the Figma "Portal
+// estate setup" proposal: the file leads, pasting is the fallback.
 //
 // ONE validation path. Both inputs hand their text to parseBoundary — if the
 // file route grew its own rules, the two would eventually disagree about what
@@ -15,6 +16,10 @@ import {
   type BoundaryValidationError, type GeoJsonPolygon,
 } from "../../services/portalEstatesService";
 import EstateBoundaryMap from "../map/EstateBoundaryMap";
+import Alert from "../ui/Alert";
+import Button from "../ui/Button";
+import { Textarea } from "../ui/Field";
+import { MapPinIcon } from "../icons";
 
 
 const TEMPLATE_FILENAME = "hometrue-estate-boundary-template.geojson";
@@ -101,27 +106,41 @@ export default function BoundaryField({
 
   const areaSqm = polygon ? boundaryAreaSqm(polygon) : 0;
 
-  return (
-    <div className="border-t border-[var(--border)] pt-5">
-      <label htmlFor={inputId} className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
-        {label}
-      </label>
-      <p className="text-xs text-[var(--muted-foreground)] mb-3">{intro}</p>
-      {stateChecked && (
-        <p className="text-xs text-[var(--muted-foreground)] mb-3">
-          On saving it's checked against the estate's state, with a 1 km margin for border imprecision. These are reference boundaries
-          used to catch mistakes, not a ruling on disputed borders. <span className="italic">{STATE_BOUNDARY_ATTRIBUTION}.</span>
-        </p>
-      )}
+  const clear = () => { setText(""); setFileName(""); if (fileInput.current) fileInput.current.value = ""; validate(""); };
 
-      <div className="flex flex-wrap items-center gap-3 mb-3">
-        <button
-          type="button"
-          onClick={() => fileInput.current?.click()}
-          className="px-3 py-1.5 border border-[var(--border)] rounded-md text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors"
-        >
-          Upload .geojson
-        </button>
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="text-sm font-medium text-[var(--foreground)] mb-1">{label}</div>
+        <p className="text-xs text-[var(--muted-foreground)]">{intro}</p>
+      </div>
+
+      {/* The surveyor's file first: most developers have one, few can write GeoJSON. */}
+      <div
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files?.[0]); }}
+        className="flex flex-wrap items-center gap-3 rounded-lg border-2 border-dashed border-[var(--border)] p-4"
+      >
+        <span className="w-10 h-10 shrink-0 rounded-lg bg-[var(--secondary)] text-[var(--primary)] flex items-center justify-center"><MapPinIcon size={20} /></span>
+        <div className="flex-1 min-w-0">
+          {polygon ? (
+            <>
+              <div className="text-sm font-mono-data font-medium text-[var(--foreground)] truncate">{fileName || "Pasted boundary"}</div>
+              <div className="text-xs text-[var(--success-text)]">≈ {formatHectares(areaSqm)} ({Math.round(areaSqm).toLocaleString()} m²) · reads correctly</div>
+            </>
+          ) : (
+            <>
+              <div className="text-sm font-semibold text-[var(--foreground)]">Upload the surveyor's file</div>
+              <div className="text-xs text-[var(--muted-foreground)]">A .geojson file with one Polygon — drop it here, or choose it.</div>
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-4">
+          <Button variant={polygon ? "link" : "secondary"} className={polygon ? "font-medium" : undefined} onClick={() => fileInput.current?.click()}>
+            {polygon ? "Replace file" : "Choose file"}
+          </Button>
+          {(polygon || text) && <Button variant="linkMuted" onClick={clear}>Remove</Button>}
+        </div>
         <input
           ref={fileInput}
           type="file"
@@ -130,48 +149,46 @@ export default function BoundaryField({
           className="hidden"
           aria-label="Upload a GeoJSON boundary file"
         />
-        {/* Handing over a working file to edit beats explaining GeoJSON. */}
-        <button type="button" onClick={downloadTemplate} className="text-xs font-medium text-[var(--accent)] hover:underline">
-          Download a template
-        </button>
-        <button type="button" onClick={() => { setText(BOUNDARY_TEMPLATE_JSON); validate(BOUNDARY_TEMPLATE_JSON); }} className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
-          Use the example
-        </button>
-        {fileName && <span className="text-xs text-[var(--muted-foreground)] font-mono-data">{fileName}</span>}
       </div>
 
-      <textarea
-        id={inputId}
-        rows={7}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={() => validate(text)}
-        placeholder={BOUNDARY_TEMPLATE_JSON}
-        className="w-full px-3 py-2 bg-[var(--card)] border border-[var(--border)] rounded-md text-xs font-mono-data focus:outline-none focus:border-[var(--accent)]"
-      />
-      <button type="button" onClick={() => validate(text)} className="mt-2 text-xs font-medium text-[var(--accent)] hover:underline">
-        Check boundary
-      </button>
+      <p className="text-xs text-[var(--muted-foreground)]">
+        No file yet?{" "}
+        {/* Handing over a working file to edit beats explaining GeoJSON. */}
+        <Button variant="link" className="text-xs font-medium" onClick={downloadTemplate}>Download the template</Button> for your surveyor
+        {" · "}
+        <Button variant="link" className="text-xs" onClick={() => { setText(BOUNDARY_TEMPLATE_JSON); validate(BOUNDARY_TEMPLATE_JSON); }}>use the example</Button>
+      </p>
+
+      {/* Pasting is the fallback, and it's where a file's text lands too, so
+          one wrong coordinate can be fixed here without re-uploading. */}
+      <details className="text-sm" open={!!error && !fileName}>
+        <summary className="cursor-pointer text-[var(--muted-foreground)]">{fileName ? "See or fix the file's text" : "Paste the GeoJSON instead"}</summary>
+        <div className="mt-2">
+          <Textarea
+            id={inputId}
+            rows={7}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={() => validate(text)}
+            placeholder={BOUNDARY_TEMPLATE_JSON}
+            aria-label={label}
+            className="font-mono-data text-xs"
+          />
+          <Button variant="link" className="mt-1 text-xs font-medium" onClick={() => validate(text)}>Check boundary</Button>
+        </div>
+      </details>
 
       {error && (
-        <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg" role="alert">
-          <div className="text-xs font-semibold text-amber-900 mb-0.5">
-            {error.likelyTransposed ? "Latitude and longitude look swapped" : "This boundary was rejected"}
-          </div>
-          <p className="text-xs text-amber-800 leading-relaxed">{error.message}</p>
-        </div>
+        <Alert role="alert" title={error.likelyTransposed ? "Latitude and longitude look swapped" : "This boundary was rejected"}>
+          <span className="text-xs leading-relaxed">{error.message}</span>
+        </Alert>
       )}
 
       {/* Shown as soon as it parses, before submit — so a misplaced boundary is
           caught now rather than after the estate exists. */}
       {polygon && (
-        <div className="mt-3">
-          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
-            <p className="text-xs text-[var(--muted-foreground)]">Check this is the right piece of ground before you save.</p>
-            <p className="text-xs text-[var(--muted-foreground)] font-mono-data">
-              ≈ {formatHectares(areaSqm)} ({Math.round(areaSqm).toLocaleString()} m²)
-            </p>
-          </div>
+        <div>
+          <p className="text-xs text-[var(--muted-foreground)] mb-2">Check this is the right piece of ground before you save.</p>
 
           {/* Nigeria's own latitude and longitude ranges overlap between 4 and
               14, so a swapped pair can still land inside the country — in the
@@ -179,7 +196,7 @@ export default function BoundaryField({
               check that catches that, so say so when the coordinates are
               genuinely ambiguous. */}
           {ambiguous && (
-            <p className="text-xs text-amber-700 mb-2">
+            <p className="text-xs text-[var(--warning-text)] mb-2">
               These coordinates would also be valid read the other way round, so no automated check can rule out a swap. Confirm the
               outline below sits where you expect before saving.
             </p>
@@ -191,6 +208,13 @@ export default function BoundaryField({
             label="Boundary you entered, on satellite imagery"
           />
         </div>
+      )}
+
+      {stateChecked && (
+        <p className="text-xs text-[var(--muted-foreground)]">
+          On saving it's checked against the estate's state, with a 1 km margin for border imprecision. These are reference boundaries
+          used to catch mistakes, not a ruling on disputed borders. <span className="italic">{STATE_BOUNDARY_ATTRIBUTION}.</span>
+        </p>
       )}
     </div>
   );

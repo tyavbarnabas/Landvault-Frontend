@@ -1,15 +1,27 @@
+// Add plots by hand, from the Figma "Portal estate setup" proposal: inside
+// the setup frame, one row per plot with the rarely-needed fields behind
+// "More", and a way forward (add a tier) when there's nothing to price by.
+
 import { useState } from "react";
 import LoadError from "../../../components/LoadError";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useFetch } from "../../../lib/useFetch";
 import {
   PLOT_BATCH_LIMIT, createPlotsInBatches, fetchBlocks, fetchPriceTiers, planBatches, openTiers, tierDisplayLabel,
-  type BatchProgress, type CreatePlotInput, type PlotOrientation, type PortalPlotStatus,
+  type BatchProgress, type CreatePlotInput, type PlotOrientation, type PortalPlotStatus, type PortalPriceTier,
 } from "../../../services/portalInventoryService";
 import { CREATABLE_STATUSES, STATUS_LABELS } from "../../../lib/plotStatus";
 import { fetchPortalEstateById, parseBoundary } from "../../../services/portalEstatesService";
-import RepeatableFieldList from "../../../components/onboarding/RepeatableFieldList";
 import { usePortalScope } from "../usePortalScope";
+import EstateSetupPage from "../../../components/portal/EstateSetupPage";
+import Page, { Loading } from "../../../components/ui/Page";
+import Card from "../../../components/ui/Card";
+import EmptyState from "../../../components/ui/EmptyState";
+import Button, { LinkButton } from "../../../components/ui/Button";
+import TextLink from "../../../components/ui/TextLink";
+import { ErrorText, Field, Input, Select, Textarea } from "../../../components/ui/Field";
+import { cx } from "../../../components/ui/cx";
+import { GridIcon, XIcon } from "../../../components/icons";
 
 // One editable row. Deliberately NO nominal size field: a plot's nominal size
 // is its tier's, copied at creation. Offering one would let a developer enter
@@ -112,116 +124,54 @@ export default function CreatePortalPlots() {
     }
   };
 
-  if (loaded.loading) return <div className="p-8 text-sm text-[var(--muted-foreground)]">Loading…</div>;
+  if (loaded.loading && !loaded.data) return <Page title="Add plots"><Loading label="Loading…" /></Page>;
 
   if (loaded.error) return <LoadError error={loaded.errorValue} what="this estate" onRetry={loaded.refetch} />;
   if (!loaded.data?.estate || !estateId) {
-    return (
-      <div className="p-8">
-        <p className="text-sm font-medium text-[var(--foreground)] mb-2">Estate not found.</p>
-        <Link to="/portal/estates" className="text-sm text-[var(--accent)] hover:underline">Back to estates</Link>
-      </div>
-    );
+    return <Page title="Estate not found" back={{ to: "/portal/estates", label: "Estates" }}>{null}</Page>;
   }
+  const estate = loaded.data.estate;
 
   if (tiers.length === 0) {
     return (
-      <div className="p-6 max-w-3xl mx-auto">
-        <Link to={`/portal/estates/${estateId}/inventory`} className="text-xs text-[var(--accent)] hover:underline">← Inventory</Link>
-        <h1 className="font-display text-3xl text-[var(--foreground)] mt-2 mb-2">Add plots</h1>
-        <p className="text-sm text-[var(--muted-foreground)]">
-          {allTiers.length === 0
-            ? "This estate has no price tiers yet, and every plot is priced by one. Add a tier first."
-            : "Every price tier on this estate is retired, and a retired tier accepts no new plots. Add a new tier, or reinstate a retired one."}
-        </p>
-      </div>
+      <EstateSetupPage estate={estate} step="plots" title="Add plots">
+        <Card>
+          <EmptyState
+            icon={<GridIcon size={24} />}
+            title={allTiers.length === 0 ? "Add a price tier first" : "Every price tier is retired"}
+            description={allTiers.length === 0
+              ? "Every plot is priced by a tier — a plot size and its price. Add one, then add plots by hand or import your surveyor's file."
+              : "A retired tier accepts no new plots. Add a new tier, or reinstate a retired one, then come back to add plots."}
+            action={<LinkButton to={`/portal/estates/${estateId}/inventory`}>{allTiers.length === 0 ? "Add a price tier" : "Go to price tiers"}</LinkButton>}
+          />
+        </Card>
+      </EstateSetupPage>
     );
   }
 
   const batches = planBatches(rows.length);
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <Link to={`/portal/estates/${estateId}/inventory`} className="text-xs text-[var(--accent)] hover:underline">← Inventory</Link>
-      <h1 className="font-display text-3xl text-[var(--foreground)] mt-2 mb-1">Add plots</h1>
-      <p className="text-sm text-[var(--muted-foreground)] mb-6">
-        Each plot takes its size and price from the tier you choose. This form is for creating plots by hand — for a whole estate,{" "}
-        <Link to={`/portal/estates/${estateId}/plots/import`} className="text-[var(--accent)] hover:underline">import your surveyor's file</Link> instead.
-      </p>
-
-      <form onSubmit={submit} className="space-y-5">
-        <RepeatableFieldList
-          items={rows}
-          onAdd={() => setRows((prev) => [...prev, blankRow(prev[prev.length - 1]?.priceTierId ?? "")])}
-          onRemove={(index) => setRows((prev) => prev.filter((_, i) => i !== index))}
-          addLabel="Add another plot"
-          minItems={1}
-          getKey={(row) => row.key}
-          renderItem={(row, index) => {
-            const tier = tiers.find((t) => t.id === row.priceTierId);
-            return (
-              <div className="space-y-3">
-                <div className="grid sm:grid-cols-3 gap-3">
-                  <Field id={`plot-number-${index}`} label="Plot number" value={row.plotNumber} onChange={(v) => update(index, { plotNumber: v })} placeholder="4" />
-                  <Select id={`block-${index}`} label="Block (optional)" value={row.blockId} onChange={(v) => update(index, { blockId: v })}
-                    options={[{ value: "", label: "No block" }, ...blocks.map((b) => ({ value: b.id, label: b.name }))]} />
-                  <Select id={`tier-${index}`} label="Price tier" value={row.priceTierId} onChange={(v) => update(index, { priceTierId: v })}
-                    options={[{ value: "", label: "Choose a tier" }, ...tiers.map((t) => ({ value: t.id, label: tierDisplayLabel(t) }))]} />
-                </div>
-
-                {/* The tier's own size, shown as read-only context. There is no
-                    size input for a land-size plot, by design. */}
-                {tier && (
-                  <p className="text-xs text-[var(--muted-foreground)]">
-                    {tier.tierType === "land_size"
-                      ? `Sold as ${tier.sizeSqm} sqm, from this tier. Size comes from the tier, so there's nothing to enter here.`
-                      : "A unit-type tier has no size of its own. If this unit sits on its own plot, record that land area below."}
-                  </p>
-                )}
-
-                <div className="grid sm:grid-cols-3 gap-3">
-                  {/* Both availability variants offered separately — the
-                      backend keeps them apart on purpose, and the reservation
-                      sweeper restores whichever one a plot had. */}
-                  <Select id={`status-${index}`} label="Status" value={row.status} onChange={(v) => update(index, { status: v as PortalPlotStatus })}
-                    options={CREATABLE_STATUSES.map((s) => ({ value: s, label: STATUS_LABELS[s] }))} />
-                  <Select id={`intent-${index}`} label="Intent (optional)" value={row.intent} onChange={(v) => update(index, { intent: v as PlotRow["intent"] })}
-                    options={[{ value: "", label: "Unspecified" }, { value: "development", label: "Development" }, { value: "investment", label: "Investment" }]} />
-                  <Select id={`orientation-${index}`} label="Orientation (optional)" value={row.orientation}
-                    onChange={(v) => update(index, { orientation: v as PlotOrientation | "" })}
-                    options={[{ value: "", label: "Unspecified" }, ...ORIENTATIONS.map((o) => ({ value: o, label: o }))]} />
-                </div>
-
-                {tier?.tierType === "unit_type" && (
-                  <Field id={`override-${index}`} label="Land area for this unit (sqm, optional)" type="number"
-                    value={row.nominalSizeSqmOverride} onChange={(v) => update(index, { nominalSizeSqmOverride: v })}
-                    hint="Leave empty for an apartment, which has no land of its own." />
-                )}
-
-                <label className="flex items-center gap-2 text-sm text-[var(--foreground)]">
-                  <input type="checkbox" checked={row.isCorner} onChange={(e) => update(index, { isCorner: e.target.checked })} />
-                  Corner plot
-                </label>
-
-                <div>
-                  <label htmlFor={`footprint-${index}`} className="block text-sm font-medium text-[var(--foreground)] mb-1.5">Footprint (optional)</label>
-                  <textarea
-                    id={`footprint-${index}`}
-                    rows={2}
-                    value={row.footprintJson}
-                    onChange={(e) => update(index, { footprintJson: e.target.value })}
-                    placeholder='{"type":"Polygon","coordinates":[[[7.4140,9.1070],…]]}'
-                    className="w-full px-3 py-2 bg-[var(--card)] border border-[var(--border)] rounded-md text-xs font-mono-data focus:outline-none focus:border-[var(--accent)]"
-                  />
-                  <p className="text-xs text-[var(--muted-foreground)] mt-1">
-                    A GeoJSON Polygon in [longitude, latitude] order. With one, the surveyed area is measured for you; without one, this
-                    plot has no surveyed area and won't appear on the map.
-                  </p>
-                </div>
-              </div>
-            );
-          }}
-        />
+    <EstateSetupPage estate={estate} step="plots" title="Add plots"
+      description={<>Each plot takes its size and price from the tier you choose. For a whole estate,{" "}
+        <TextLink to={`/portal/estates/${estateId}/plots/import`} className="font-medium">import your surveyor's file</TextLink> instead.</>}>
+      <form onSubmit={submit} className="space-y-5" noValidate>
+        <Card padding="none" className="overflow-hidden">
+          <div className={cx("hidden lg:grid gap-3 px-4 py-2.5 bg-[var(--muted)] text-xs font-medium text-[var(--muted-foreground)]", ROW_GRID)} aria-hidden="true">
+            <span>Plot no.</span><span>Block</span><span>Price tier</span><span>Status</span><span>Corner</span><span />
+          </div>
+          <ul className="divide-y divide-[var(--border)]">
+            {rows.map((row, index) => (
+              <PlotRowEditor key={row.key} row={row} index={index} tiers={tiers} blocks={blocks}
+                onChange={(patch) => update(index, patch)}
+                onRemove={rows.length > 1 ? () => setRows((prev) => prev.filter((_, i) => i !== index)) : undefined} />
+            ))}
+          </ul>
+          <div className="px-4 py-3 border-t border-[var(--border)] flex flex-wrap items-center gap-x-4 gap-y-1">
+            <Button variant="link" className="font-medium" onClick={() => setRows((prev) => [...prev, blankRow(prev[prev.length - 1]?.priceTierId ?? "")])}>+ Add another row</Button>
+            <span className="text-xs text-[var(--muted-foreground)]">“More” holds intent, orientation, land area and the plot's footprint.</span>
+          </div>
+        </Card>
 
         {/* The endpoint accepts 500 per request, so a larger set is split
             rather than failing — said plainly before it happens. */}
@@ -237,39 +187,110 @@ export default function CreatePortalPlots() {
           </p>
         )}
 
-        {error && <p className="text-sm text-red-700">{error}</p>}
+        {error && <ErrorText>{error}</ErrorText>}
 
-        <button type="submit" disabled={saving} className="w-full py-3 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold hover:opacity-90 disabled:opacity-60">
-          {saving ? "Creating…" : `Create ${rows.length} plot${rows.length === 1 ? "" : "s"}`}
-        </button>
+        <div className="flex gap-3">
+          <Button type="submit" size="lg" disabled={saving}>{saving ? "Creating…" : `Add ${rows.length} plot${rows.length === 1 ? "" : "s"}`}</Button>
+          <LinkButton to={`/portal/estates/${estateId}/inventory?tab=plots`} variant="secondary" size="lg">Cancel</LinkButton>
+        </div>
       </form>
-    </div>
+    </EstateSetupPage>
   );
 }
 
-const inputClass = "w-full px-3 py-2 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm focus:outline-none focus:border-[var(--accent)]";
+const ROW_GRID = "lg:grid-cols-[6rem_minmax(0,1fr)_minmax(0,1.6fr)_minmax(0,1.3fr)_5.5rem_7rem]";
 
-function Field({ id, label, value, onChange, type = "text", placeholder, hint }: {
-  id: string; label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string; hint?: string;
+// One plot: the four things every plot needs on one line, the rest behind
+// "More". Labels are visible on a phone, where the row stacks, and read out
+// (not shown) on a desktop, where the header row names the columns.
+function PlotRowEditor({ row, index, tiers, blocks, onChange, onRemove }: {
+  row: PlotRow; index: number; tiers: PortalPriceTier[]; blocks: { id: string; name: string }[];
+  onChange: (patch: Partial<PlotRow>) => void; onRemove?: () => void;
 }) {
+  const [more, setMore] = useState(false);
+  const tier = tiers.find((t) => t.id === row.priceTierId);
+  const label = "block text-xs font-medium text-[var(--muted-foreground)] mb-1 lg:sr-only";
   return (
-    <div>
-      <label htmlFor={id} className="block text-sm font-medium text-[var(--foreground)] mb-1.5">{label}</label>
-      <input id={id} type={type} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} className={inputClass} />
-      {hint && <p className="text-xs text-[var(--muted-foreground)] mt-1">{hint}</p>}
-    </div>
-  );
-}
+    <li className="px-4 py-3">
+      <div className={cx("grid grid-cols-2 gap-3 lg:items-center", ROW_GRID)}>
+        <div>
+          <label htmlFor={`plot-number-${index}`} className={label}>Plot number</label>
+          <Input id={`plot-number-${index}`} inputSize="md" value={row.plotNumber} onChange={(e) => onChange({ plotNumber: e.target.value })} placeholder="4" />
+        </div>
+        <div>
+          <label htmlFor={`block-${index}`} className={label}>Block (optional)</label>
+          <Select id={`block-${index}`} inputSize="md" value={row.blockId} onChange={(e) => onChange({ blockId: e.target.value })}>
+            <option value="">No block</option>
+            {blocks.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </Select>
+        </div>
+        <div className="col-span-2 lg:col-span-1">
+          <label htmlFor={`tier-${index}`} className={label}>Price tier</label>
+          <Select id={`tier-${index}`} inputSize="md" value={row.priceTierId} onChange={(e) => onChange({ priceTierId: e.target.value })}>
+            <option value="">Choose a tier</option>
+            {tiers.map((t) => <option key={t.id} value={t.id}>{tierDisplayLabel(t)}</option>)}
+          </Select>
+        </div>
+        <div className="col-span-2 lg:col-span-1">
+          <label htmlFor={`status-${index}`} className={label}>Status</label>
+          {/* Both availability variants offered separately — the backend
+              keeps them apart on purpose, and the reservation sweeper
+              restores whichever one a plot had. */}
+          <Select id={`status-${index}`} inputSize="md" value={row.status} onChange={(e) => onChange({ status: e.target.value as PortalPlotStatus })}>
+            {CREATABLE_STATUSES.map((st) => <option key={st} value={st}>{STATUS_LABELS[st]}</option>)}
+          </Select>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-[var(--foreground)]">
+          <input type="checkbox" checked={row.isCorner} onChange={(e) => onChange({ isCorner: e.target.checked })} />
+          Corner
+        </label>
+        <div className="flex items-center justify-end gap-3">
+          <Button variant="linkMuted" onClick={() => setMore((m) => !m)} aria-expanded={more} aria-controls={`more-${index}`}>More {more ? "▴" : "▾"}</Button>
+          {onRemove && (
+            <button type="button" onClick={onRemove} aria-label={`Remove row ${index + 1}`} className="p-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
+              <XIcon size={16} />
+            </button>
+          )}
+        </div>
+      </div>
 
-function Select({ id, label, value, onChange, options }: {
-  id: string; label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[];
-}) {
-  return (
-    <div>
-      <label htmlFor={id} className="block text-sm font-medium text-[var(--foreground)] mb-1.5">{label}</label>
-      <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className={inputClass}>
-        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-    </div>
+      {/* The tier's own size, shown as read-only context. There is no size
+          input for a land-size plot, by design. */}
+      {tier && (
+        <p className="text-xs text-[var(--muted-foreground)] mt-2">
+          {tier.tierType === "land_size"
+            ? `Sold as ${tier.sizeSqm} sqm, from this tier.`
+            : "A unit-type tier has no size of its own. If this unit sits on its own plot, record its land area under More."}
+        </p>
+      )}
+
+      {more && (
+        <div id={`more-${index}`} className="mt-3 grid sm:grid-cols-2 gap-3 rounded-lg bg-[var(--muted)] p-3">
+          <Field id={`intent-${index}`} label="Intent (optional)">
+            <Select id={`intent-${index}`} inputSize="md" value={row.intent} onChange={(e) => onChange({ intent: e.target.value as PlotRow["intent"] })}>
+              <option value="">Unspecified</option>
+              <option value="development">Development</option>
+              <option value="investment">Investment</option>
+            </Select>
+          </Field>
+          <Field id={`orientation-${index}`} label="Orientation (optional)">
+            <Select id={`orientation-${index}`} inputSize="md" value={row.orientation} onChange={(e) => onChange({ orientation: e.target.value as PlotOrientation | "" })}>
+              <option value="">Unspecified</option>
+              {ORIENTATIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+            </Select>
+          </Field>
+          {tier?.tierType === "unit_type" && (
+            <Field id={`override-${index}`} label="Land area for this unit (sqm, optional)" hint="Leave empty for an apartment, which has no land of its own." className="sm:col-span-2">
+              <Input id={`override-${index}`} inputSize="md" type="number" value={row.nominalSizeSqmOverride} onChange={(e) => onChange({ nominalSizeSqmOverride: e.target.value })} aria-describedby={`override-${index}-hint`} />
+            </Field>
+          )}
+          <Field id={`footprint-${index}`} label="Footprint (optional)" className="sm:col-span-2"
+            hint="A GeoJSON Polygon in [longitude, latitude] order. With one, the surveyed area is measured for you; without one, this plot has no surveyed area and won't appear on the map.">
+            <Textarea id={`footprint-${index}`} rows={2} value={row.footprintJson} onChange={(e) => onChange({ footprintJson: e.target.value })}
+              placeholder='{"type":"Polygon","coordinates":[[[7.4140,9.1070],…]]}' className="font-mono-data text-xs" aria-describedby={`footprint-${index}-hint`} />
+          </Field>
+        </div>
+      )}
+    </li>
   );
 }

@@ -5,7 +5,7 @@ export const inputClass = "w-full px-3 py-2 bg-[var(--card)] border border-[var(
 
 export function FieldError({ message }: { message?: string }) {
   if (!message) return null;
-  return <p className="text-xs text-red-700 mt-1" role="alert">{message}</p>;
+  return <p className="text-xs text-[var(--error-text)] mt-1" role="alert">{message}</p>;
 }
 
 export function Field({ id, label, hint, error, children }: {
