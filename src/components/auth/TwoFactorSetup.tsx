@@ -85,11 +85,13 @@ export default function TwoFactorSetup({ onEnabled, onCancel }: { onEnabled: () 
         ? "This setup session has expired. Start again to get a fresh QR code."
         : errorCode === "TWO_FACTOR_LOCKED_OUT"
           ? "Too many incorrect codes, so codes are paused for 15 minutes. Wait, then try again with the code your app shows at that point."
-          : "That code isn't valid. Check your authenticator app and try again.");
+          : "That code isn't valid. Use the entry you just scanned — one saved from an earlier setup won't work — and check your phone's time is set automatically.");
     } finally {
       setBusy(false);
     }
   };
+
+  const accountLabel = enrolment ? otpAuthLabel(enrolment.otpAuthUri) : "";
 
   if (stage === "loading") return <Loading label="Preparing setup…" />;
 
@@ -117,6 +119,12 @@ export default function TwoFactorSetup({ onEnabled, onCancel }: { onEnabled: () 
           <p className="text-sm text-[var(--muted-foreground)]">
             Google Authenticator, 1Password, Authy or similar. Two-factor authentication is
             <span className="font-medium text-[var(--foreground)]"> not on yet</span> — it switches on once you enter a code below.
+          </p>
+          {/* Every visit to this screen issues a new key, so an entry saved on
+              an earlier try shows codes that will never match. */}
+          <p className="text-sm text-[var(--muted-foreground)]">
+            This is a new key{accountLabel && <> — it appears in your app as <span className="font-medium text-[var(--foreground)] wrap-anywhere">{accountLabel}</span></>}.
+            If your app already has a HomeTrue entry from an earlier try, delete it and scan this one.
           </p>
           {/* Manual entry: some people type it, and some apps scan badly on a
               small screen. Hidden until asked for, so it isn't on display. */}
@@ -155,4 +163,18 @@ export default function TwoFactorSetup({ onEnabled, onCancel }: { onEnabled: () 
       </Card>
     </div>
   );
+}
+
+// The name an authenticator app shows for the entry: the issuer and the
+// account from the otpauth URI, as most apps list them ("HomeTrue (you@…)").
+function otpAuthLabel(uri: string): string {
+  try {
+    const url = new URL(uri);
+    const label = decodeURIComponent(url.pathname.replace(/^\/+(totp\/)?/, ""));
+    const issuer = url.searchParams.get("issuer");
+    const account = label.includes(":") ? label.slice(label.indexOf(":") + 1) : label;
+    return issuer ? `${issuer} (${account})` : label;
+  } catch {
+    return "";
+  }
 }
