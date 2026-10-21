@@ -28,8 +28,7 @@ import {
 import { useHoldCountdown, HoldAnnouncement } from "../../components/checkout/CountdownTimer";
 import KycFlow from "../../components/checkout/KycFlow";
 import AddressForm from "../../components/account/AddressForm";
-import { addressLines } from "../../services/addressService";
-import { showInternational } from "../../lib/phone";
+import LetterAddress from "../../components/account/LetterAddress";
 import PaymentPlanSelector, { depositFor } from "../../components/checkout/PaymentPlanSelector";
 import PaymentMethodSelector from "../../components/checkout/PaymentMethodSelector";
 import VerificationProgress from "../../components/checkout/VerificationProgress";
@@ -45,7 +44,7 @@ import Alert from "../../components/ui/Alert";
 import Button from "../../components/ui/Button";
 import TextLink from "../../components/ui/TextLink";
 import { Loading } from "../../components/ui/Page";
-import { ArrowLeftIcon, BuildingIcon, CheckIcon, ClockIcon, CreditCardIcon, FileCheckIcon, ShieldCheckIcon, TrendingUpIcon } from "../../components/icons";
+import { ArrowLeftIcon, MapPinIcon, BuildingIcon, CheckIcon, ClockIcon, CreditCardIcon, FileCheckIcon, ShieldCheckIcon, TrendingUpIcon } from "../../components/icons";
 
 type Step = "confirm" | "kyc" | "details" | "payment" | "verifying" | "allocated" | "expired";
 const IN_FLOW: Step[] = ["confirm", "kyc", "details", "payment"];
@@ -83,6 +82,8 @@ export default function MarketplaceCheckout() {
   // signed-in user can be stale). Saving it then carries straight on.
   const [editingAddress, setEditingAddress] = useState(false);
   const [addressRequired, setAddressRequired] = useState(false);
+  // Saving the address asked for on Review, before the hold starts.
+  const [savingAddress, setSavingAddress] = useState(false);
   // Live: paying happens on Paystack's page (PayButton), and only outright
   // purchases in naira can be paid online for now.
   const live = isLive("checkout");
@@ -245,17 +246,22 @@ export default function MarketplaceCheckout() {
   const heading: Record<string, [string, string]> = {
     confirm: ["Review your plot", "Check the plot and its full cost. Nothing is charged here."],
     kyc: ["Verify your identity", "We check who you are before we hold a plot for you. It's needed once."],
-    details: ["Purchase details", "Two quick choices that shape your documents."],
+    details: ["Purchase details", "Two quick choices, then where your letter goes."],
     payment: ["Pay for your plot", "Your plot is held while you pay."],
   };
   const summaryProps = { listing, plot, base, totalPrice, currency, commitment, holdSecondsLeft, held: !!reservation };
   const errorAlert = stepError && <Alert tone="error" role="alert">{stepError}</Alert>;
   const address = user.address ?? null;
   const askAddress = !address || editingAddress || addressRequired;
+  // A buyer with no address gives it on Review, so none of the hold goes on
+  // typing it (Figma "Buyer's address" proposal).
+  const askOnReview = !address;
+  const needsKyc = !!kycRecord && kycRecord.status !== "approved";
 
   const addressSaved = () => {
+    const carryOn = addressRequired || !address;
     setEditingAddress(false);
-    if (addressRequired) {
+    if (carryOn) {
       setAddressRequired(false);
       void goToPayment();
     }
@@ -360,14 +366,36 @@ export default function MarketplaceCheckout() {
                   </Card>
                 )}
 
+                {askOnReview && (
+                  <Card as="section" aria-labelledby="review-address-heading" className="space-y-4 sm:p-6">
+                    <div className="flex items-start gap-3">
+                      <span className="w-9 h-9 shrink-0 rounded-lg bg-[var(--secondary)] text-[var(--primary)] flex items-center justify-center"><MapPinIcon size={18} /></span>
+                      <div>
+                        <h2 id="review-address-heading" className="font-semibold text-[var(--foreground)]">Where should your allocation letter go?</h2>
+                        <p className="text-sm text-[var(--muted-foreground)]">
+                          Your postal address, printed under your name. We ask once, now — before your plot is held — so none of your {HOLD_MINUTES} minutes go on typing. Change it later in Settings.
+                        </p>
+                      </div>
+                    </div>
+                    <AddressForm id="checkout-review-address" initial={null} actions={false} layout="wide"
+                      onBusyChange={setSavingAddress} onSaved={handleConfirmReserve} />
+                  </Card>
+                )}
+
                 <Alert tone="info">
-                  Nothing is charged at this step. When you continue,{kycRecord && kycRecord.status !== "approved" ? " we check your identity first, then" : ""} we hold {plotLabel(plot)} for you for {HOLD_MINUTES} minutes while you finish.
+                  Nothing is charged at this step. When you continue,{askOnReview ? " we save your address," : ""}{needsKyc ? " we check your identity," : ""}{askOnReview || needsKyc ? " then" : ""} we hold {plotLabel(plot)} for you for {HOLD_MINUTES} minutes while you finish.
                 </Alert>
                 {errorAlert}
                 <div className={ACTIONS}>
-                  <Button size="lg" className={PRIMARY_WIDTH} onClick={handleConfirmReserve} disabled={loading || !kycRecord}>
-                    {loading ? "Starting your hold…" : kycRecord && kycRecord.status !== "approved" ? "Continue to identity check" : "Hold this plot and continue"}
-                  </Button>
+                  {askOnReview ? (
+                    <Button type="submit" form="checkout-review-address" size="lg" className={PRIMARY_WIDTH} disabled={loading || savingAddress || !kycRecord}>
+                      {savingAddress ? "Saving your address…" : loading ? "Starting your hold…" : needsKyc ? "Save address and continue to identity check" : "Save address and hold this plot"}
+                    </Button>
+                  ) : (
+                    <Button size="lg" className={PRIMARY_WIDTH} onClick={handleConfirmReserve} disabled={loading || !kycRecord}>
+                      {loading ? "Starting your hold…" : needsKyc ? "Continue to identity check" : "Hold this plot and continue"}
+                    </Button>
+                  )}
                   <TextLink to={`/marketplace/${listing.id}/plots`} className="text-sm max-sm:w-full max-sm:text-center">Choose a different plot</TextLink>
                 </div>
               </>
@@ -407,31 +435,31 @@ export default function MarketplaceCheckout() {
                     onInstallmentMonthsChange={setInstallmentMonths}
                   />
                 </Card>
-                <Card as="section" aria-labelledby="letter-address-heading" className="sm:p-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <h2 id="letter-address-heading" className="font-semibold text-[var(--foreground)]">
-                      {askAddress ? "Where should your allocation letter be addressed?" : "Your allocation letter will be addressed to"}
-                    </h2>
-                    {!askAddress && <Button variant="link" onClick={() => setEditingAddress(true)} aria-label="Change the address on your allocation letter">Change</Button>}
-                  </div>
+                <Card as="section" aria-labelledby="letter-address-heading" className="space-y-4 sm:p-6">
                   {askAddress ? (
                     <>
-                      <p className="text-sm text-[var(--muted-foreground)] mb-4">
-                        Your postal address, printed under your name. You give it once — this purchase keeps it, and you can change it for later ones in Settings.
-                      </p>
+                      <div>
+                        <h2 id="letter-address-heading" className="font-semibold text-[var(--foreground)]">Where should your allocation letter go?</h2>
+                        <p className="text-sm text-[var(--muted-foreground)]">This purchase keeps the address you give here. Change it for later ones in Settings.</p>
+                      </div>
                       {addressRequired && (
-                        <Alert tone="warning" className="mb-4">We need your address before you buy. Nothing has been charged, and {plotLabel(plot)} is still held for you.</Alert>
+                        <Alert tone="warning">We need your address before you buy. Nothing has been charged, and {plotLabel(plot)} is still held for you.</Alert>
                       )}
-                      <AddressForm id="checkout-address" initial={address} onSaved={addressSaved}
-                        submitLabel={addressRequired ? "Save and continue" : "Save address"}
+                      <AddressForm id="checkout-address" initial={address} onSaved={addressSaved} layout="wide"
+                        submitLabel={addressRequired || !address ? "Save and continue" : "Save address"}
                         onCancel={address && editingAddress && !addressRequired ? () => setEditingAddress(false) : undefined} />
                     </>
                   ) : (
-                    <address className="not-italic text-sm text-[var(--foreground)] leading-relaxed mt-3">
-                      <div className="font-medium">{user.name}</div>
-                      {addressLines(address!).map((line) => <div key={line}>{line}</div>)}
-                      {user.phone && <div className="text-[var(--muted-foreground)]">{showInternational(user.phone)}</div>}
-                    </address>
+                    <>
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <h2 id="letter-address-heading" className="font-semibold text-[var(--foreground)]">Your allocation letter will be addressed to</h2>
+                          <p className="text-sm text-[var(--muted-foreground)]">This purchase keeps this address, even if you change it later.</p>
+                        </div>
+                        <Button variant="secondary" onClick={() => setEditingAddress(true)} aria-label="Change the address on your allocation letter">Change</Button>
+                      </div>
+                      <LetterAddress name={user.name} phone={user.phone} address={address!} icon />
+                    </>
                   )}
                 </Card>
                 {errorAlert}

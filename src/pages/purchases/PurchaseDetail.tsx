@@ -88,9 +88,12 @@ export default function PurchaseDetail() {
                 prints. Never the account's current address: older purchases
                 without one show nothing. */}
             {purchase.buyerAddress && (
-              <div className="mt-4 pt-4 border-t border-[var(--border)] text-sm">
-                <div className="text-[var(--muted-foreground)] mb-1">Address on this purchase</div>
-                <address className="not-italic text-[var(--foreground)] leading-relaxed">
+              <div className="flex justify-between gap-4 mt-4 pt-4 border-t border-[var(--border)] text-sm">
+                <div>
+                  <div className="text-[var(--muted-foreground)]">Address on this purchase</div>
+                  <div className="text-xs text-[var(--muted-foreground)]">As printed on its allocation letter</div>
+                </div>
+                <address className="not-italic text-right text-[var(--foreground)] leading-relaxed wrap-anywhere">
                   {addressLines(purchase.buyerAddress).map((line) => <div key={line}>{line}</div>)}
                 </address>
               </div>

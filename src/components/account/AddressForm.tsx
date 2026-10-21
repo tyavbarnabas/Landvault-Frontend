@@ -18,12 +18,18 @@ type Errors = Partial<Record<keyof AddressInput, string>>;
 const COMMON = COMMON_DIAL_ISOS.map(dialCountry).filter((c) => !!c);
 const OTHERS = DIAL_COUNTRIES.filter((c) => !COMMON_DIAL_ISOS.includes(c.iso)).sort((a, b) => a.name.localeCompare(b.name));
 
-export default function AddressForm({ id, initial, onSaved, onCancel, submitLabel = "Save address" }: {
+export default function AddressForm({ id, initial, onSaved, onCancel, submitLabel = "Save address", actions = true, onBusyChange, layout = "stacked" }: {
   id: string;
   initial: Address | null | undefined;
   onSaved: (address: Address) => void;
   onCancel?: () => void;
   submitLabel?: string;
+  // False when a button elsewhere submits it (form={id}) — checkout's
+  // "Save address and hold this plot".
+  actions?: boolean;
+  onBusyChange?: (busy: boolean) => void;
+  // "wide": town, state and postal code on one row (checkout's wider column).
+  layout?: "stacked" | "wide";
 }) {
   const { user, addressChanged } = useApp();
   const [values, setValues] = useState<Values>(() => ({
@@ -64,6 +70,7 @@ export default function AddressForm({ id, initial, onSaved, onCancel, submitLabe
     setFormError("");
     if (Object.keys(missing).length) return;
     setBusy(true);
+    onBusyChange?.(true);
     try {
       const saved = await saveAddress(user, values);
       addressChanged(saved);
@@ -74,13 +81,20 @@ export default function AddressForm({ id, initial, onSaved, onCancel, submitLabe
       setFormError(message);
     } finally {
       setBusy(false);
+      onBusyChange?.(false);
     }
   };
 
   const f = (name: keyof Values) => `${id}-${name}`;
+  const postal = (
+    <Field id={f("postalCode")} label="Postal code" hint="Optional." error={errors.postalCode}>
+      <Input id={f("postalCode")} autoComplete="postal-code" value={values.postalCode} onChange={set("postalCode")} maxLength={ADDRESS_LIMITS.postalCode}
+        aria-invalid={!!errors.postalCode || undefined} aria-describedby={describedBy(f("postalCode"), { hint: true, error: errors.postalCode })} />
+    </Field>
+  );
 
   return (
-    <form onSubmit={submit} className="space-y-4" noValidate>
+    <form id={id} onSubmit={submit} className="space-y-4" noValidate>
       <Field id={f("country")} label="Country" error={errors.country}>
         <Select id={f("country")} autoComplete="country" value={values.country} onChange={setCountry}
           aria-invalid={!!errors.country || undefined} aria-describedby={describedBy(f("country"), { error: errors.country })}>
@@ -103,7 +117,7 @@ export default function AddressForm({ id, initial, onSaved, onCancel, submitLabe
           aria-invalid={!!errors.line2 || undefined} aria-describedby={describedBy(f("line2"), { hint: true, error: errors.line2 })} />
       </Field>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className={layout === "wide" ? "grid gap-4 sm:grid-cols-3" : "grid gap-4 sm:grid-cols-2"}>
         <Field id={f("city")} label="Town or city" error={errors.city}>
           <Input id={f("city")} autoComplete="address-level2" value={values.city} onChange={set("city")} maxLength={ADDRESS_LIMITS.city}
             aria-invalid={!!errors.city || undefined} aria-describedby={describedBy(f("city"), { error: errors.city })} />
@@ -120,18 +134,18 @@ export default function AddressForm({ id, initial, onSaved, onCancel, submitLabe
               aria-invalid={!!errors.state || undefined} aria-describedby={describedBy(f("state"), { error: errors.state })} />
           )}
         </Field>
+        {layout === "wide" && postal}
       </div>
 
-      <Field id={f("postalCode")} label="Postal code" hint="Optional." error={errors.postalCode} className="sm:max-w-[50%] sm:pr-2">
-        <Input id={f("postalCode")} autoComplete="postal-code" value={values.postalCode} onChange={set("postalCode")} maxLength={ADDRESS_LIMITS.postalCode}
-          aria-invalid={!!errors.postalCode || undefined} aria-describedby={describedBy(f("postalCode"), { hint: true, error: errors.postalCode })} />
-      </Field>
+      {layout === "stacked" && <div className="sm:w-48">{postal}</div>}
 
       {formError && <ErrorText>{formError}</ErrorText>}
-      <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" disabled={busy}>{busy ? "Saving…" : submitLabel}</Button>
-        {onCancel && <Button variant="secondary" onClick={onCancel} disabled={busy}>Cancel</Button>}
-      </div>
+      {actions && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="submit" disabled={busy}>{busy ? "Saving…" : submitLabel}</Button>
+          {onCancel && <Button variant="secondary" onClick={onCancel} disabled={busy}>Cancel</Button>}
+        </div>
+      )}
     </form>
   );
 }
