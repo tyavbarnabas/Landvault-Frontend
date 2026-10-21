@@ -47,7 +47,9 @@ export default function OfferStep({ offer, transactionId, price, plot, notAccept
       const doc = await acceptOffer(offer.id);
       onAccepted(doc.acceptedAt ?? new Date().toISOString());
     } catch (err) {
-      if (offerErrorCode(err) === "OFFER_NOT_OPEN") setNotOpen(true);
+      const code = offerErrorCode(err);
+      if (code === "OFFER_NOT_OPEN") setNotOpen(true);
+      else if (code === "DOCUMENT_NOT_FOUND") setError("We couldn't find this offer on your account. Refresh the page and try again.");
       else setError("Your acceptance didn't go through. Please try again — your plot is still held.");
     } finally {
       setBusy(false);

@@ -31,7 +31,9 @@ export default function OfferCard({ purchase, onChanged }: { purchase: Purchase;
       onChanged();
     } catch (err) {
       // No longer waiting for payment: the purchase's own state says why.
-      if (offerErrorCode(err) === "OFFER_NOT_OPEN") onChanged();
+      const code = offerErrorCode(err);
+      if (code === "OFFER_NOT_OPEN") onChanged();
+      else if (code === "DOCUMENT_NOT_FOUND") setError("We couldn't find this offer on your account.");
       else setError("Your acceptance didn't go through. Please try again.");
     } finally {
       setBusy(false);

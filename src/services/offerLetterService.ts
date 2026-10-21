@@ -31,8 +31,12 @@ export async function acceptOffer(offerId: string): Promise<Document> {
   if (!isMock("checkout")) return apiClient.post<Document>(`/api/documents/offer-letters/${encodeURIComponent(offerId)}/accept`);
   const txn = [...mockTransactionStore().values()].find((t) => t.offer?.id === offerId);
   if (!txn?.offer) throw new ApiError(404, "Document not found.", { code: "DOCUMENT_NOT_FOUND" });
-  if (txn.status !== "pending_payment") throw new ApiError(409, "This purchase is no longer waiting for payment.", { code: "OFFER_NOT_OPEN" });
-  txn.offer.acceptedAt ??= new Date().toISOString();
+  // As the backend does: an offer already accepted comes back as it is,
+  // before anything else is checked.
+  if (!txn.offer.acceptedAt) {
+    if (txn.status !== "pending_payment") throw new ApiError(409, "This purchase is no longer waiting for payment.", { code: "OFFER_NOT_OPEN" });
+    txn.offer.acceptedAt = new Date().toISOString();
+  }
   const doc = updateMockDocument(offerId, { status: "accepted", acceptedAt: txn.offer.acceptedAt });
   return doc ?? { id: offerId, type: "offer_letter", title: `Offer letter ${txn.offer.number}`, date: txn.offer.issuedAt, status: "accepted", acceptedAt: txn.offer.acceptedAt, qrCode: "", size: null, number: txn.offer.number };
 }

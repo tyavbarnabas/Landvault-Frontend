@@ -122,6 +122,15 @@ describe("demo mode", () => {
     await expect(acceptOffer(txn.offer!.id)).rejects.toMatchObject({ status: 409, body: { code: "OFFER_NOT_OPEN" } });
   });
 
+  it("an offer already accepted comes back as it is, even once the purchase has moved on", async () => {
+    const { initiateTransaction, mockTransactionStore } = await import("./marketplaceCheckoutService");
+    const { acceptOffer } = await import("./offerLetterService");
+    const txn = await initiateTransaction(SHOWN);
+    const first = await acceptOffer(txn.offer!.id);
+    mockTransactionStore().get(txn.id)!.status = "awaiting_finance";
+    expect((await acceptOffer(txn.offer!.id)).acceptedAt).toBe(first.acceptedAt);
+  });
+
   it("the verify page sees an offer letter and its status", async () => {
     const { initiateTransaction } = await import("./marketplaceCheckoutService");
     const { acceptOffer } = await import("./offerLetterService");
