@@ -230,7 +230,11 @@ export interface Document {
   // Live documents are always "valid" — a refunded receipt stays valid (the
   // money did arrive) and carries `refundedAt`. "void"/"superseded" are the
   // mock resale/upgrade flows' only; the backend has no void or reissue.
-  status: "valid" | "void" | "superseded";
+  // Offer letters (backend changeset 098) are "issued", "accepted" or
+  // "lapsed" instead.
+  status: "valid" | "void" | "superseded" | "issued" | "accepted" | "lapsed";
+  // Offers only: when the buyer accepted it.
+  acceptedAt?: string | null;
   // The printed verification code, e.g. "D897-0A03-3C97-202D".
   qrCode: string;
   // Null live: documents are drawn on demand, so no size is known.
@@ -878,12 +882,12 @@ export const OWNED_PLOTS: OwnedPlot[] = [
 ];
 
 export const DOCUMENTS: Document[] = [
-  { id: "doc-001", plotId: "op-001", type: "offer_letter", title: "Offer Letter — Peaceland, Block C Plot 4", date: "2024-08-14", status: "valid", qrCode: "QR-PLD-240814-001", size: "184 KB" },
+  { id: "doc-001", plotId: "op-001", type: "offer_letter", title: "Offer Letter — Peaceland, Block C Plot 4", date: "2024-08-14", status: "accepted", acceptedAt: "2024-08-14", qrCode: "QR-PLD-240814-001", size: "184 KB" },
   { id: "doc-002", plotId: "op-001", type: "allocation_letter", title: "Allocation Letter — Peaceland, Block C Plot 4", date: "2024-08-16", status: "valid", qrCode: "QR-PLD-240816-001", size: "201 KB" },
   { id: "doc-003", plotId: "op-001", type: "receipt", title: "Payment Receipt — Deposit ₦7,680,000", date: "2024-08-15", status: "valid", qrCode: "QR-RCP-240815-001", size: "92 KB" },
   { id: "doc-004", plotId: "op-001", type: "receipt", title: "Payment Receipt — Installment 1 ₦3,200,000", date: "2024-09-15", status: "valid", qrCode: "QR-RCP-240915-001", size: "90 KB" },
   { id: "doc-005", plotId: "op-001", type: "receipt", title: "Payment Receipt — Installment 2 ₦3,200,000", date: "2024-10-15", status: "valid", qrCode: "QR-RCP-241015-001", size: "90 KB" },
-  { id: "doc-006", plotId: "op-002", type: "offer_letter", title: "Offer Letter — Golden Acres, Block G Plot 9", date: "2023-05-19", status: "valid", qrCode: "QR-GA-230519-001", size: "178 KB" },
+  { id: "doc-006", plotId: "op-002", type: "offer_letter", title: "Offer Letter — Golden Acres, Block G Plot 9", date: "2023-05-19", status: "accepted", acceptedAt: "2023-05-19", qrCode: "QR-GA-230519-001", size: "178 KB" },
   { id: "doc-007", plotId: "op-002", type: "allocation_letter", title: "Allocation Letter — Golden Acres, Block G Plot 9", date: "2023-05-21", status: "valid", qrCode: "QR-GA-230521-001", size: "196 KB" },
   { id: "doc-008", plotId: "op-002", type: "deed_of_assignment", title: "Deed of Assignment — Golden Acres, Block G Plot 9", date: "2023-07-03", status: "valid", qrCode: "QR-DOA-230703-001", size: "342 KB" },
   { id: "doc-009", plotId: "op-002", type: "receipt", title: "Payment Receipt — Outright ₦13,200,000", date: "2023-05-20", status: "valid", qrCode: "QR-RCP-230520-001", size: "91 KB" },

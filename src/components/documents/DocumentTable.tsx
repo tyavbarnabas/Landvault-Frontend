@@ -5,7 +5,7 @@
 import { Link } from "react-router-dom";
 import type { Document } from "../../data/mockData";
 import { formatDay } from "../../lib/formatDate";
-import { DOCUMENT_TYPE_LABELS, DocStatus, DocTypeChip, DocumentActions, VerifyLink, plotHref, plotLine } from "./DocumentCard";
+import { DOCUMENT_TYPE_LABELS, DocStatus, DocTypeChip, DocumentActions, VerifyLink, plotHref, plotLine, statusNote } from "./DocumentCard";
 
 export default function DocumentTable({ documents }: { documents: Document[] }) {
   return (
@@ -48,8 +48,7 @@ export default function DocumentTable({ documents }: { documents: Document[] }) 
                 <td className="px-3 py-3.5 whitespace-nowrap">{formatDay(doc.date)}</td>
                 <td className="px-3 py-3.5">
                   <DocStatus doc={doc} />
-                  {/* A refunded receipt stays valid — the money did arrive. */}
-                  {doc.refundedAt && <div className="text-xs text-[var(--muted-foreground)] mt-1 whitespace-nowrap">Refunded {formatDay(doc.refundedAt)}</div>}
+                  {statusNote(doc) && <div className="text-xs text-[var(--muted-foreground)] mt-1 whitespace-nowrap">{statusNote(doc)}</div>}
                 </td>
                 <td className="px-3 py-3.5">
                   <div className="font-mono-data text-xs text-[var(--foreground)] whitespace-nowrap">{doc.qrCode}</div>

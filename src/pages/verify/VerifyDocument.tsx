@@ -25,6 +25,13 @@ import LoadError from "../../components/LoadError";
 const TYPE_NAMES: Record<DocumentVerification["documentType"], string> = {
   receipt: "receipt",
   allocation_letter: "allocation letter",
+  offer_letter: "offer letter",
+};
+
+const OFFER_STATUS: Record<string, string> = {
+  issued: "Issued — not accepted yet",
+  accepted: "Accepted by the buyer",
+  lapsed: "Lapsed — the purchase wasn't completed",
 };
 
 export default function VerifyDocument() {
@@ -35,7 +42,7 @@ export default function VerifyDocument() {
         <div>
           <h1 className="font-display text-3xl sm:text-4xl text-[var(--foreground)] mb-2">Check a HomeTrue document</h1>
           <p className="text-[var(--muted-foreground)]">
-            For buyers, their families, lawyers and banks: see whether HomeTrue really issued a receipt or allocation letter.
+            For buyers, their families, lawyers and banks: see whether HomeTrue really issued a receipt, offer letter or allocation letter.
           </p>
         </div>
         <CodeForm />
@@ -73,7 +80,7 @@ function Result({ code }: { code: string }) {
     return (
       <ResultCard tone="error" icon={<AlertIcon size={22} />} role="alert"
         title="Not a document HomeTrue issued"
-        sub={<>No receipt or allocation letter has the code <span className="font-mono-data">{formatCode(code)}</span>.</>}>
+        sub={<>No HomeTrue document has the code <span className="font-mono-data">{formatCode(code)}</span>.</>}>
         <h2 className="text-sm font-semibold text-[var(--foreground)] mb-2">What to do</h2>
         <ul className="list-disc pl-5 space-y-1.5 text-sm text-[var(--foreground)]">
           <li>Check the code against the printed one — dashes and capitals don't matter.</li>
@@ -87,9 +94,13 @@ function Result({ code }: { code: string }) {
 
   const v = verification;
   const kind = TYPE_NAMES[v.documentType];
+  const offer = v.documentType === "offer_letter";
+  // Genuine either way — a lapsed offer just stands for nothing now.
+  const lapsed = offer && v.status === "lapsed";
   return (
-    <ResultCard tone="success" icon={<ShieldCheckIcon size={22} />} role="status"
-      title={`Genuine — HomeTrue issued this ${kind}`} sub="Checked just now against HomeTrue's records.">
+    <ResultCard tone={lapsed ? "warning" : "success"} icon={<ShieldCheckIcon size={22} />} role="status"
+      title={lapsed ? "Genuine, but this offer has lapsed" : `Genuine — HomeTrue issued this ${kind}`}
+      sub={lapsed ? "HomeTrue issued it, but the purchase wasn't completed. It gives no right to the plot." : "Checked just now against HomeTrue's records."}>
       {v.status === "refunded" && v.refundedAt && (
         <Alert tone="info" className="mb-4">
           The payment on this receipt was refunded on {formatDay(v.refundedAt)}. The receipt is genuine (the payment was made), but it no longer stands for a purchase.
@@ -100,16 +111,18 @@ function Result({ code }: { code: string }) {
           <Fact label="Number"><span className="font-mono-data">{v.number}</span></Fact>
           <Fact label="Issued">{formatDay(v.issuedAt)}</Fact>
           <Fact label="Issued by">{v.issuedBy}</Fact>
+          {offer && OFFER_STATUS[v.status] && <Fact label="Status">{OFFER_STATUS[v.status]}</Fact>}
           {v.developer && <Fact label={v.documentType === "receipt" ? "Seller" : "From"}>{v.developer}</Fact>}
           {v.estate && <Fact label="Estate">{[v.estate, v.location].filter(Boolean).join(", ")}</Fact>}
           {!v.estate && v.location && <Fact label="Location">{v.location}</Fact>}
           {v.plot && <Fact label="Plot">{v.plot}</Fact>}
-          {v.holderInitials && <Fact label="Holder's initials">{v.holderInitials}</Fact>}
+          {v.holderInitials && <Fact label={offer ? "Buyer's initials" : "Holder's initials"}>{v.holderInitials}</Fact>}
         </dl>
         <section aria-labelledby="compare-heading" className="rounded-xl bg-[var(--muted)] p-4 self-start">
           <h2 id="compare-heading" className="text-sm font-semibold text-[var(--foreground)] mb-2">Compare with your copy</h2>
           <ul className="space-y-1.5 text-sm text-[var(--foreground)]">
-            {["The number matches the one printed", v.documentType === "receipt" ? "The estate and plot are the ones paid for" : "The estate and plot are the ones you were sold", "The holder's initials match the buyer"].map((t) => (
+            {["The number matches the one printed", v.documentType === "receipt" ? "The estate and plot are the ones paid for" : offer ? "The estate and plot are the ones you were offered" : "The estate and plot are the ones you were sold", offer ? "The buyer's initials match the buyer" : "The holder's initials match the buyer",
+              ...(offer ? ["An offer is not a sale — the plot is yours only once it's paid and allocated"] : [])].map((t) => (
               <li key={t} className="flex gap-2"><span className="text-[var(--primary)] mt-0.5 shrink-0"><CheckIcon size={14} /></span>{t}</li>
             ))}
           </ul>
@@ -121,16 +134,23 @@ function Result({ code }: { code: string }) {
 }
 
 // The answer, as one card: a tinted head that says it plainly, then detail.
+const RESULT_TONES = {
+  success: { border: "border-[var(--success-border)]", head: "bg-[var(--success-surface)]", icon: "bg-[var(--success)] text-[var(--success-foreground)]", text: "text-[var(--success-text)]" },
+  warning: { border: "border-[var(--warning-border)]", head: "bg-[var(--warning-surface)]", icon: "bg-[var(--warning)] text-[var(--warning-foreground)]", text: "text-[var(--warning-text)]" },
+  error: { border: "border-[var(--error-border)]", head: "bg-[var(--error-surface)]", icon: "bg-[var(--error)] text-[var(--error-foreground)]", text: "text-[var(--error-text)]" },
+};
+
 function ResultCard({ tone, icon, title, sub, role, children }: {
-  tone: "success" | "error"; icon: React.ReactNode; title: string; sub: React.ReactNode; role: "status" | "alert"; children: React.ReactNode;
+  tone: keyof typeof RESULT_TONES; icon: React.ReactNode; title: string; sub: React.ReactNode; role: "status" | "alert"; children: React.ReactNode;
 }) {
+  const t = RESULT_TONES[tone];
   return (
-    <section role={role} className={`rounded-2xl border-2 overflow-hidden bg-[var(--card)] ${tone === "success" ? "border-[var(--success-border)]" : "border-[var(--error-border)]"}`}>
-      <div className={`flex items-center gap-3.5 px-5 sm:px-6 py-4 ${tone === "success" ? "bg-[var(--success-surface)]" : "bg-[var(--error-surface)]"}`}>
-        <span className={`w-11 h-11 shrink-0 rounded-xl flex items-center justify-center ${tone === "success" ? "bg-[var(--success)] text-[var(--success-foreground)]" : "bg-[var(--error)] text-[var(--error-foreground)]"}`}>{icon}</span>
+    <section role={role} className={`rounded-2xl border-2 overflow-hidden bg-[var(--card)] ${t.border}`}>
+      <div className={`flex items-center gap-3.5 px-5 sm:px-6 py-4 ${t.head}`}>
+        <span className={`w-11 h-11 shrink-0 rounded-xl flex items-center justify-center ${t.icon}`}>{icon}</span>
         <div>
-          <div className={`font-semibold text-lg ${tone === "success" ? "text-[var(--success-text)]" : "text-[var(--error-text)]"}`}>{title}</div>
-          <div className={`text-sm ${tone === "success" ? "text-[var(--success-text)]" : "text-[var(--error-text)]"}`}>{sub}</div>
+          <div className={`font-semibold text-lg ${t.text}`}>{title}</div>
+          <div className={`text-sm ${t.text}`}>{sub}</div>
         </div>
       </div>
       <div className="px-5 sm:px-6 py-5">{children}</div>

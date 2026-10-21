@@ -33,9 +33,13 @@ export async function fetchDocuments(params: PageParams = {}): Promise<Page<Docu
 
 // One portfolio entry's documents: the owned-plot id or the transaction id
 // (the same ids /api/portfolio/plots/{id} takes). Live, the allocation letter
-// comes first, then the receipts — keep that order.
+// comes first, then the receipts, then the offer — keep that order.
 export async function fetchDocumentsByPlotId(plotId: string): Promise<Document[]> {
-  if (isMock("documents")) return mockDocuments.filter((d) => d.plotId === plotId);
+  if (isMock("documents")) {
+    // The offer belongs to the purchase (its transaction id) and comes last.
+    const mine = mockDocuments.filter((d) => d.plotId === plotId || d.transactionId === plotId || (d.type === "offer_letter" && mockDocuments.some((o) => o.plotId === plotId && o.transactionId === d.transactionId)));
+    return [...mine.filter((d) => d.type !== "offer_letter"), ...mine.filter((d) => d.type === "offer_letter")];
+  }
   return apiClient.get<Document[]>(`/api/portfolio/plots/${plotId}/documents`);
 }
 
@@ -100,8 +104,10 @@ export async function shareFile(file: File, title: string): Promise<boolean> {
 // deliberately carries no amount and no name — initials only.
 
 export interface DocumentVerification {
-  status: "valid" | "refunded"; // refunded: the payment was later returned; still genuine
-  documentType: "receipt" | "allocation_letter";
+  // refunded: the payment was later returned; still genuine. Offer letters
+  // are issued (not accepted yet), accepted, or lapsed with their purchase.
+  status: "valid" | "refunded" | "issued" | "accepted" | "lapsed";
+  documentType: "receipt" | "allocation_letter" | "offer_letter";
   number: string;
   issuedAt: string;
   issuedBy: string; // always "HomeTrue"
@@ -127,12 +133,13 @@ export async function verifyDocument(code: string): Promise<DocumentVerification
   const normalized = normalizeVerifyCode(code);
   if (isMock("documents")) {
     const doc = mockDocuments.find((d) => normalizeVerifyCode(d.qrCode) === normalized);
-    if (!doc || (doc.type !== "receipt" && doc.type !== "allocation_letter")) {
+    if (!doc || (doc.type !== "receipt" && doc.type !== "allocation_letter" && doc.type !== "offer_letter")) {
       throw new ApiError(404, "This is not a HomeTrue document.", { code: "NOT_A_HOMETRUE_DOCUMENT" });
     }
     // Demo documents carry only a type, a date and a code — nothing else is shown.
     return {
-      status: doc.refundedAt ? "refunded" : "valid", documentType: doc.type, number: doc.number ?? doc.qrCode,
+      status: doc.type === "offer_letter" ? (doc.status === "accepted" || doc.status === "lapsed" ? doc.status : "issued") : doc.refundedAt ? "refunded" : "valid",
+      documentType: doc.type, number: doc.number ?? doc.qrCode,
       issuedAt: doc.issuedAt ?? doc.date, issuedBy: "HomeTrue", developer: null, estate: null, location: null, plot: null,
       holderInitials: null, refundedAt: doc.refundedAt ?? null,
     };
@@ -159,4 +166,11 @@ export async function voidDocument(id: string): Promise<void> {
 export async function addDocuments(docs: Document[]): Promise<Document[]> {
   mockDocuments = [...docs, ...mockDocuments];
   return docs;
+}
+
+// Demo mode's accept route: the offer document's status, in the mock store.
+export function updateMockDocument(id: string, patch: Partial<Document>): Document | null {
+  let updated: Document | null = null;
+  mockDocuments = mockDocuments.map((d) => (d.id === id ? (updated = { ...d, ...patch }) : d));
+  return updated;
 }

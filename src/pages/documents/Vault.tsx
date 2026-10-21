@@ -1,7 +1,8 @@
 // The buyer's document vault — /documents. Redesigned from the Figma "Vault —
 // Proposed": a summary, type tabs and search, then one table of documents on
-// a wide screen (cards on a phone). Live: the receipts HomeTrue issued when
-// Paystack confirmed each payment, and the allocation letters issued when the
+// a wide screen (cards on a phone). Live: the developer's offer letters
+// (issued when a purchase opens), the receipts HomeTrue issued when Paystack
+// confirmed each payment, and the allocation letters issued when the
 // developer's finance verified each sale, newest first.
 
 import { useMemo, useState } from "react";
@@ -18,7 +19,7 @@ import EmptyState from "../../components/ui/EmptyState";
 import { ErrorText } from "../../components/ui/Field";
 import { FileCheckIcon, InfoIcon, ReceiptIcon, SearchIcon, ShieldCheckIcon } from "../../components/icons";
 
-type Tab = "all" | "receipt" | "allocation_letter";
+type Tab = "all" | "receipt" | "allocation_letter" | "offer_letter";
 
 // A buyer has a handful of documents: one page of the API's maximum (100)
 // holds them all, so the counts below are the whole vault. "Load more" is
@@ -64,6 +65,7 @@ export default function Vault() {
     { id: "all", label: "All", count: documents.length },
     { id: "receipt", label: "Receipts", count: receipts },
     { id: "allocation_letter", label: "Allocation letters", count: letters },
+    { id: "offer_letter", label: "Offer letters", count: documents.filter((d) => d.type === "offer_letter").length },
   ];
 
   return (
@@ -71,7 +73,7 @@ export default function Vault() {
       <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
         <div>
           <h1 className="font-display text-[26px] sm:text-3xl text-[var(--foreground)]">Document vault</h1>
-          <p className="text-sm text-[var(--muted-foreground)] mt-1 hidden sm:block">Receipts and allocation letters HomeTrue issued for your purchases.</p>
+          <p className="text-sm text-[var(--muted-foreground)] mt-1 hidden sm:block">Offer letters, receipts and allocation letters HomeTrue issued for your purchases.</p>
         </div>
         <Link to="/verify" className="inline-flex items-center gap-2 px-3.5 py-2 rounded-md border border-[var(--border)] bg-[var(--card)] text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)]">
           <ShieldCheckIcon />Check a document
@@ -81,7 +83,7 @@ export default function Vault() {
       {documents.length === 0 ? (
         <EmptyState
           title="No documents yet"
-          description="A receipt arrives as soon as your payment is confirmed, and your allocation letter once the developer verifies the sale."
+          description="Your offer letter arrives when you start a purchase, a receipt as soon as your payment is confirmed, and your allocation letter once the developer verifies the sale."
         />
       ) : (
         <>

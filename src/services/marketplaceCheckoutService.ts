@@ -52,6 +52,15 @@ export function paymentMethodsForCountry(country: string): MarketplacePaymentMet
 // relied on. `abandoned`: the reservation ended before payment arrived.
 export type TransactionStatus = "pending_payment" | "payment_received" | "awaiting_finance" | "verified" | "rejected" | "abandoned";
 
+// The developer's offer letter, issued when the purchase opens (backend
+// changeset 098). The buyer accepts it before paying.
+export interface OfferSummary {
+  id: string;
+  number: string; // "HT-OFR-2026-000123"
+  issuedAt: string;
+  acceptedAt: string | null;
+}
+
 export interface Transaction {
   id: string;
   reference: string;
@@ -85,6 +94,8 @@ export interface Transaction {
   // The address as it was when the purchase was opened — what its allocation
   // letter prints. Null on purchases opened before addresses were kept.
   buyerAddress: PurchaseAddress | null;
+  // Null only on purchases opened before offers existed — those stay payable.
+  offer: OfferSummary | null;
 }
 
 export interface InitiateTransactionInput {
@@ -114,6 +125,12 @@ export interface InitiateTransactionInput {
 
 const mockTransactions = new Map<string, Transaction>();
 
+// A printed verification code, "D897-0A03-3C97-202D", for demo documents.
+function mockCode(): string {
+  const hex = Array.from({ length: 16 }, () => "0123456789ABCDEF"[Math.floor(Math.random() * 16)]).join("");
+  return hex.match(/.{4}/g)!.join("-");
+}
+
 // For paymentsService's mock mode, which walks the same purchases.
 export function mockTransactionStore(): Map<string, Transaction> {
   return mockTransactions;
@@ -136,6 +153,7 @@ interface TransactionDto {
   status: TransactionStatus;
   createdAt: string;
   buyerAddress: PurchaseAddress | null;
+  offer?: OfferSummary | null;
 }
 
 // The screen's display fields (estate name, plot label, location…) are kept
@@ -156,6 +174,7 @@ function fromTransactionDto(dto: TransactionDto, { buyer: _buyer, ...shown }: In
     status: dto.status,
     createdAt: dto.createdAt,
     buyerAddress: dto.buyerAddress ?? null,
+    offer: dto.offer ?? null,
   };
 }
 
@@ -187,7 +206,18 @@ export async function initiateTransaction(input: InitiateTransactionInput): Prom
     fxRateLocked: input.currency !== "NGN" ? FX_RATES[input.currency] : undefined,
     status: "pending_payment",
     createdAt: new Date().toISOString(),
+    offer: null,
   };
+  // The developer's offer, issued as the purchase opens. Demo documents have
+  // no file behind them; the real letter is drawn by the backend.
+  const seq = String(mockTransactions.size + 1).padStart(6, "0");
+  const offer: OfferSummary = { id: `ofr-${txn.id}`, number: `HT-OFR-${new Date().getFullYear()}-${seq}`, issuedAt: txn.createdAt, acceptedAt: null };
+  txn.offer = offer;
+  await addDocuments([{
+    id: offer.id, type: "offer_letter", title: `Offer letter ${offer.number} — ${shown.plotLabel}, ${shown.listingName}`,
+    date: offer.issuedAt, issuedAt: offer.issuedAt, status: "issued", acceptedAt: null, number: offer.number,
+    qrCode: mockCode(), size: null, transactionId: txn.id,
+  }]);
   mockTransactions.set(txn.id, txn);
   return txn;
 }
@@ -204,6 +234,7 @@ export async function initiatePayment(transactionId: string, method: Marketplace
   if (!isMock("checkout")) demoOnly();
 
   const txn = mockTransactions.get(transactionId);
+  if (txn?.offer && !txn.offer.acceptedAt) throw new ApiError(409, "Accept the offer letter before paying.", { code: "OFFER_NOT_ACCEPTED" });
   if (txn) txn.paymentMethod = method;
   if (method === "virtual_account" || method === "wire") {
     return { requiresTransfer: true, account: { bankName: "Providus Bank", accountNumber: "5901 2847 3301", accountName: `HomeTrue — ${transactionId} Escrow` } };

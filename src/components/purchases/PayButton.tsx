@@ -16,6 +16,7 @@ export function paymentErrorMessage(err: unknown): string {
     case "PAYMENT_PROVIDER_UNAVAILABLE": return "Paystack isn't responding right now. Please try again in a moment.";
     case "TRANSACTION_NOT_PAYABLE": return message || "This purchase can't be paid for — it may already be paid, verified or ended.";
     case "TRANSACTION_NOT_FOUND": return "We couldn't find this purchase.";
+    case "OFFER_NOT_ACCEPTED": return "Accept the offer letter first — payment opens straight after.";
     // The rest (PAYMENT_PLAN_NOT_SUPPORTED, CURRENCY_NOT_SUPPORTED,
     // PAYMENT_PROVIDER_REFUSED, INVALID_AMOUNT): the backend's message is
     // written for people.
@@ -23,11 +24,13 @@ export function paymentErrorMessage(err: unknown): string {
   }
 }
 
-export default function PayButton({ transactionId, label, busy, onBusy }: {
+export default function PayButton({ transactionId, label, busy, onBusy, onOfferNotAccepted }: {
   transactionId: string;
   label: string;
   busy?: boolean;
   onBusy?: (busy: boolean) => void;
+  // 409 OFFER_NOT_ACCEPTED: where to show the offer and its Accept step.
+  onOfferNotAccepted?: () => void;
 }) {
   const [error, setError] = useState("");
   const [localBusy, setLocalBusy] = useState(false);
@@ -42,6 +45,12 @@ export default function PayButton({ transactionId, label, busy, onBusy }: {
       // Leave for Paystack. Nothing is "paid" until the return page verifies.
       window.location.assign(payment.authorizationUrl);
     } catch (err) {
+      if (onOfferNotAccepted && err instanceof ApiError && err.body?.code === "OFFER_NOT_ACCEPTED") {
+        setLocalBusy(false);
+        onBusy?.(false);
+        onOfferNotAccepted();
+        return;
+      }
       setError(paymentErrorMessage(err));
       setLocalBusy(false);
       onBusy?.(false);

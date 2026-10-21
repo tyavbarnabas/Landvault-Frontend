@@ -6,7 +6,7 @@ import type { TransactionStatus } from "../services/marketplaceCheckoutService";
 const purchase = (status: TransactionStatus, payment: Partial<PaymentSummary> | null = null, extra: Partial<Purchase> = {}): Purchase => ({
   id: "t1", reference: "LV-1", estateId: "e1", plotId: "p1", reservationId: "r1", basePrice: 15_000_000, cornerPremiumPct: null,
   totalPrice: 15_000_000, currency: "NGN", intent: "development", plan: "outright", installmentMonths: null, status,
-  createdAt: "2026-10-09T10:00:00Z", buyerAddress: null,
+  createdAt: "2026-10-09T10:00:00Z", buyerAddress: null, offer: null,
   payment: payment && { reference: "PAY-1", status: "succeeded", amountPaid: null, paidAt: null, underReview: false, reviewKind: null, refundStatus: null, receiptId: null, receiptNumber: null, ...payment },
   ...extra,
 });

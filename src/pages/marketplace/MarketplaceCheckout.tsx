@@ -28,6 +28,8 @@ import {
 import { useHoldCountdown, HoldAnnouncement } from "../../components/checkout/CountdownTimer";
 import KycFlow from "../../components/checkout/KycFlow";
 import AddressForm from "../../components/account/AddressForm";
+import OfferStep from "../../components/checkout/OfferStep";
+import { formatDayTime } from "../../lib/formatDate";
 import LetterAddress from "../../components/account/LetterAddress";
 import PaymentPlanSelector, { depositFor } from "../../components/checkout/PaymentPlanSelector";
 import PaymentMethodSelector from "../../components/checkout/PaymentMethodSelector";
@@ -46,8 +48,8 @@ import TextLink from "../../components/ui/TextLink";
 import { Loading } from "../../components/ui/Page";
 import { ArrowLeftIcon, MapPinIcon, BuildingIcon, CheckIcon, ClockIcon, CreditCardIcon, FileCheckIcon, ShieldCheckIcon, TrendingUpIcon } from "../../components/icons";
 
-type Step = "confirm" | "kyc" | "details" | "payment" | "verifying" | "allocated" | "expired";
-const IN_FLOW: Step[] = ["confirm", "kyc", "details", "payment"];
+type Step = "confirm" | "kyc" | "details" | "offer" | "payment" | "verifying" | "allocated" | "expired";
+const IN_FLOW: Step[] = ["confirm", "kyc", "details", "offer", "payment"];
 const HOLD_MINUTES = Math.round(RESERVATION_SECONDS / 60);
 
 // The action row. On a phone it sticks to the bottom of the screen, so the
@@ -84,6 +86,10 @@ export default function MarketplaceCheckout() {
   const [addressRequired, setAddressRequired] = useState(false);
   // Saving the address asked for on Review, before the hold starts.
   const [savingAddress, setSavingAddress] = useState(false);
+  // The offer letter (changeset 098): Pay pressed before accepting it, and
+  // an estate whose letter isn't approved right now (nothing was opened).
+  const [offerNotAccepted, setOfferNotAccepted] = useState(false);
+  const [letterNotApproved, setLetterNotApproved] = useState(false);
   // Live: paying happens on Paystack's page (PayButton), and only outright
   // purchases in naira can be paid online for now.
   const live = isLive("checkout");
@@ -113,7 +119,7 @@ export default function MarketplaceCheckout() {
   };
 
   // The hold keeps running after the purchase is recorded: pay before it ends.
-  const countdownRunning = !!reservation && ["details", "payment"].includes(step);
+  const countdownRunning = !!reservation && ["details", "offer", "payment"].includes(step);
   const holdSecondsLeft = useHoldCountdown(countdownRunning ? reservation!.expiresAt : null, handleExpire);
 
   if (pageLoading || !user) return <Shell><Loading /></Shell>;
@@ -198,13 +204,31 @@ export default function MarketplaceCheckout() {
         setLoading(false);
         return;
       }
+      if (err instanceof ApiError && err.body?.code === "LETTER_NOT_APPROVED") {
+        setLetterNotApproved(true);
+        setLoading(false);
+        return;
+      }
       setStepError(refusal(err, "We couldn't start your purchase."));
       setLoading(false);
       return;
     }
     setTransaction(txn);
     setLoading(false);
-    setStep("payment");
+    // The developer's offer comes first; one already accepted, or a purchase
+    // from before offers existed, goes straight to payment.
+    setStep(txn.offer && !txn.offer.acceptedAt ? "offer" : "payment");
+  };
+
+  // Pay pressed before the offer was accepted: back to the offer.
+  const backToOffer = () => {
+    setOfferNotAccepted(true);
+    setStep("offer");
+  };
+
+  const offerAccepted = (acceptedAt: string) => {
+    setOfferNotAccepted(false);
+    setTransaction((t) => (t?.offer ? { ...t, offer: { ...t.offer, acceptedAt } } : t));
   };
 
   const selectPayMethod = async (method: MarketplacePaymentMethod) => {
@@ -212,8 +236,13 @@ export default function MarketplaceCheckout() {
     setVirtualAccount(null);
     setPaymentError("");
     if (!transaction) return;
-    const result = await initiatePayment(transaction.id, method);
-    if (result.requiresTransfer && result.account) setVirtualAccount(result.account);
+    try {
+      const result = await initiatePayment(transaction.id, method);
+      if (result.requiresTransfer && result.account) setVirtualAccount(result.account);
+    } catch (err) {
+      if (err instanceof ApiError && err.body?.code === "OFFER_NOT_ACCEPTED") backToOffer();
+      else setPaymentError(refusal(err, "We couldn't start your payment."));
+    }
   };
 
   const handlePaymentSubmit = async () => {
@@ -241,12 +270,13 @@ export default function MarketplaceCheckout() {
   const deposit = depositFor(plan, totalPrice);
   // The journey starts on the plot map (MarketplacePlotSelection shows the same
   // steps), so choosing a plot is step 1 and already done here.
-  const steps = ["Choose a plot", "Review", ...(kycWasNeeded ? ["Verify identity"] : []), "Purchase details", "Payment"];
-  const stepIndex = step === "confirm" ? 1 : step === "kyc" ? 2 : step === "details" ? steps.length - 2 : steps.length - 1;
+  const steps = ["Choose a plot", "Review", ...(kycWasNeeded ? ["Verify identity"] : []), "Purchase details", "Offer letter", "Payment"];
+  const stepIndex = step === "confirm" ? 1 : step === "kyc" ? 2 : step === "details" ? steps.length - 3 : step === "offer" ? steps.length - 2 : steps.length - 1;
   const heading: Record<string, [string, string]> = {
     confirm: ["Review your plot", "Check the plot and its full cost. Nothing is charged here."],
     kyc: ["Verify your identity", "We check who you are before we hold a plot for you. It's needed once."],
-    details: ["Purchase details", "Two quick choices, then where your letter goes."],
+    details: ["Purchase details", "Two quick choices and where your letter goes — then the developer's offer."],
+    offer: ["Your offer letter", "The developer's offer for this plot. Read it, then accept it to pay."],
     payment: ["Pay for your plot", "Your plot is held while you pay."],
   };
   const summaryProps = { listing, plot, base, totalPrice, currency, commitment, holdSecondsLeft, held: !!reservation };
@@ -462,14 +492,36 @@ export default function MarketplaceCheckout() {
                     </>
                   )}
                 </Card>
-                {errorAlert}
+                {letterNotApproved ? (
+                  <Alert tone="warning" title="This estate can't take purchases right now" role="alert">
+                    Please try again later. Nothing has been charged, and nothing was opened — your hold carries on until it runs out.
+                    <div className="mt-3"><TextLink to={`/marketplace/${listing.id}`} className="font-medium">Back to the estate →</TextLink></div>
+                  </Alert>
+                ) : errorAlert}
                 <div className={ACTIONS}>
-                  <Button size="lg" className={PRIMARY_WIDTH} onClick={goToPayment} disabled={loading || askAddress}>
-                    {loading ? "Starting your purchase…" : live ? "Continue to payment" : "Choose payment method"}
+                  <Button size="lg" className={PRIMARY_WIDTH} onClick={goToPayment} disabled={loading || askAddress || letterNotApproved}>
+                    {loading ? "Getting your offer letter…" : "Get my offer letter"}
                   </Button>
                   {askAddress && <span className="text-sm text-[var(--muted-foreground)]">Save your address to continue.</span>}
                 </div>
               </>
+            )}
+
+            {step === "offer" && transaction?.offer && (
+              <OfferStep offer={transaction.offer} transactionId={transaction.id} price={transaction.totalPrice}
+                plot={`${plotLabel(plot)}${plot.sizeSqm ? ` · ${plot.sizeSqm} sqm` : ""}`}
+                notAccepted={offerNotAccepted} onAccepted={offerAccepted} onContinue={() => setStep("payment")} />
+            )}
+
+            {step === "payment" && transaction?.offer?.acceptedAt && (
+              <Card as="section" className="flex items-center gap-3 sm:px-5 sm:py-3.5" padding="sm">
+                <span className="text-[var(--primary)] shrink-0"><FileCheckIcon size={18} /></span>
+                <div className="flex-1 min-w-0 text-sm">
+                  <div className="font-medium text-[var(--foreground)]">You accepted offer <span className="font-mono-data">{transaction.offer.number}</span></div>
+                  <div className="text-[var(--muted-foreground)]">{formatDayTime(transaction.offer.acceptedAt)} · its terms are fixed for this purchase</div>
+                </div>
+                <Button variant="link" onClick={() => setStep("offer")}>Read it again</Button>
+              </Card>
             )}
 
             {step === "payment" && transaction && live && (
@@ -485,7 +537,7 @@ export default function MarketplaceCheckout() {
                 <NextSteps />
                 <Alert tone="warning">Pay before your hold runs out. If it ends first, nothing is taken and you can reserve the plot again.</Alert>
                 <div className={ACTIONS}>
-                  <div className="w-full"><PayButton transactionId={transaction.id} label={`Pay ${formatInCurrency(transaction.totalPrice, "NGN")} with Paystack`} /></div>
+                  <div className="w-full"><PayButton transactionId={transaction.id} label={`Pay ${formatInCurrency(transaction.totalPrice, "NGN")} with Paystack`} onOfferNotAccepted={backToOffer} /></div>
                 </div>
                 <p className="text-center text-sm"><TextLink to={`/purchases/${transaction.id}`}>View this purchase</TextLink></p>
                 <p className="text-xs text-[var(--muted-foreground)]">Online payment is for outright purchases only for now.</p>
@@ -524,7 +576,7 @@ export default function MarketplaceCheckout() {
                 {paymentError && <Alert tone="error" role="alert">{paymentError}</Alert>}
 
                 <div className={ACTIONS}>
-                  <Button variant="secondary" size="lg" onClick={() => setStep("details")}>Back</Button>
+                  <Button variant="secondary" size="lg" onClick={() => setStep(transaction.offer ? "offer" : "details")}>Back</Button>
                   <Button
                     size="lg"
                     className="flex-1 sm:flex-none"

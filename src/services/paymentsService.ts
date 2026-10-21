@@ -9,11 +9,11 @@
 // Money is naira as the backend sends it (15000000 = ₦15,000,000); nothing
 // here does arithmetic on it.
 
-import { apiClient, nullIfNotFound } from "../lib/apiClient";
+import { apiClient, ApiError, nullIfNotFound } from "../lib/apiClient";
 import { isMock } from "../lib/backends";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import type { PaymentPlanType } from "./marketplaceService";
-import { mockTransactionStore, type TransactionStatus } from "./marketplaceCheckoutService";
+import { mockTransactionStore, type OfferSummary, type TransactionStatus } from "./marketplaceCheckoutService";
 import type { PaymentStatus, RefundStatus } from "./paymentTypes";
 import type { PurchaseAddress } from "./addressService";
 
@@ -58,6 +58,8 @@ export interface Purchase {
   payment: PaymentSummary | null;
   // The address copied on when the purchase was opened; null before 097.
   buyerAddress: PurchaseAddress | null;
+  // The developer's offer (changeset 098); null on purchases opened before it.
+  offer: OfferSummary | null;
 }
 
 // One attempt to collect money (PaymentDto).
@@ -107,6 +109,7 @@ export async function startPayment(transactionId: string): Promise<Payment> {
   const txn = mockTransactionStore().get(transactionId);
   if (!txn) throw Object.assign(new Error("No such purchase."), { code: "TRANSACTION_NOT_FOUND" });
   if (txn.status !== "pending_payment") throw Object.assign(new Error("This purchase can't be paid for now."), { code: "TRANSACTION_NOT_PAYABLE" });
+  if (txn.offer && !txn.offer.acceptedAt) throw new ApiError(409, "Accept the offer letter before paying.", { code: "OFFER_NOT_ACCEPTED" });
   const existing = [...mockPayments.values()].find((p) => p.transactionId === transactionId && p.status === "initialized");
   if (existing) return existing;
   const reference = `PAY-${Date.now().toString(36).toUpperCase()}`;
@@ -222,6 +225,7 @@ function mockPurchase(id: string): Purchase | null {
     basePrice: txn.basePrice, cornerPremiumPct: txn.cornerPremiumPct ?? null, totalPrice: txn.totalPrice, currency: "NGN",
     intent: txn.intent, plan: txn.plan, installmentMonths: txn.installmentMonths ?? null, status: txn.status, createdAt: txn.createdAt,
     buyerAddress: txn.buyerAddress ?? null,
+    offer: txn.offer ? { ...txn.offer } : null,
     payment: shown ? {
       reference: shown.reference, status: shown.status, amountPaid: shown.status === "succeeded" ? shown.amount : null,
       paidAt: shown.paidAt, underReview: false, reviewKind: null, refundStatus: null, receiptId: null, receiptNumber: null,

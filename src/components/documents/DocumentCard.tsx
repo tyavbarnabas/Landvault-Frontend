@@ -54,8 +54,22 @@ export function plotHref(doc: Pick<Document, "transactionId" | "plotId">): strin
 }
 
 export function DocStatus({ doc }: { doc: Document }) {
+  // Offer letters: waiting for the buyer, accepted, or lapsed with an
+  // unfinished purchase (history, not an error).
+  if (doc.status === "issued") return <Badge label="Waiting for you" variant="warning" />;
+  if (doc.status === "accepted") return <Badge label="Accepted" variant="success" />;
+  if (doc.status === "lapsed") return <Badge label="Lapsed" variant="neutral" />;
   if (doc.status !== "valid") return <Badge label={doc.status === "void" ? "Void" : "Superseded"} variant="error" />;
   return <Badge label="Valid" variant="success" />;
+}
+
+// The line under the status: when an offer was accepted, why one lapsed, or
+// when a receipt's payment was refunded (it stays valid — the money did arrive).
+export function statusNote(doc: Document): string | null {
+  if (doc.status === "accepted" && doc.acceptedAt) return `Accepted ${formatDay(doc.acceptedAt)}`;
+  if (doc.status === "lapsed") return "Purchase not completed";
+  if (doc.refundedAt) return `Refunded ${formatDay(doc.refundedAt)}`;
+  return null;
 }
 
 export function VerifyLink({ code, short }: { code: string; short?: boolean }) {
@@ -130,8 +144,7 @@ export default function DocumentCard({ doc }: { doc: Document }) {
         )}
         <div className="text-xs text-[var(--muted-foreground)]">
           Issued {formatDay(doc.date)}
-          {/* The money did arrive, so the receipt stays valid — a note, not an error. */}
-          {doc.refundedAt && ` · Refunded ${formatDay(doc.refundedAt)}`}
+          {statusNote(doc) && ` · ${statusNote(doc)}`}
         </div>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="font-mono-data text-xs text-[var(--foreground)]">{doc.qrCode}</span>

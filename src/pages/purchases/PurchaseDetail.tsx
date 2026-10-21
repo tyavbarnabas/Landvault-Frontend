@@ -22,6 +22,7 @@ import { ReceiptIcon } from "../../components/icons";
 import { isAvailable } from "../../lib/backends";
 import { fetchPurchase } from "../../services/paymentsService";
 import { addressLines } from "../../services/addressService";
+import OfferCard from "../../components/purchases/OfferCard";
 import { fetchListingById } from "../../services/marketplaceService";
 import { fetchPlotById, plotLabel } from "../../services/marketplacePlotsService";
 
@@ -125,6 +126,7 @@ export default function PurchaseDetail() {
               )}
             </Card>
           )}
+          {purchase.offer && <OfferCard purchase={purchase} onChanged={loaded.refetch} />}
           <Card as="section" aria-labelledby="help-heading">
             <h2 id="help-heading" className="font-semibold text-[var(--foreground)] mb-1">Need help?</h2>
             <p className="text-sm text-[var(--muted-foreground)] mb-3">Quote <span className="font-mono-data">{purchase.reference}</span> when you contact support about this purchase.</p>
