@@ -59,6 +59,9 @@ export const SERVICES = {
   // A buyer's saved estates, kept on the account. Saves marketplace estate
   // ids, so it sits with the marketplace.
   wishlist: { label: "Wishlist", status: "live", group: "purchase", paths: ["/api/marketplace/wishlist"] },
+  // The buyer's postal address: checkout refuses to open a purchase without
+  // one, so it sits with checkout.
+  address: { label: "Buyer's address", status: "live", group: "purchase", paths: ["/api/me/address"] },
   checkout: { label: "Checkout & payments", status: "live", group: "purchase", paths: ["/api/checkout/transactions", "/api/transactions", "/api/payments"] },
   // The developer's side of the same purchases: verify or reject, late money,
   // the company's payouts. Same ids as checkout, so the same group.

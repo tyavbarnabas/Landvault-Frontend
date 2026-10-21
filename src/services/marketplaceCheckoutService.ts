@@ -12,7 +12,7 @@
 // and documents together — see the explicit TODO on runFinanceVerification
 // below where mock mode necessarily runs these as sequential calls instead.
 
-import { apiClient, nullIfNotFound } from "../lib/apiClient";
+import { apiClient, ApiError, nullIfNotFound } from "../lib/apiClient";
 import { isMock } from "../lib/backends";
 
 // The three steps below are DEMO MODE's simulation of paying and verifying.
@@ -27,6 +27,7 @@ import type { PaymentPlanType } from "./marketplaceService";
 import { addOwnedPlot, updateOwnedPlotStatus } from "./portfolioService";
 import { addDocuments } from "./documentsService";
 import { convertReservation } from "./reservationService";
+import { mockAddressFor, type Address, type PurchaseAddress } from "./addressService";
 
 export type MarketplacePaymentMethod = "paystack" | "monnify" | "opay" | "titan" | "virtual_account" | "wire";
 
@@ -81,6 +82,9 @@ export interface Transaction {
   financeDecisionAt?: string;
   rejectionReason?: string;
   ownedPlotId?: string;
+  // The address as it was when the purchase was opened — what its allocation
+  // letter prints. Null on purchases opened before addresses were kept.
+  buyerAddress: PurchaseAddress | null;
 }
 
 export interface InitiateTransactionInput {
@@ -103,6 +107,9 @@ export interface InitiateTransactionInput {
   currency: Currency;
   amountDue: number;
   totalPrice: number;
+  // Demo mode only, to check the buyer has an address as the backend does.
+  // Never sent: the backend copies the address from the account itself.
+  buyer: { email: string; address?: Address | null };
 }
 
 const mockTransactions = new Map<string, Transaction>();
@@ -128,11 +135,12 @@ interface TransactionDto {
   plan: PaymentPlanType;
   status: TransactionStatus;
   createdAt: string;
+  buyerAddress: PurchaseAddress | null;
 }
 
 // The screen's display fields (estate name, plot label, location…) are kept
 // from what the buyer was shown; every money figure comes from the backend.
-function fromTransactionDto(dto: TransactionDto, shown: InitiateTransactionInput): Transaction {
+function fromTransactionDto(dto: TransactionDto, { buyer: _buyer, ...shown }: InitiateTransactionInput): Transaction {
   return {
     ...shown,
     id: dto.id,
@@ -147,6 +155,7 @@ function fromTransactionDto(dto: TransactionDto, shown: InitiateTransactionInput
     plan: dto.plan,
     status: dto.status,
     createdAt: dto.createdAt,
+    buyerAddress: dto.buyerAddress ?? null,
   };
 }
 
@@ -163,8 +172,14 @@ export async function initiateTransaction(input: InitiateTransactionInput): Prom
     return fromTransactionDto(dto, input);
   }
 
+  // 409 ADDRESS_REQUIRED, as the backend answers: nothing is created and
+  // the hold is untouched.
+  const { buyer, ...shown } = input;
+  const address = mockAddressFor(buyer.email) ?? buyer.address ?? null;
+  if (!address) throw new ApiError(409, "Add your address before buying.", { code: "ADDRESS_REQUIRED" });
   const txn: Transaction = {
-    ...input,
+    ...shown,
+    buyerAddress: { line1: address.line1, line2: address.line2, city: address.city, state: address.state, postalCode: address.postalCode, country: address.country },
     id: `txn-${Date.now()}`,
     reference: `LV-${Date.now().toString().slice(-9)}`,
     // Live rate shown and lockable for the checkout window when paying in

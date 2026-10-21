@@ -8,7 +8,7 @@ import { STEP_LABELS } from "./defaultValues";
 import Card from "../../../../components/ui/Card";
 import Alert from "../../../../components/ui/Alert";
 import Button from "../../../../components/ui/Button";
-import { displayInternational, splitInternational } from "../../../../lib/phone";
+import { showInternational } from "../../../../lib/phone";
 
 function SummaryRow({ label, value }: { label: string; value: React.ReactNode }) {
   if (!value) return null;
@@ -163,4 +163,4 @@ export default function Step8Review({ onEditStep, missing }: { onEditStep: (inde
   );
 }
 
-const showPhone = (international: string) => { const { iso, number } = splitInternational(international); return displayInternational(iso, number); };
+const showPhone = showInternational;

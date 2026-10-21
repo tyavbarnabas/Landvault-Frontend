@@ -211,6 +211,7 @@ describe("checkout", () => {
     listingId: "e1", listingName: "Palm Grove", plotId: "p1", plotLabel: "Block A, Plot 1", sizeSqm: 500, actualAreaSqm: 512,
     isCorner: false, cornerPremiumPct: 10, basePrice: 1, titleType: "C of O" as never, location: "Lekki", reservationId: "r1",
     tierId: "t1", intent: "development" as const, currency: "NGN" as never, amountDue: 1, totalPrice: 1,
+    buyer: { email: "buyer@example.com", address: null },
   };
   const TXN = { id: "x1", reference: "LV-1", estateId: "e1", plotId: "p1", reservationId: "r1", basePrice: 5_000_000, cornerPremiumPct: null,
     totalPrice: 5_000_000, intent: "development", plan: "outright", status: "pending_payment", createdAt: "2026-10-07T12:00:00Z" };
@@ -221,6 +222,21 @@ describe("checkout", () => {
     const t = await initiateTransaction({ ...SHOWN, plan: "outright", installmentMonths: undefined });
     expect(calls[0].body).toEqual({ reservationId: "r1", intent: "development", plan: "outright" });
     expect(t).toMatchObject({ id: "x1", reference: "LV-1", totalPrice: 5_000_000, status: "pending_payment" });
+  });
+
+  it("never sends the address; the purchase carries the backend's copy", async () => {
+    const ADDRESS = { line1: "3 Admiralty Way", line2: null, city: "Lekki", state: "Lagos", postalCode: null, country: "NG" };
+    respond({ "POST /api/checkout/transactions": { status: 201, body: { ...TXN, buyerAddress: ADDRESS } } });
+    const { initiateTransaction } = await import("./marketplaceCheckoutService");
+    const t = await initiateTransaction({ ...SHOWN, plan: "outright", installmentMonths: undefined });
+    expect(calls[0].body).not.toHaveProperty("buyer");
+    expect(t.buyerAddress).toEqual(ADDRESS);
+  });
+
+  it("a buyer with no address gets 409 ADDRESS_REQUIRED", async () => {
+    respond({ "POST /api/checkout/transactions": { status: 409, body: { code: "ADDRESS_REQUIRED", message: "Add your address" } } });
+    const { initiateTransaction } = await import("./marketplaceCheckoutService");
+    await expect(initiateTransaction({ ...SHOWN, plan: "outright", installmentMonths: undefined })).rejects.toMatchObject({ status: 409, body: { code: "ADDRESS_REQUIRED" } });
   });
 
   it("sends installment months for installment plans only", async () => {

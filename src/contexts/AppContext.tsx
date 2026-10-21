@@ -9,6 +9,7 @@ import { IS_MOCK_MODE, onSessionEvent } from "../lib/apiClient";
 import { acceptInvitation as acceptInvitationRequest } from "../services/staffService";
 import { fetchNotifications, markNotificationRead as markNotificationReadRequest, addNotification as addNotificationRequest, type Notification } from "../services/notificationsService";
 import type { WishlistItem } from "../services/marketplaceService";
+import type { Address } from "../services/addressService";
 import { fetchWishlist, removeFromWishlist, saveToWishlist } from "../services/wishlistService";
 
 export type { Notification };
@@ -57,6 +58,8 @@ interface AppContextValue {
   // A KYC submission or review changed the buyer's standing; the sidebar
   // badge follows it without waiting for the next session refresh.
   kycChanged: (status: User["kycStatus"]) => void;
+  // After the buyer saves their address, so every screen shows the new one.
+  addressChanged: (address: Address) => void;
   wishlist: WishlistItem[];
   wishlistLoaded: boolean;
   reloadWishlist: () => Promise<void>;
@@ -197,6 +200,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUser((prev) => (prev && prev.kycStatus !== status ? { ...prev, kycStatus: status } : prev));
   };
 
+  const addressChanged = (address: Address) => {
+    setUser((prev) => (prev ? { ...prev, address } : prev));
+  };
+
   const passwordChanged = () => {
     setUser((prev) => (prev ? { ...prev, mustChangePassword: false } : prev));
   };
@@ -276,7 +283,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ user, isAuthenticated: !!user, restoringSession, signOutNotice, clearSignOutNotice: () => setSignOutNotice(null), sessionProblem, login, completeTwoFactor, register, acceptInvitation, logout, passwordChanged, kycChanged, savedPlots, toggleSavedPlot, currency, setCurrency, notifications, markNotificationRead, addNotification, wishlist, wishlistLoaded, reloadWishlist, isWishlisted, saveWishlistItem, toggleWishlistItem }}>
+    <AppContext.Provider value={{ user, isAuthenticated: !!user, restoringSession, signOutNotice, clearSignOutNotice: () => setSignOutNotice(null), sessionProblem, login, completeTwoFactor, register, acceptInvitation, logout, passwordChanged, kycChanged, addressChanged, savedPlots, toggleSavedPlot, currency, setCurrency, notifications, markNotificationRead, addNotification, wishlist, wishlistLoaded, reloadWishlist, isWishlisted, saveWishlistItem, toggleWishlistItem }}>
       {children}
     </AppContext.Provider>
   );

@@ -72,3 +72,9 @@ export function internationalPhoneProblem(value: string): string | null {
   const { iso, number } = splitInternational(v);
   return phoneProblem(iso, number);
 }
+
+// A stored E.164 number as people read it: "+234 805 444 3322".
+export function showInternational(value: string): string {
+  const { iso, number } = splitInternational(value);
+  return displayInternational(iso, number);
+}

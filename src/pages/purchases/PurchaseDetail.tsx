@@ -21,6 +21,7 @@ import { formatDay, formatDayTime } from "../../lib/formatDate";
 import { ReceiptIcon } from "../../components/icons";
 import { isAvailable } from "../../lib/backends";
 import { fetchPurchase } from "../../services/paymentsService";
+import { addressLines } from "../../services/addressService";
 import { fetchListingById } from "../../services/marketplaceService";
 import { fetchPlotById, plotLabel } from "../../services/marketplacePlotsService";
 
@@ -83,6 +84,17 @@ export default function PurchaseDetail() {
               <Row label="Payment plan" value={plan} />
               <Row label="Use" value={purchase.intent === "investment" ? "To hold as an investment" : "To build on it (development)"} />
             </dl>
+            {/* The copy taken when the purchase was opened — what its letter
+                prints. Never the account's current address: older purchases
+                without one show nothing. */}
+            {purchase.buyerAddress && (
+              <div className="mt-4 pt-4 border-t border-[var(--border)] text-sm">
+                <div className="text-[var(--muted-foreground)] mb-1">Address on this purchase</div>
+                <address className="not-italic text-[var(--foreground)] leading-relaxed">
+                  {addressLines(purchase.buyerAddress).map((line) => <div key={line}>{line}</div>)}
+                </address>
+              </div>
+            )}
           </Card>
         </div>
 

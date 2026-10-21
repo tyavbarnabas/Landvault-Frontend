@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useApp } from "../../contexts/AppContext";
 import { Link } from "react-router-dom";
 import TwoFactorSettings from "../../components/auth/TwoFactorSettings";
+import AddressSection from "../../components/account/AddressSection";
+import { CHECKOUT_RESERVE_PERMISSION } from "../../services/authService";
 import type { Currency } from "../../data/mockData";
 
 type Tab = "profile" | "security" | "notifications" | "sessions";
@@ -55,6 +57,7 @@ export default function Settings() {
         {/* Content */}
         <div className="lg:col-span-3">
           {tab === "profile" && (
+            <div className="space-y-4">
             <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-6">
               <h2 className="font-semibold mb-5">Profile information</h2>
 
@@ -95,6 +98,9 @@ export default function Settings() {
                   </button>
                 </div>
               </form>
+            </div>
+            {/* Buyers only: it's what their allocation letters are addressed to. */}
+            {user?.permissions.includes(CHECKOUT_RESERVE_PERMISSION) && <AddressSection />}
             </div>
           )}
 

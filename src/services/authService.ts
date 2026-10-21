@@ -10,6 +10,7 @@
 import type { Currency, KYCStatus } from "../data/mockData";
 import { apiClient, logoutSession, refreshSession, setAuthToken } from "../lib/apiClient";
 import { isMock } from "../lib/backends";
+import type { Address } from "./addressService";
 
 // The backend emits exactly two role strings — see AuthService's
 // `ctx.superAdmin() ? "super_admin" : "client"`. There is NO "developer"
@@ -58,6 +59,9 @@ export interface AuthUser {
   // is showing — never so the frontend can re-filter or widen a scope.
   tenantId?: string;
   branchId?: string | null;
+  // The buyer's postal address (addressService), printed on allocation
+  // letters. Null until they first give it, at checkout or in Settings.
+  address?: Address | null;
 }
 
 const CLIENT_PERMISSIONS = [
@@ -234,6 +238,10 @@ export const MOCK_CLIENT_USER: AuthUser = {
   twoFAEnabled: false,
   role: "client",
   permissions: CLIENT_PERMISSIONS,
+  address: {
+    line1: "14 Ashdown Road", line2: null, city: "London", state: "Greater London", postalCode: "SE18 3LP",
+    country: "GB", countryName: "United Kingdom", updatedAt: "2026-09-01T10:00:00Z",
+  },
 };
 
 // Demo super admin account — sign in with this email in mock mode to preview
@@ -529,6 +537,7 @@ export async function register(input: RegisterInput): Promise<AuthUser> {
       twoFAEnabled: false,
       role: "client",
       permissions: CLIENT_PERMISSIONS,
+      address: null,
     };
   }
   const { user, token } = await apiClient.post<AuthResponseBody>("/api/auth/register", input, SETS_SESSION_COOKIE);

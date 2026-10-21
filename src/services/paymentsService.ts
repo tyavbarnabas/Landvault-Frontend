@@ -15,6 +15,7 @@ import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import type { PaymentPlanType } from "./marketplaceService";
 import { mockTransactionStore, type TransactionStatus } from "./marketplaceCheckoutService";
 import type { PaymentStatus, RefundStatus } from "./paymentTypes";
+import type { PurchaseAddress } from "./addressService";
 
 // Why a payment is with a person (PaymentSummary.reviewKind):
 //   late_payment — paid after the reservation ended; the developer will either
@@ -55,6 +56,8 @@ export interface Purchase {
   status: TransactionStatus;
   createdAt: string;
   payment: PaymentSummary | null;
+  // The address copied on when the purchase was opened; null before 097.
+  buyerAddress: PurchaseAddress | null;
 }
 
 // One attempt to collect money (PaymentDto).
@@ -218,6 +221,7 @@ function mockPurchase(id: string): Purchase | null {
     id: txn.id, reference: txn.reference, estateId: txn.listingId, plotId: txn.plotId, reservationId: txn.reservationId,
     basePrice: txn.basePrice, cornerPremiumPct: txn.cornerPremiumPct ?? null, totalPrice: txn.totalPrice, currency: "NGN",
     intent: txn.intent, plan: txn.plan, installmentMonths: txn.installmentMonths ?? null, status: txn.status, createdAt: txn.createdAt,
+    buyerAddress: txn.buyerAddress ?? null,
     payment: shown ? {
       reference: shown.reference, status: shown.status, amountPaid: shown.status === "succeeded" ? shown.amount : null,
       paidAt: shown.paidAt, underReview: false, reviewKind: null, refundStatus: null, receiptId: null, receiptNumber: null,

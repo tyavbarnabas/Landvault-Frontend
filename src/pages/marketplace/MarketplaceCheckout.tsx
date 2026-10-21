@@ -27,6 +27,9 @@ import {
 } from "../../services/marketplaceCheckoutService";
 import { useHoldCountdown, HoldAnnouncement } from "../../components/checkout/CountdownTimer";
 import KycFlow from "../../components/checkout/KycFlow";
+import AddressForm from "../../components/account/AddressForm";
+import { addressLines } from "../../services/addressService";
+import { showInternational } from "../../lib/phone";
 import PaymentPlanSelector, { depositFor } from "../../components/checkout/PaymentPlanSelector";
 import PaymentMethodSelector from "../../components/checkout/PaymentMethodSelector";
 import VerificationProgress from "../../components/checkout/VerificationProgress";
@@ -75,6 +78,11 @@ export default function MarketplaceCheckout() {
   // A reserve/transaction call the backend refused (plot just taken, KYC
   // needed, …): shown in place, never a spinner that never ends.
   const [stepError, setStepError] = useState("");
+  // The address the allocation letter goes to: changing it, or asked for
+  // because the backend said there's none (409 ADDRESS_REQUIRED — the
+  // signed-in user can be stale). Saving it then carries straight on.
+  const [editingAddress, setEditingAddress] = useState(false);
+  const [addressRequired, setAddressRequired] = useState(false);
   // Live: paying happens on Paystack's page (PayButton), and only outright
   // purchases in naira can be paid online for now.
   const live = isLive("checkout");
@@ -181,8 +189,14 @@ export default function MarketplaceCheckout() {
         currency,
         amountDue: deposit,
         totalPrice,
+        buyer: { email: user.email, address: user.address },
       });
     } catch (err) {
+      if (err instanceof ApiError && err.body?.code === "ADDRESS_REQUIRED") {
+        setAddressRequired(true);
+        setLoading(false);
+        return;
+      }
       setStepError(refusal(err, "We couldn't start your purchase."));
       setLoading(false);
       return;
@@ -236,6 +250,16 @@ export default function MarketplaceCheckout() {
   };
   const summaryProps = { listing, plot, base, totalPrice, currency, commitment, holdSecondsLeft, held: !!reservation };
   const errorAlert = stepError && <Alert tone="error" role="alert">{stepError}</Alert>;
+  const address = user.address ?? null;
+  const askAddress = !address || editingAddress || addressRequired;
+
+  const addressSaved = () => {
+    setEditingAddress(false);
+    if (addressRequired) {
+      setAddressRequired(false);
+      void goToPayment();
+    }
+  };
 
   if (!IN_FLOW.includes(step)) {
     return (
@@ -383,11 +407,39 @@ export default function MarketplaceCheckout() {
                     onInstallmentMonthsChange={setInstallmentMonths}
                   />
                 </Card>
+                <Card as="section" aria-labelledby="letter-address-heading" className="sm:p-6">
+                  <div className="flex items-start justify-between gap-4">
+                    <h2 id="letter-address-heading" className="font-semibold text-[var(--foreground)]">
+                      {askAddress ? "Where should your allocation letter be addressed?" : "Your allocation letter will be addressed to"}
+                    </h2>
+                    {!askAddress && <Button variant="link" onClick={() => setEditingAddress(true)} aria-label="Change the address on your allocation letter">Change</Button>}
+                  </div>
+                  {askAddress ? (
+                    <>
+                      <p className="text-sm text-[var(--muted-foreground)] mb-4">
+                        Your postal address, printed under your name. You give it once — this purchase keeps it, and you can change it for later ones in Settings.
+                      </p>
+                      {addressRequired && (
+                        <Alert tone="warning" className="mb-4">We need your address before you buy. Nothing has been charged, and {plotLabel(plot)} is still held for you.</Alert>
+                      )}
+                      <AddressForm id="checkout-address" initial={address} onSaved={addressSaved}
+                        submitLabel={addressRequired ? "Save and continue" : "Save address"}
+                        onCancel={address && editingAddress && !addressRequired ? () => setEditingAddress(false) : undefined} />
+                    </>
+                  ) : (
+                    <address className="not-italic text-sm text-[var(--foreground)] leading-relaxed mt-3">
+                      <div className="font-medium">{user.name}</div>
+                      {addressLines(address!).map((line) => <div key={line}>{line}</div>)}
+                      {user.phone && <div className="text-[var(--muted-foreground)]">{showInternational(user.phone)}</div>}
+                    </address>
+                  )}
+                </Card>
                 {errorAlert}
                 <div className={ACTIONS}>
-                  <Button size="lg" className={PRIMARY_WIDTH} onClick={goToPayment} disabled={loading}>
+                  <Button size="lg" className={PRIMARY_WIDTH} onClick={goToPayment} disabled={loading || askAddress}>
                     {loading ? "Starting your purchase…" : live ? "Continue to payment" : "Choose payment method"}
                   </Button>
+                  {askAddress && <span className="text-sm text-[var(--muted-foreground)]">Save your address to continue.</span>}
                 </div>
               </>
             )}
