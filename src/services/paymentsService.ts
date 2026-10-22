@@ -13,7 +13,9 @@ import { apiClient, ApiError, nullIfNotFound } from "../lib/apiClient";
 import { isMock } from "../lib/backends";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import type { PaymentPlanType } from "./marketplaceService";
-import { mockTransactionStore, type OfferSummary, type TransactionStatus } from "./marketplaceCheckoutService";
+import { mockTransactionStore, type OfferSummary, type PlanSchedule, type Transaction, type TransactionStatus } from "./marketplaceCheckoutService";
+import { addDocuments } from "./documentsService";
+import { confirmOwnedPayments, fetchOwnedPlotById, recordOwnedPayment, updateOwnedPlotStatus } from "./portfolioService";
 import type { PaymentStatus, RefundStatus } from "./paymentTypes";
 import type { PurchaseAddress } from "./addressService";
 
@@ -60,6 +62,8 @@ export interface Purchase {
   buyerAddress: PurchaseAddress | null;
   // The developer's offer (changeset 098); null on purchases opened before it.
   offer: OfferSummary | null;
+  // An instalment purchase's fixed plan; null for outright.
+  schedule: PlanSchedule | null;
 }
 
 // One attempt to collect money (PaymentDto).
@@ -81,7 +85,10 @@ export interface Payment {
 }
 
 export async function fetchPurchase(id: string): Promise<Purchase | null> {
-  if (!isMock("checkout")) return nullIfNotFound(apiClient.get<Purchase>(`/api/checkout/transactions/${id}`));
+  if (!isMock("checkout")) {
+    const p = await nullIfNotFound(apiClient.get<Purchase>(`/api/checkout/transactions/${id}`));
+    return p ? { ...p, schedule: p.schedule ?? null } : null;
+  }
   return mockPurchase(id);
 }
 
@@ -93,31 +100,35 @@ export async function fetchMyPurchases(params: PageParams = {}): Promise<Page<Pu
     if (params.cursor) qp.set("cursor", params.cursor);
     const page = await apiClient.get<{ items: Purchase[]; total: number; cursor: string | null; hasMore: boolean }>(
       `/api/checkout/transactions/mine${qp.size ? `?${qp}` : ""}`);
-    return { items: page.items, total: page.total, cursor: page.cursor ?? undefined, hasMore: page.hasMore };
+    return { items: page.items.map((p) => ({ ...p, schedule: p.schedule ?? null })), total: page.total, cursor: page.cursor ?? undefined, hasMore: page.hasMore };
   }
   const all = [...mockTransactionStore().keys()].map(mockPurchase).filter((p): p is Purchase => !!p)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return paginateMock(all, params);
 }
 
-// Start (or resume) paying. 201 = a new Paystack link; 200 = the one from the
-// last 30 minutes, handed back — treated the same. Send the browser to
+// Start (or resume) paying. It charges whatever is due NOW: the price, a
+// plan's deposit, its next instalment — or with `balance`, everything still
+// owed on the plan in one payment (no discount). The amount is the backend's
+// (`amount`). 201 = a new Paystack link; 200 = the one from the last 30
+// minutes, handed back — treated the same. Send the browser to
 // `authorizationUrl` next.
-export async function startPayment(transactionId: string): Promise<Payment> {
-  if (!isMock("checkout")) return apiClient.post<Payment>(`/api/transactions/${transactionId}/payments`);
+export async function startPayment(transactionId: string, options: { balance?: boolean } = {}): Promise<Payment> {
+  if (!isMock("checkout")) {
+    return apiClient.post<Payment>(`/api/transactions/${transactionId}/payments${options.balance ? "?balance=true" : ""}`);
+  }
 
   const txn = mockTransactionStore().get(transactionId);
   if (!txn) throw Object.assign(new Error("No such purchase."), { code: "TRANSACTION_NOT_FOUND" });
-  if (txn.status !== "pending_payment") throw Object.assign(new Error("This purchase can't be paid for now."), { code: "TRANSACTION_NOT_PAYABLE" });
-  if (txn.offer && !txn.offer.acceptedAt) throw new ApiError(409, "Accept the offer letter before paying.", { code: "OFFER_NOT_ACCEPTED" });
-  const existing = [...mockPayments.values()].find((p) => p.transactionId === transactionId && p.status === "initialized");
+  const due = mockDue(txn, !!options.balance);
+  const existing = [...mockPayments.values()].find((p) => p.transactionId === transactionId && p.status === "initialized" && p.purpose === due.purpose);
   if (existing) return existing;
   const reference = `PAY-${Date.now().toString(36).toUpperCase()}`;
   // Demo mode has no Paystack: "the gateway" sends the buyer straight back.
-  const payment: Payment = {
-    id: `pay-${Date.now()}`, transactionId, reference, status: "initialized", amount: txn.totalPrice, currency: "NGN",
+  const payment: MockPayment = {
+    id: `pay-${Date.now()}`, transactionId, reference, status: "initialized", amount: due.amount, currency: "NGN",
     authorizationUrl: `/payments/return?reference=${reference}&trxref=${reference}`, createdAt: new Date().toISOString(),
-    gatewayResponse: null, channel: null, paidAt: null, underReview: false,
+    gatewayResponse: null, channel: null, paidAt: null, underReview: false, purpose: due.purpose, sequence: due.sequence,
   };
   mockPayments.set(reference, payment);
   return payment;
@@ -138,8 +149,14 @@ export async function verifyPayment(reference: string): Promise<Payment> {
     payment.gatewayResponse = "Approved";
     const txn = mockTransactionStore().get(payment.transactionId);
     if (txn && txn.status === "pending_payment") txn.status = "awaiting_finance";
+    // An instalment or a pay-off: on the plan's record, awaiting finance.
+    if (txn?.status === "on_plan" && (payment.purpose === "instalment" || payment.purpose === "balance")) {
+      const plot = await fetchOwnedPlotById(txn.id);
+      if (plot) await recordOwnedPayment(plot.id, { id: payment.reference, date: payment.paidAt.slice(0, 10), amount: payment.amount, currency: "NGN", type: payment.purpose, status: "pending_verification", receiptId: null });
+    }
   }
-  return { ...payment };
+  const { purpose: _purpose, sequence: _sequence, financeVerifiedAt: _at, ...shown } = payment;
+  return { ...shown };
 }
 
 // ─── Refunds (the buyer's side) ──────────────────────────────────────────────
@@ -213,7 +230,96 @@ const MOCK_BANKS: Bank[] = [
 ];
 const mockRefunds = new Map<string, BuyerRefund>();
 
-const mockPayments = new Map<string, Payment>();
+// What a demo payment was for — the backend keeps this to itself (PaymentDto
+// has no purpose); the return page reads the purchase instead.
+type PaymentPurpose = "full_price" | "deposit" | "instalment" | "balance";
+type MockPayment = Payment & { purpose: PaymentPurpose; sequence?: number; financeVerifiedAt?: string };
+const mockPayments = new Map<string, MockPayment>();
+
+function refuse(code: string, message: string): never {
+  throw new ApiError(409, message, { code });
+}
+
+// Which instalments finance has verified so far, by the backend's rules.
+function verifiedThrough(txn: Transaction): number {
+  const mine = [...mockPayments.values()].filter((p) => p.transactionId === txn.id && p.financeVerifiedAt);
+  if (mine.some((p) => p.purpose === "balance")) return txn.schedule?.instalments.length ?? 0;
+  return Math.max(0, ...mine.filter((p) => p.purpose === "instalment").map((p) => p.sequence ?? 0));
+}
+
+// What Pay charges now, refused as the backend refuses it.
+function mockDue(txn: Transaction, balance: boolean): { amount: number; purpose: PaymentPurpose; sequence?: number } {
+  const s = txn.schedule;
+  if (balance && (txn.status !== "on_plan" || !s)) refuse("NOTHING_TO_PAY_OFF", "There's no active plan on this purchase to pay off.");
+  if (txn.status === "on_plan" && s) {
+    const waiting = [...mockPayments.values()].some((p) => p.transactionId === txn.id && p.status === "succeeded" && !p.financeVerifiedAt);
+    if (waiting) refuse("INSTALMENT_AWAITING_VERIFICATION", "Your last payment is waiting for the developer's finance team to verify it.");
+    const left = s.instalments.filter((i) => i.sequence > verifiedThrough(txn));
+    if (left.length === 0) refuse("TRANSACTION_NOT_PAYABLE", "This plan is already paid off.");
+    // Demo arithmetic standing in for the backend's: what's still owed.
+    if (balance) return { amount: Math.round(left.reduce((sum, i) => sum + i.amount, 0) * 100) / 100, purpose: "balance" };
+    return { amount: left[0].amount, purpose: "instalment", sequence: left[0].sequence };
+  }
+  if (txn.status !== "pending_payment") refuse("TRANSACTION_NOT_PAYABLE", "This purchase can't be paid for now.");
+  if (txn.offer && !txn.offer.acceptedAt) refuse("OFFER_NOT_ACCEPTED", "Accept the offer letter before paying.");
+  return s ? { amount: s.deposit, purpose: "deposit" } : { amount: txn.totalPrice, purpose: "full_price" };
+}
+
+// ─── Demo finance, for plan payments made from the purchase page ────────────
+//
+// The portal's finance queue (financeService) lists these in demo mode, and
+// verifying one moves the plan on as the backend does: a deposit holds the
+// plot on the plan; the last instalment, or a balance, sells it.
+
+export interface MockPlanQueueItem {
+  transaction: Transaction;
+  payment: Payment;
+  paymentFor: "deposit" | "instalment" | "balance";
+  sequence: number | null;
+  dueDate: string | null;
+}
+
+export function mockPlanPaymentsAwaitingFinance(): MockPlanQueueItem[] {
+  return [...mockPayments.values()].flatMap((p) => {
+    const txn = mockTransactionStore().get(p.transactionId);
+    if (!txn?.schedule || p.status !== "succeeded" || p.financeVerifiedAt || p.purpose === "full_price") return [];
+    const due = p.sequence ? txn.schedule.instalments.find((i) => i.sequence === p.sequence) : undefined;
+    return [{ transaction: txn, payment: p, paymentFor: p.purpose, sequence: p.sequence ?? null, dueDate: due?.dueDate ?? null }];
+  });
+}
+
+export async function mockVerifyPlanPayment(transactionId: string): Promise<{ status: "on_plan" | "verified"; letter: string | null }> {
+  const txn = mockTransactionStore().get(transactionId);
+  const p = [...mockPayments.values()].find((x) => x.transactionId === transactionId && x.status === "succeeded" && !x.financeVerifiedAt);
+  if (!txn?.schedule || !p) refuse("TRANSACTION_NOT_AWAITING_FINANCE", "This payment isn't waiting for verification any more.");
+  p.financeVerifiedAt = new Date().toISOString();
+  const s = txn.schedule;
+  const through = verifiedThrough(txn);
+  const done = p.purpose === "balance" || through >= s.instalments.length;
+  txn.status = done ? "verified" : "on_plan";
+  const plot = await fetchOwnedPlotById(txn.id);
+  const next = s.instalments.find((i) => i.sequence === through + 1);
+  const date = new Date().toISOString().slice(0, 10);
+  const doc = { plotId: plot?.id, transactionId: txn.id, date, status: "valid" as const, size: null };
+  let letter: string | null = null;
+  if (p.purpose === "deposit") {
+    letter = `HT-PAL-${new Date().getFullYear()}-${txn.reference.slice(-6)}`;
+    await addDocuments([{ ...doc, id: `doc-${txn.id}-pal`, type: "provisional_allocation_letter", number: letter, title: `Provisional allocation letter ${letter} — ${txn.plotLabel}, ${txn.listingName}`, qrCode: `QR-PAL-${txn.id}` }]);
+  } else if (done) {
+    letter = `HT-ALC-${new Date().getFullYear()}-${txn.reference.slice(-6)}`;
+    await addDocuments([{ ...doc, id: `doc-${txn.id}-alc`, type: "allocation_letter", number: letter, title: `Allocation letter ${letter} — ${txn.plotLabel}, ${txn.listingName}`, qrCode: `QR-ALC-${txn.id}` }]);
+  }
+  if (plot) {
+    await confirmOwnedPayments(plot.id);
+    await updateOwnedPlotStatus(plot.id, done ? "completed" : "installment_active", {
+      paidAmount: plot.paidAmount + p.amount,
+      installmentsPaid: through,
+      nextDueDate: done ? undefined : next?.dueDate,
+      nextDueAmount: done ? undefined : next?.amount,
+    });
+  }
+  return { status: txn.status, letter };
+}
 
 function mockPurchase(id: string): Purchase | null {
   const txn = mockTransactionStore().get(id);
@@ -223,9 +329,10 @@ function mockPurchase(id: string): Purchase | null {
   return {
     id: txn.id, reference: txn.reference, estateId: txn.listingId, plotId: txn.plotId, reservationId: txn.reservationId,
     basePrice: txn.basePrice, cornerPremiumPct: txn.cornerPremiumPct ?? null, totalPrice: txn.totalPrice, currency: "NGN",
-    intent: txn.intent, plan: txn.plan, installmentMonths: txn.installmentMonths ?? null, status: txn.status, createdAt: txn.createdAt,
+    intent: txn.intent, plan: txn.plan, installmentMonths: txn.schedule?.instalments.length ?? null, status: txn.status, createdAt: txn.createdAt,
     buyerAddress: txn.buyerAddress ?? null,
     offer: txn.offer ? { ...txn.offer } : null,
+    schedule: txn.schedule ?? null,
     payment: shown ? {
       reference: shown.reference, status: shown.status, amountPaid: shown.status === "succeeded" ? shown.amount : null,
       paidAt: shown.paidAt, underReview: false, reviewKind: null, refundStatus: null, receiptId: null, receiptNumber: null,

@@ -36,6 +36,7 @@ import { mockListingPhotos } from "../data/mockEstatePhotos";
 import { mockListingTitle } from "../data/mockEstateTitles";
 import { tiersFromPlots, type PriceTier, type TierAvailability } from "./estatesService";
 import { fetchTenantByIdSync, tenantDisplayName } from "./tenantsService";
+import { mockTierPlans, type TierPlan } from "./paymentPlansService";
 
 // PriceTier/TierAvailability are defined once, in estatesService.ts (the
 // function that actually derives tiers from real plot data) — re-exported
@@ -234,6 +235,18 @@ export function pricePerSqm(tier: PriceTier): number {
   return tier.price / tier.sizeSqm; // off the nominal size, per spec
 }
 
+// Instalments are on offer when any tier has a declared plan.
+export function offersInstalments(listing: Pick<Estate, "priceTiers">): boolean {
+  return listing.priceTiers.some((t) => (t.paymentPlans?.length ?? 0) > 0);
+}
+
+// What the listing offers: outright always, instalments when a tier has a
+// plan. Milestone stays listed where a demo estate says so, but can't be paid.
+function plansOffered(tiers: PriceTier[], declared: PaymentPlanType[] = ["outright", "installment"]): PaymentPlanType[] {
+  const instalments = tiers.some((t) => (t.paymentPlans?.length ?? 0) > 0);
+  return declared.filter((p) => p !== "installment" || instalments);
+}
+
 export function cornerPrice(tier: PriceTier, listing: Pick<Estate, "cornerPremiumPct">): number {
   return tier.price * (1 + listing.cornerPremiumPct / 100);
 }
@@ -268,6 +281,7 @@ export function projectListing(estate: MockEstate): Listing | null {
 
   const photos = mockListingPhotos(estate.id);
   const title = mockListingTitle(estate.id);
+  const priceTiers = tiersFromPlots(estate).map((t) => ({ ...t, paymentPlans: mockTierPlans(estate.id, t.price) }));
   return {
     id: estate.id,
     name: estate.name,
@@ -282,9 +296,9 @@ export function projectListing(estate: MockEstate): Listing | null {
     // created in the portal has no title until one is declared.
     ...title,
     lastVerifiedDate: [estate.lastVerified, title.titleVerifiedAt?.slice(0, 10)].filter(Boolean).sort().pop() ?? null,
-    priceTiers: tiersFromPlots(estate),
+    priceTiers,
     cornerPremiumPct: estate.cornerPremiumPct,
-    paymentPlans: estate.paymentPlans,
+    paymentPlans: plansOffered(priceTiers, estate.paymentPlans),
     intent: estate.intent,
     publishedDate: estate.publishedDate,
     // No office in mock data: none was ever recorded, and none is invented.
@@ -316,6 +330,8 @@ interface ListingTierDto {
   availability: TierAvailability;
   plotsRemaining: number;
   commitment: unknown;
+  // Empty for an outright-only estate.
+  paymentPlans?: TierPlan[] | null;
 }
 
 export interface ListingDto {
@@ -350,13 +366,12 @@ export interface ListingDto {
 // listing) is read from what's already loaded instead of fetching per card.
 const listingDtoCache = new Map<string, ListingDto>();
 
-// The backend accepts every plan for every estate (CreateTransactionRequest
-// validates the plan, not per-estate availability), so a live listing offers
-// all three — what the backend actually allows, not an invented restriction.
-const ALL_PLANS: PaymentPlanType[] = ["outright", "installment", "milestone"];
-
 function fromListingDto(dto: ListingDto): Listing {
   listingDtoCache.set(dto.id, dto);
+  const priceTiers: PriceTier[] = dto.priceTiers.map((t) => ({
+    id: t.id, sizeSqm: t.sizeSqm ?? 0, actualAreaSqm: t.actualAreaSqm ?? t.sizeSqm ?? 0, price: t.price,
+    availability: t.availability, plotsRemaining: t.plotsRemaining, currency: t.currency, paymentPlans: t.paymentPlans ?? [],
+  }));
   return {
     id: dto.id,
     name: dto.name,
@@ -374,12 +389,10 @@ function fromListingDto(dto: ListingDto): Listing {
     lastVerifiedDate: dto.lastVerifiedDate,
     // A unit-type tier has no size of its own; 0 here is "no size", never a
     // figure to compute with (see INTEGRATION_TESTING.md, known limits).
-    priceTiers: dto.priceTiers.map((t) => ({
-      id: t.id, sizeSqm: t.sizeSqm ?? 0, actualAreaSqm: t.actualAreaSqm ?? t.sizeSqm ?? 0, price: t.price,
-      availability: t.availability, plotsRemaining: t.plotsRemaining, currency: t.currency,
-    })),
+    priceTiers,
     cornerPremiumPct: dto.cornerPremiumPct ?? 0,
-    paymentPlans: ALL_PLANS,
+    // Milestone isn't offered online; instalments only where a tier has a plan.
+    paymentPlans: plansOffered(priceTiers),
     intent: (dto.intent === "investment" ? "investment" : dto.intent === "both" ? "both" : "development"),
     publishedDate: dto.publishedDate ?? "",
     seller: { branchName: dto.seller.branchName, companyName: dto.seller.companyName, office: dto.seller.office },
@@ -400,7 +413,8 @@ export async function fetchListingDto(id: string): Promise<ListingDto | null> {
 function liveQuery(filters: ListingFilters, params: PageParams): string {
   const qp = new URLSearchParams();
   // The backend's parameter names. `paymentPlan` and `verifiedOnly` have no
-  // backend filter: every listing is verified and accepts every plan.
+  // backend filter: every listing is verified, and plans are read off the
+  // tiers (below).
   if (filters.query) qp.set("q", filters.query);
   if (filters.state) qp.set("state", filters.state);
   if (filters.minPrice !== undefined) qp.set("minPrice", String(filters.minPrice));
@@ -424,6 +438,8 @@ export async function fetchListings(filters: ListingFilters = {}, params: PagePa
     // filters by status too, the declared ones are taken out here.
     const titleType = filters.titleType;
     if (titleType) items = items.filter((l) => matchesTitleFilter(l, titleType));
+    // "Has instalments" = a tier with a declared plan; "outright" is every listing.
+    if (filters.paymentPlan && filters.paymentPlan !== "outright") items = items.filter((l) => l.paymentPlans.includes(filters.paymentPlan!));
     return { items, total: page.total - (page.items.length - items.length), cursor: page.cursor ?? undefined, hasMore: page.hasMore };
   }
 

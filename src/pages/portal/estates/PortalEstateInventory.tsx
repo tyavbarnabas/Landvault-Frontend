@@ -40,6 +40,7 @@ const STATUS_TONE: Record<PortalPlotStatus, BadgeVariant> = {
   "available-dev": "info",
   "available-inv": "info",
   reserved: "warning",
+  "on-plan": "info",
   sold: "success",
   withheld: "neutral",
 };

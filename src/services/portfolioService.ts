@@ -171,6 +171,22 @@ export async function updateOwnedPlotStatus(id: string, status: OwnedPlot["statu
   return mockOwnedPlots.find((p) => p.id === id);
 }
 
+// Demo mode: a plan payment Paystack confirmed, on the record awaiting finance.
+export async function recordOwnedPayment(id: string, payment: PaymentRecord): Promise<void> {
+  if (!isMock("portfolio")) notOnBackend("Recording a payment from the browser");
+  mockOwnedPlots = mockOwnedPlots.map((p) => (p.id === id ? { ...p, payments: [...p.payments, payment] } : p));
+}
+
+// Demo mode: finance verified what was paid, so every pending payment on the
+// record is confirmed.
+export async function confirmOwnedPayments(id: string): Promise<void> {
+  if (!isMock("portfolio")) notOnBackend("Changing a payment from the browser");
+  const at = new Date().toISOString();
+  mockOwnedPlots = mockOwnedPlots.map((p) => (p.id === id
+    ? { ...p, payments: p.payments.map((pay) => (pay.status === "pending_verification" ? { ...pay, status: "confirmed", verifiedAt: at } : pay)) }
+    : p));
+}
+
 // ─── Installment schedule ───────────────────────────────────────────────────
 //
 // TODO (backend): a real schedule is Spring Boot-owned — varying period

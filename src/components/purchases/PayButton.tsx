@@ -3,6 +3,7 @@
 // to /payments/return, which asks the backend what actually happened.
 
 import { useState } from "react";
+import { useNavigate, type NavigateFunction } from "react-router-dom";
 import { ApiError, ApiTransportError } from "../../lib/apiClient";
 import { startPayment } from "../../services/paymentsService";
 import Button from "../ui/Button";
@@ -17,6 +18,8 @@ export function paymentErrorMessage(err: unknown): string {
     case "TRANSACTION_NOT_PAYABLE": return message || "This purchase can't be paid for — it may already be paid, verified or ended.";
     case "TRANSACTION_NOT_FOUND": return "We couldn't find this purchase.";
     case "OFFER_NOT_ACCEPTED": return "Accept the offer letter first — payment opens straight after.";
+    case "INSTALMENT_AWAITING_VERIFICATION": return "Your last payment is waiting for the developer's finance team to verify it. You can pay the next one after that.";
+    case "NOTHING_TO_PAY_OFF": return "There's no active plan on this purchase to pay off.";
     // The rest (PAYMENT_PLAN_NOT_SUPPORTED, CURRENCY_NOT_SUPPORTED,
     // PAYMENT_PROVIDER_REFUSED, INVALID_AMOUNT): the backend's message is
     // written for people.
@@ -24,17 +27,30 @@ export function paymentErrorMessage(err: unknown): string {
   }
 }
 
-export default function PayButton({ transactionId, label, busy, onBusy, onOfferNotAccepted }: {
+// Off to Paystack. Demo mode's "gateway" link is a path in this app, followed
+// in-app so the demo's in-memory purchase survives the trip.
+export function goToPaystack(url: string, navigate: NavigateFunction): void {
+  if (url.startsWith("/")) navigate(url);
+  else window.location.assign(url);
+}
+
+export default function PayButton({ transactionId, label, busy, onBusy, onOfferNotAccepted, disabled, note = true, onRefused }: {
   transactionId: string;
   label: string;
   busy?: boolean;
   onBusy?: (busy: boolean) => void;
+  disabled?: boolean;
+  // The "You'll pay on Paystack's secure page" line under the button.
+  note?: boolean;
+  // A refusal the page shows itself (e.g. refetching on INSTALMENT_AWAITING_VERIFICATION).
+  onRefused?: (code: string | undefined) => void;
   // 409 OFFER_NOT_ACCEPTED: where to show the offer and its Accept step.
   onOfferNotAccepted?: () => void;
 }) {
   const [error, setError] = useState("");
   const [localBusy, setLocalBusy] = useState(false);
   const working = busy ?? localBusy;
+  const navigate = useNavigate();
 
   const pay = async () => {
     setError("");
@@ -43,7 +59,7 @@ export default function PayButton({ transactionId, label, busy, onBusy, onOfferN
     try {
       const payment = await startPayment(transactionId);
       // Leave for Paystack. Nothing is "paid" until the return page verifies.
-      window.location.assign(payment.authorizationUrl);
+      goToPaystack(payment.authorizationUrl, navigate);
     } catch (err) {
       if (onOfferNotAccepted && err instanceof ApiError && err.body?.code === "OFFER_NOT_ACCEPTED") {
         setLocalBusy(false);
@@ -52,6 +68,7 @@ export default function PayButton({ transactionId, label, busy, onBusy, onOfferN
         return;
       }
       setError(paymentErrorMessage(err));
+      onRefused?.(err instanceof ApiError ? err.body?.code : undefined);
       setLocalBusy(false);
       onBusy?.(false);
     }
@@ -59,9 +76,9 @@ export default function PayButton({ transactionId, label, busy, onBusy, onOfferN
 
   return (
     <div className="space-y-2">
-      <Button size="lg" fullWidth onClick={pay} disabled={working}>{working ? "Opening Paystack…" : label}</Button>
+      <Button size="lg" fullWidth onClick={pay} disabled={working || disabled}>{working ? "Opening Paystack…" : label}</Button>
       {error && <ErrorText>{error}</ErrorText>}
-      <p className="text-xs text-[var(--muted-foreground)]">You'll pay on Paystack's secure page — by card or bank transfer — then come back here.</p>
+      {note && <p className="text-xs text-[var(--muted-foreground)]">You'll pay on Paystack's secure page — by card or bank transfer — then come back here.</p>}
     </div>
   );
 }

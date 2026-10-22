@@ -8,6 +8,7 @@ import { ChevronDownIcon, FileCheckIcon, LockIcon, ShieldCheckIcon, ClockIcon } 
 import MoneyRangeDisplay from "../cost/MoneyRangeDisplay";
 import CountdownTimer from "./CountdownTimer";
 import { formatAmount, type Currency } from "../../data/mockData";
+import { formatMoney } from "../../lib/formatCurrency";
 import { plotLabel, type ListingPlot } from "../../services/marketplacePlotsService";
 import type { Listing } from "../../services/marketplaceService";
 import { RESERVATION_SECONDS } from "../../services/reservationService";
@@ -24,6 +25,9 @@ interface OrderSummaryProps {
   holdSecondsLeft: number | null;
   // Whether a hold has started at all, so "Not held yet" stops showing.
   held: boolean;
+  // The instalment plan chosen (the listing's figures, then the purchase's
+  // own schedule once it's open). Null when paying in full.
+  plan?: { name: string; deposit: number; count: number; instalment: number | null; frequency: string; planTotal: number } | null;
 }
 
 const HOLD_MINUTES = Math.round(RESERVATION_SECONDS / 60);
@@ -36,7 +40,7 @@ function total(commitment: TierCommitment, corner: boolean) {
   return corner && commitment.totalCommitmentIfCorner ? commitment.totalCommitmentIfCorner : commitment.totalCommitment;
 }
 
-function Figures({ listing, plot, base, totalPrice, currency, commitment, holdSecondsLeft, held }: OrderSummaryProps) {
+function Figures({ listing, plot, base, totalPrice, currency, commitment, holdSecondsLeft, held, plan }: OrderSummaryProps) {
   const inNaira = commitment?.currency === "NGN" && currency !== "NGN";
   return (
     <div className="space-y-4">
@@ -71,6 +75,14 @@ function Figures({ listing, plot, base, totalPrice, currency, commitment, holdSe
           ))}
         </div>
       )}
+      {plan && (
+        <dl className="rounded-lg bg-[var(--secondary)] px-3.5 py-3 space-y-1.5 text-sm">
+          <div className="font-semibold text-[var(--secondary-foreground)]">{plan.name}</div>
+          <Row label="Deposit" value={formatMoney(plan.deposit, "NGN")} />
+          {plan.instalment !== null && <Row label={`${plan.count} × ${plan.frequency}`} value={formatMoney(plan.instalment, "NGN")} />}
+          <Row label="Plan total" value={formatMoney(plan.planTotal, "NGN")} />
+        </dl>
+      )}
       {holdSecondsLeft !== null ? (
         <CountdownTimer secondsLeft={holdSecondsLeft} />
       ) : !held && (
@@ -101,10 +113,13 @@ const PROMISES: [React.ReactNode, string][] = [
   [<LockIcon key="l" />, "Card and bank payments are taken on Paystack's secure page. HomeTrue never sees your card."],
 ];
 
-export function TrustPromises({ className }: { className?: string }) {
+export function TrustPromises({ className, plan }: { className?: string; plan?: boolean }) {
+  const promises: [React.ReactNode, string][] = plan
+    ? [[<ShieldCheckIcon key="s" />, "The developer verifies each payment. On a plan, the plot is yours once your last instalment is verified."], ...PROMISES.slice(1)]
+    : PROMISES;
   return (
     <ul className={`space-y-3 ${className ?? ""}`}>
-      {PROMISES.map(([icon, text]) => (
+      {promises.map(([icon, text]) => (
         <li key={text} className="flex gap-2.5 text-sm text-[var(--muted-foreground)]">
           <span className="mt-0.5 shrink-0 text-[var(--secondary-foreground)]">{icon}</span>
           {text}
@@ -122,7 +137,7 @@ export default function OrderSummary(props: OrderSummaryProps) {
         {listing.imageUrl && <img src={listing.imageUrl} alt="" loading="lazy" className="w-full aspect-[16/7] object-cover" />}
         <div className="p-6"><Figures {...props} /></div>
       </div>
-      <TrustPromises className="px-1" />
+      <TrustPromises className="px-1" plan={!!props.plan} />
     </aside>
   );
 }

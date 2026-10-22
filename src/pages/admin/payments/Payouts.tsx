@@ -18,7 +18,7 @@
 
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { formatInCurrency } from "../../../data/mockData";
+import { formatMoney } from "../../../lib/formatCurrency";
 import { ApiError, ApiTransportError } from "../../../lib/apiClient";
 import { useFetch, type UseFetchResult } from "../../../lib/useFetch";
 import { formatDay, formatDayTime } from "../../../lib/formatDate";
@@ -40,7 +40,7 @@ import { Field, Input } from "../../../components/ui/Field";
 import StatusBadge, { payoutStatusBadge } from "../../../components/StatusBadge";
 import ProblemNote, { type MoneyProblem } from "../../../components/payments/ProblemNote";
 import { AlertIcon, DownloadIcon, WalletIcon } from "../../../components/icons";
-import { failedPayouts, type Payout } from "../../../services/financeService";
+import { failedPayouts, trancheText, type Payout } from "../../../services/financeService";
 import type { PayoutBlocker, PayoutStatus } from "../../../services/paymentTypes";
 import {
   cancelPayout, fetchPayoutHistory, fetchReadyPayouts, resendPayoutOtp, sendPayout, submitPayoutOtp,
@@ -49,7 +49,7 @@ import {
 
 type Tab = "ready" | "awaiting" | "history";
 const TAB_IDS: Tab[] = ["ready", "awaiting", "history"];
-const money = (n: number, c: string) => formatInCurrency(n, c);
+const money = (n: number, c: string) => formatMoney(n, c);
 
 // Totals per currency, never added across currencies.
 function totals(items: { amount: number; currency: string }[]): string {
@@ -129,7 +129,7 @@ function PayoutFigures({ ready, history, awaiting }: { ready: ReadyPayout[]; his
 
 // ─── Ready to pay out ────────────────────────────────────────────────────────
 
-const READY_COLUMNS = ["Company", "Sale", "Owed", "Next transfer", "To account"];
+const READY_COLUMNS = ["Company", "What's owed", "Owed now", "Next transfer", "To account"];
 const READY_GRID = "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)_10rem]";
 
 function Ready({ list, canSeeCompanies, onChanged }: { list: UseFetchResult<ReadyPayout[]>; canSeeCompanies: boolean; onChanged: (message?: string) => void }) {
@@ -138,7 +138,7 @@ function Ready({ list, canSeeCompanies, onChanged }: { list: UseFetchResult<Read
   if (!list.data?.length) return <Card padding="sm"><EmptyState title="Nothing to pay out" description="Verified sales that are owed money appear here." /></Card>;
   return (
     <DisclosureTable columns={READY_COLUMNS} grid={READY_GRID} label="Sales ready to pay out">
-      {list.data.map((s) => <ReadyRow key={s.transactionId} sale={s} canSeeCompanies={canSeeCompanies} onChanged={onChanged} />)}
+      {list.data.map((s) => <ReadyRow key={`${s.transactionId}-${s.tranche ?? ""}-${s.sharePaymentId ?? ""}`} sale={s} canSeeCompanies={canSeeCompanies} onChanged={onChanged} />)}
     </DisclosureTable>
   );
 }
@@ -168,14 +168,18 @@ function ReadyRow({ sale, canSeeCompanies, onChanged }: { sale: ReadyPayout; can
   const cells = [
     <span className="font-semibold text-[var(--foreground)]">{sale.companyName || "Company not shown"}</span>,
     <>
-      <div className="text-sm text-[var(--foreground)]">{sale.estateName}</div>
+      {/* The tranche is the row's title: "Developer's share of the deposit". */}
+      {sale.trancheLabel && <div className="text-sm font-semibold text-[var(--foreground)]">{sale.trancheLabel}</div>}
+      <div className={sale.trancheLabel ? "text-xs text-[var(--muted-foreground)]" : "text-sm text-[var(--foreground)]"}>{sale.estateName}</div>
       <div className="text-xs text-[var(--muted-foreground)]">{sale.plotLabel} · <span className="font-mono-data">{sale.transactionReference}</span></div>
-      <div className="text-xs text-[var(--muted-foreground)]">Verified {formatDay(sale.verifiedAt)}</div>
+      {sale.heldInEscrow != null
+        ? <div className="text-xs text-[var(--info-text)]">HomeTrue holds {money(sale.heldInEscrow, sale.currency)} in escrow until the plan completes</div>
+        : <div className="text-xs text-[var(--muted-foreground)]">Verified {formatDay(sale.verifiedAt)}</div>}
     </>,
     <>
       <span className="lg:hidden text-xs text-[var(--muted-foreground)]">Owed </span>
       <span className="font-mono-data font-medium text-[var(--foreground)]">{money(sale.amountOwed ?? sale.amount, sale.currency)}</span>
-      {sale.amountOwed !== null && sale.amountOwed !== sale.amount && <div className="text-xs text-[var(--muted-foreground)]">of {money(sale.amount, sale.currency)}</div>}
+      {sale.amountOwed !== null && sale.amountOwed !== sale.amount && !sale.tranche && <div className="text-xs text-[var(--muted-foreground)]">of {money(sale.amount, sale.currency)}</div>}
     </>,
     parts ? (
       <>
@@ -277,7 +281,7 @@ function PayoutRow({ payout: p, company, onChanged }: { payout: Payout; company:
     <span className="font-semibold text-[var(--foreground)]">{company}</span>,
     <>
       <span className="font-mono-data font-medium text-[var(--foreground)]">{money(p.amount, p.currency)}</span>
-      <div className="text-xs text-[var(--muted-foreground)]">{p.partCount > 1 ? `Part ${p.partNumber} of ${p.partCount}` : "One transfer"}</div>
+      <div className="text-xs text-[var(--muted-foreground)]">{[trancheText(p), p.partCount > 1 ? `Part ${p.partNumber} of ${p.partCount}` : "one transfer"].filter(Boolean).join(" · ").replace(/^one/, "One")}</div>
     </>,
     <span className="text-sm text-[var(--foreground)]">{p.bankName ? `${p.bankName}${p.accountLast4 ? ` ••${p.accountLast4}` : ""}` : "—"}</span>,
     <>
@@ -387,6 +391,8 @@ export function payoutProblem(err: unknown): PayoutProblem {
     case "PAYMENT_PROVIDER_UNAVAILABLE": return { message: "Paystack isn't responding right now. Try again in a moment." };
     case "PAYOUT_IN_PROGRESS": return { message: "A payout for this sale is already in progress. Finish or cancel it under Awaiting code." };
     case "SALE_ALREADY_PAID": return { message: "This sale has already been paid in full." };
+    // Information, not an error: an instalment plan's escrow.
+    case "HELD_IN_ESCROW": return { message: "Every share owed so far has been paid; the rest is released when the buyer completes the plan.", info: true };
     case "PAYOUT_NOT_AWAITING_OTP": return { message: "This payout isn't waiting for a code any more — check History." };
     case "COMPANY_NOT_ACTIVE": return { message: "The company is suspended, so payouts are on hold." };
     case "NO_APPROVED_PAYOUT_ACCOUNT": return { message: "The company has no approved payout account." };

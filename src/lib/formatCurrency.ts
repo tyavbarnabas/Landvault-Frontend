@@ -18,6 +18,15 @@ export function formatDeclaredAmount(amount: number, currency: Currency): string
   return `${SYMBOLS[currency]}${amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
+// A plan figure as the backend sends it, kobo and all when there are any
+// (₦1,796,666.66 — rounding it would show a figure nobody owes). Any
+// currency code; no conversion.
+export function formatMoney(amount: number, currency: string = "NGN"): string {
+  const symbol = (SYMBOLS as Record<string, string>)[currency] ?? `${currency} `;
+  const kobo = Math.round(amount * 100) % 100 !== 0;
+  return `${symbol}${amount.toLocaleString("en-US", { minimumFractionDigits: kobo ? 2 : 0, maximumFractionDigits: 2 })}`;
+}
+
 // Compact display for large NGN figures (₦412M, ₦4.2M) with the full precise
 // value available via the caller's `title` attribute (formatAmount). Never
 // does floating-point math on the underlying amount — only on the display

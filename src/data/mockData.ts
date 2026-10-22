@@ -3,7 +3,9 @@ import type { GeoPoint } from "../lib/geometry";
 
 export type { GeoPoint };
 
-export type PlotStatus = "available-dev" | "available-inv" | "reserved" | "sold" | "withheld";
+// "on-plan": held for a buyer on an instalment plan (deposit verified) — not
+// for sale and can't be withheld, but not sold until the plan completes.
+export type PlotStatus = "available-dev" | "available-inv" | "reserved" | "on-plan" | "sold" | "withheld";
 export type PaymentPlan = "outright" | "milestone" | "installment";
 export type Currency = "NGN" | "USD" | "GBP" | "EUR";
 export type KYCStatus = "unsubmitted" | "submitted" | "under_review" | "approved" | "rejected";
@@ -120,7 +122,9 @@ export interface Payment {
   date: string;
   amount: number;
   currency: Currency;
-  type: "installment" | "outright" | "delta" | "deposit";
+  // Live plans send "deposit", "instalment" or "balance" (a pay-off);
+  // "installment" is the older demo records' spelling.
+  type: "installment" | "instalment" | "balance" | "outright" | "delta" | "deposit";
   // "pending_verification": the gateway webhook confirmed the charge but a
   // Finance Officer hasn't signed off yet — see the two-step audit in
   // portfolioService.ts's submitInstallmentPayment/verifyInstallmentPayment
@@ -224,7 +228,9 @@ export interface OwnedPlot {
 export interface Document {
   id: string;
   plotId?: string;
-  type: "receipt" | "offer_letter" | "allocation_letter" | "deed_of_assignment" | "poa_draft";
+  // provisional_allocation_letter: issued when a plan's deposit is verified
+  // (HT-PAL-…); the final allocation_letter follows when it's paid in full.
+  type: "receipt" | "offer_letter" | "provisional_allocation_letter" | "allocation_letter" | "deed_of_assignment" | "poa_draft";
   title: string;
   date: string;
   // Live documents are always "valid" — a refunded receipt stays valid (the

@@ -24,10 +24,11 @@ function demoOnly(): never {
 import type { Currency, Document, OwnedPlot } from "../data/mockData";
 import { FX_RATES } from "../data/mockData";
 import type { PaymentPlanType } from "./marketplaceService";
-import { addOwnedPlot, updateOwnedPlotStatus } from "./portfolioService";
+import { addOwnedPlot, confirmOwnedPayments, updateOwnedPlotStatus } from "./portfolioService";
 import { addDocuments } from "./documentsService";
 import { convertReservation } from "./reservationService";
 import { mockAddressFor, type Address, type PurchaseAddress } from "./addressService";
+import { mockSchedule, type PlanFrequency } from "./paymentPlansService";
 
 export type MarketplacePaymentMethod = "paystack" | "monnify" | "opay" | "titan" | "virtual_account" | "wire";
 
@@ -50,7 +51,28 @@ export function paymentMethodsForCountry(country: string): MarketplacePaymentMet
 // The backend never writes `payment_received`: a paid purchase goes straight
 // from pending_payment to awaiting_finance. Kept because the enum has it; never
 // relied on. `abandoned`: the reservation ended before payment arrived.
-export type TransactionStatus = "pending_payment" | "payment_received" | "awaiting_finance" | "verified" | "rejected" | "abandoned";
+// `on_plan` (instalment plans): the deposit is verified and the plot is held
+// for the buyer on the plan — never theirs until `verified`.
+export type TransactionStatus = "pending_payment" | "payment_received" | "awaiting_finance" | "on_plan" | "verified" | "rejected" | "abandoned";
+
+// An instalment purchase's plan, worked out by the backend from the agreed
+// price when the purchase opened and never recomputed: the developer
+// redeclaring plans later changes nothing. Shown as it comes.
+export interface ScheduledInstalment {
+  sequence: number;
+  dueDate: string;
+  amount: number;
+}
+
+export interface PlanSchedule {
+  planId: string;
+  planName: string;
+  frequency: PlanFrequency;
+  planTotal: number;
+  premium: number;
+  deposit: number;
+  instalments: ScheduledInstalment[];
+}
 
 // The developer's offer letter, issued when the purchase opens (backend
 // changeset 098). The buyer accepts it before paying.
@@ -79,7 +101,9 @@ export interface Transaction {
   tierId: string;
   intent: "development" | "investment";
   plan: PaymentPlanType;
-  installmentMonths?: number;
+  // The declared plan chosen (instalments only), and its fixed schedule.
+  planId?: string;
+  schedule: PlanSchedule | null;
   currency: Currency;
   fxRateLocked?: number;
   amountDue: number;
@@ -114,8 +138,11 @@ export interface InitiateTransactionInput {
   tierId: string;
   intent: "development" | "investment";
   plan: PaymentPlanType;
-  installmentMonths?: number;
+  // The listing's plan id (priceTiers[].paymentPlans[].planId), for
+  // plan "installment". Never a number of months: the plan decides that.
+  planId?: string;
   currency: Currency;
+  // What's due first — the price, or the plan's deposit. Display only.
   amountDue: number;
   totalPrice: number;
   // Demo mode only, to check the buyer has an address as the backend does.
@@ -154,6 +181,7 @@ interface TransactionDto {
   createdAt: string;
   buyerAddress: PurchaseAddress | null;
   offer?: OfferSummary | null;
+  schedule?: PlanSchedule | null;
 }
 
 // The screen's display fields (estate name, plot label, location…) are kept
@@ -175,18 +203,22 @@ function fromTransactionDto(dto: TransactionDto, { buyer: _buyer, ...shown }: In
     createdAt: dto.createdAt,
     buyerAddress: dto.buyerAddress ?? null,
     offer: dto.offer ?? null,
+    schedule: dto.schedule ?? null,
+    // The first payment is the schedule's deposit, never a figure from the page.
+    amountDue: dto.schedule ? dto.schedule.deposit : dto.totalPrice,
   };
 }
 
 export async function initiateTransaction(input: InitiateTransactionInput): Promise<Transaction> {
   if (!isMock("checkout")) {
-    // CreateTransactionRequest: { reservationId, intent, plan, installmentMonths
-    // (installment plans only) }. Nothing else — prices are the backend's.
+    // CreateTransactionRequest: { reservationId, intent, plan, planId (plan
+    // "installment" only) }. Nothing else — prices are the backend's, and
+    // installmentMonths is refused (400 INVALID_PAYMENT_PLAN).
     const dto = await apiClient.post<TransactionDto>("/api/checkout/transactions", {
       reservationId: input.reservationId,
       intent: input.intent,
       plan: input.plan,
-      ...(input.plan === "installment" && input.installmentMonths ? { installmentMonths: input.installmentMonths } : {}),
+      ...(input.plan === "installment" ? { planId: input.planId } : {}),
     });
     return fromTransactionDto(dto, input);
   }
@@ -196,6 +228,12 @@ export async function initiateTransaction(input: InitiateTransactionInput): Prom
   const { buyer, ...shown } = input;
   const address = mockAddressFor(buyer.email) ?? buyer.address ?? null;
   if (!address) throw new ApiError(409, "Add your address before buying.", { code: "ADDRESS_REQUIRED" });
+  // 409 PLAN_NOT_OFFERED: the developer changed the plans since the listing loaded.
+  let schedule: PlanSchedule | null = null;
+  if (input.plan === "installment") {
+    schedule = input.planId ? mockSchedule(input.listingId, input.planId, input.totalPrice) : null;
+    if (!schedule) throw new ApiError(409, "This estate doesn't offer that plan any more.", { code: "PLAN_NOT_OFFERED" });
+  }
   const txn: Transaction = {
     ...shown,
     buyerAddress: { line1: address.line1, line2: address.line2, city: address.city, state: address.state, postalCode: address.postalCode, country: address.country },
@@ -207,6 +245,8 @@ export async function initiateTransaction(input: InitiateTransactionInput): Prom
     status: "pending_payment",
     createdAt: new Date().toISOString(),
     offer: null,
+    schedule,
+    amountDue: schedule ? schedule.deposit : input.totalPrice,
   };
   // The developer's offer, issued as the purchase opens. Demo documents have
   // no file behind them; the real letter is drawn by the backend.
@@ -245,7 +285,8 @@ export async function initiatePayment(transactionId: string, method: Marketplace
 // Step 1 of the two-step audit: the gateway webhook confirms the payment
 // landed. This is NOT allocation — it creates a pending-verification
 // portfolio record so the buyer can close the tab and find it again, then
-// waits for runFinanceVerification below.
+// waits for runFinanceVerification below. Equity doesn't advance before
+// finance verifies, so the record shows nothing paid yet.
 export async function confirmPayment(transactionId: string): Promise<Transaction> {
   if (!isMock("checkout")) demoOnly();
 
@@ -254,13 +295,11 @@ export async function confirmPayment(transactionId: string): Promise<Transaction
 
   await new Promise((resolve) => setTimeout(resolve, 1200)); // gateway webhook
 
-  txn.status = "payment_received";
+  txn.status = "awaiting_finance";
   txn.paymentReceivedAt = new Date().toISOString();
 
-  const isOutright = txn.plan === "outright";
-  const remaining = txn.totalPrice - txn.amountDue;
-  const installmentAmount = !isOutright && txn.installmentMonths ? remaining / txn.installmentMonths : undefined;
-
+  const schedule = txn.schedule;
+  const today = new Date().toISOString().split("T")[0];
   const ownedPlot: OwnedPlot = {
     id: `op-mkt-${Date.now()}`,
     estateId: txn.listingId,
@@ -275,46 +314,41 @@ export async function confirmPayment(transactionId: string): Promise<Transaction
     basePrice: txn.isCorner ? txn.basePrice : undefined,
     titleType: txn.titleType as OwnedPlot["titleType"],
     titleVerified: true, // every marketplace listing is a verified estate (see marketplaceService.ts)
+    transactionId: txn.id,
     intent: txn.intent,
-    plan: txn.plan === "milestone" ? "milestone" : isOutright ? "outright" : "installment",
-    totalPrice: txn.totalPrice,
-    paidAmount: txn.amountDue,
+    plan: schedule ? "installment" : txn.plan === "milestone" ? "milestone" : "outright",
+    totalPrice: schedule ? schedule.planTotal : txn.totalPrice,
+    paidAmount: 0,
     currency: txn.currency,
-    acquiredDate: new Date().toISOString().split("T")[0],
+    acquiredDate: null,
     status: "pending_verification",
-    installmentMonths: isOutright ? undefined : txn.installmentMonths,
-    installmentsPaid: isOutright ? undefined : 0,
-    payments: [
-      {
-        id: `p-${Date.now()}`,
-        date: new Date().toISOString().split("T")[0],
-        amount: txn.amountDue,
-        currency: txn.currency,
-        type: isOutright ? "outright" : "deposit",
-        status: "confirmed",
-        receiptId: txn.reference,
-      },
-    ],
+    installmentMonths: schedule ? schedule.instalments.length : undefined,
+    installmentsPaid: schedule ? 0 : undefined,
+    payments: [{
+      id: `p-${Date.now()}`, date: today, amount: txn.amountDue, currency: txn.currency,
+      type: schedule ? "deposit" : "outright", status: "pending_verification", receiptId: txn.reference,
+    }],
   };
-  void installmentAmount; // set as nextDueAmount only once finance verifies — see below
 
   const saved = await addOwnedPlot(ownedPlot);
   txn.ownedPlotId = saved.id;
   return txn;
 }
 
-function addDays(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split("T")[0];
-}
-
 function buildDocumentsForTransaction(txn: Transaction): Document[] {
   const date = new Date().toISOString().split("T")[0];
   const base = { plotId: txn.ownedPlotId, transactionId: txn.id, date, status: "valid" as const };
+  // A plan's deposit gets a provisional letter; the final one comes when the
+  // plan is paid in full.
+  if (txn.schedule) {
+    return [
+      { id: `doc-${txn.id}-rcp`, type: "receipt", title: `Payment Receipt — ${txn.reference}`, qrCode: `QR-RCP-${txn.id}`, size: "94 KB", ...base },
+      { id: `doc-${txn.id}-pal`, type: "provisional_allocation_letter", title: `Provisional allocation letter — ${txn.listingName}, ${txn.plotLabel}`, qrCode: mockCode(), size: null, ...base },
+    ];
+  }
   return [
     { id: `doc-${txn.id}-rcp`, type: "receipt", title: `Payment Receipt — ${txn.reference}`, qrCode: `QR-RCP-${txn.id}`, size: "94 KB", ...base },
-    { id: `doc-${txn.id}-alc`, type: "allocation_letter", title: `Provisional Allocation Letter — ${txn.listingName}, ${txn.plotLabel}`, qrCode: `QR-ALC-${txn.id}`, size: "203 KB", ...base },
+    { id: `doc-${txn.id}-alc`, type: "allocation_letter", title: `Allocation letter — ${txn.listingName}, ${txn.plotLabel}`, qrCode: `QR-ALC-${txn.id}`, size: "203 KB", ...base },
     { id: `doc-${txn.id}-doa`, type: "deed_of_assignment", title: `Deed of Assignment — ${txn.listingName}, ${txn.plotLabel}`, qrCode: `QR-DOA-${txn.id}`, size: "347 KB", ...base },
     { id: `doc-${txn.id}-poa`, type: "poa_draft", title: `POA Draft — ${txn.listingName}, ${txn.plotLabel}`, qrCode: `QR-POA-${txn.id}`, size: "128 KB", ...base },
   ];
@@ -324,6 +358,8 @@ function buildDocumentsForTransaction(txn: Transaction): Document[] {
 // mode always approves (same convention as checkoutService.ts's
 // confirmPayment) — the "rejected" status and its UI exist and are typed for
 // a real backend, exercised the way KYC's reject path is (see kycService.ts).
+// A plan's deposit doesn't sell: the purchase goes on_plan and the plot is
+// held for the buyer on it.
 export async function runFinanceVerification(transactionId: string): Promise<Transaction> {
   if (!isMock("checkout")) demoOnly();
 
@@ -340,16 +376,19 @@ export async function runFinanceVerification(transactionId: string): Promise<Tra
   // failure here would leave a plot sold with no documents, or documents
   // issued for a plot nobody actually allocated.
   await convertReservation(txn.reservationId);
-  txn.status = "verified";
+  const schedule = txn.schedule;
+  txn.status = schedule ? "on_plan" : "verified";
   txn.financeDecisionAt = new Date().toISOString();
 
   if (txn.ownedPlotId) {
-    const isOutright = txn.plan === "outright";
-    const remaining = txn.totalPrice - txn.amountDue;
-    await updateOwnedPlotStatus(txn.ownedPlotId, isOutright ? "completed" : "installment_active", {
-      nextDueDate: isOutright ? undefined : addDays(30),
-      nextDueAmount: isOutright || !txn.installmentMonths ? undefined : remaining / txn.installmentMonths,
+    const first = schedule?.instalments[0];
+    await updateOwnedPlotStatus(txn.ownedPlotId, schedule ? "installment_active" : "completed", {
+      paidAmount: txn.amountDue,
+      acquiredDate: new Date().toISOString().split("T")[0],
+      nextDueDate: first?.dueDate,
+      nextDueAmount: first?.amount,
     });
+    await confirmOwnedPayments(txn.ownedPlotId);
     await addDocuments(buildDocumentsForTransaction(txn));
   }
 

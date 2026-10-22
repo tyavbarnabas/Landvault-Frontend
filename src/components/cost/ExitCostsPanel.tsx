@@ -59,9 +59,10 @@ export default function ExitCostsPanel({ exitCosts, layout = "cards" }: { exitCo
 
         {/* Falling behind — each step's amount is computed by the backend. */}
         <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-[var(--foreground)] mb-2">If you fall behind on payments</h3>
+          <h3 className="text-sm font-semibold text-[var(--foreground)] mb-2">If an instalment is late</h3>
+          {lateBasis(exitCosts) && <p className="text-xs text-[var(--muted-foreground)] mb-2">{lateBasis(exitCosts)}</p>}
           {penaltySteps.length === 0 ? (
-            <p className="text-sm text-[var(--muted-foreground)]">No late-payment penalty has been declared for this estate.</p>
+            <p className="text-sm text-[var(--muted-foreground)]">{noPenalty(exitCosts)}</p>
           ) : (
             <div className="divide-y divide-[var(--border)]">
               {penaltySteps.map((step) => (
@@ -100,6 +101,20 @@ export default function ExitCostsPanel({ exitCosts, layout = "cards" }: { exitCo
       )}
     </div>
   );
+}
+
+// "If an instalment of ₦962,500 (12-month plan, Standard 250) is late" — the
+// backend prices the steps on one instalment of the basis plan.
+function lateBasis(e: ExitCosts): string | null {
+  if (e.penaltyBasisInstalment == null) return null;
+  const plan = [e.penaltyBasisPlan, e.basisTierLabel].filter(Boolean).join(", ");
+  return `Priced on one instalment of ${formatDeclaredAmount(e.penaltyBasisInstalment, e.currency)}${plan ? ` (${plan})` : ""}. The highest step reached applies.`;
+}
+
+function noPenalty(e: ExitCosts): string {
+  return e.penaltyBasisPlan || e.penaltyBasisInstalment != null
+    ? "The developer hasn't declared a late-payment penalty."
+    : "This estate sells outright only, so there are no instalments to fall behind on.";
 }
 
 function ExitRow({ title, summary, open, children }: { title: string; summary: React.ReactNode; open?: boolean; children: React.ReactNode }) {
@@ -141,9 +156,10 @@ function ExitRows({ exitCosts }: { exitCosts: ExitCosts }) {
           )}
         </dl>
       </ExitRow>
-      <ExitRow title="If you fall behind on payments" summary={penaltySteps.length === 0 ? "No late-payment penalty has been declared for this estate" : `${penaltySteps.length} penalty step${penaltySteps.length > 1 ? "s" : ""} declared`}>
+      <ExitRow title="If an instalment is late" summary={penaltySteps.length === 0 ? noPenalty(exitCosts) : `${penaltySteps.length} penalty step${penaltySteps.length > 1 ? "s" : ""} declared`}>
+        {lateBasis(exitCosts) && <p className="text-xs text-[var(--muted-foreground)] mb-2">{lateBasis(exitCosts)}</p>}
         {penaltySteps.length === 0 ? (
-          <p className="text-sm text-[var(--muted-foreground)]">No late-payment penalty has been declared for this estate.</p>
+          <p className="text-sm text-[var(--muted-foreground)]">{noPenalty(exitCosts)}</p>
         ) : (
           <div className="divide-y divide-[var(--border)]">
             {penaltySteps.map((step) => (

@@ -235,8 +235,7 @@ function EstateGroup({ plots }: { plots: OwnedPlot[] }) {
 function planText(plot: OwnedPlot): string {
   const intent = plot.intent === "investment" ? "Investment" : "Development";
   if (plot.plan === "outright") return `Outright · ${intent}`;
-  if (plot.installmentMonths !== undefined && plot.installmentsPaid !== undefined) return `Instalments · ${plot.installmentsPaid} of ${plot.installmentMonths} paid`;
-  return `Instalments · ${intent}`;
+  return `Instalment plan · ${intent}`;
 }
 
 // What's due next, worded and coloured by how pressing it is.
@@ -282,7 +281,9 @@ function PlotRow({ plot }: { plot: OwnedPlot }) {
         <div className="mt-2.5 lg:mt-0 min-w-0">
           {pending ? (
             // Equity is 0 until finance verifies: a bar at 0% would read as "nothing paid".
-            <p className="text-xs text-[var(--muted-foreground)]">Payment of <span className="font-mono-data">{formatAmount(plot.totalPrice, plot.currency)}</span> received; your equity shows once finance confirms it.</p>
+            plot.plan === "installment"
+              ? <p className="text-xs text-[var(--muted-foreground)]">Deposit received; your equity shows once finance verifies it.</p>
+              : <p className="text-xs text-[var(--muted-foreground)]">Payment of <span className="font-mono-data">{formatAmount(plot.totalPrice, plot.currency)}</span> received; your equity shows once finance confirms it.</p>
           ) : (
             <>
               <div className="mb-1.5 text-sm text-[var(--foreground)]">
@@ -290,6 +291,10 @@ function PlotRow({ plot }: { plot: OwnedPlot }) {
                 <span className="text-xs text-[var(--muted-foreground)]"> of <span className="font-mono-data">{formatAmount(plot.totalPrice, plot.currency)}</span></span>
               </div>
               <PaidBar pct={pct} label={`${plot.plotLabel}: paid`} />
+              {/* The backend's count of verified instalments. */}
+              {plot.plan === "installment" && plot.installmentMonths !== undefined && plot.installmentsPaid !== undefined && (
+                <div className="text-xs text-[var(--muted-foreground)] mt-1">{plot.installmentsPaid} of {plot.installmentMonths} instalments paid</div>
+              )}
             </>
           )}
         </div>

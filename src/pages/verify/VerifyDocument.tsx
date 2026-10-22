@@ -25,6 +25,7 @@ import LoadError from "../../components/LoadError";
 const TYPE_NAMES: Record<DocumentVerification["documentType"], string> = {
   receipt: "receipt",
   allocation_letter: "allocation letter",
+  provisional_allocation_letter: "provisional allocation letter",
   offer_letter: "offer letter",
 };
 

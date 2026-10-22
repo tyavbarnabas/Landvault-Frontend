@@ -130,6 +130,23 @@ The asks in F, now built on both sides:
 
 **Fixed while verifying:** `EstateBoundaryMap` clipped its own legend. The legend sat inside the fixed-height, overflow-hidden map box, so no legend passed to it had ever been visible, including the inventory's plot-status legend.
 
+### H. Instalment plans — wired 2026-10-22 (backend changesets 099–103)
+
+Built from the Figma page "Screen — Instalment plans". The rule throughout: **the frontend does no money arithmetic**. Every deposit, instalment, plan total, premium, balance and penalty is the backend's.
+
+- **Portal, Fees & terms › Payment plans** (`paymentPlansService.ts`, `PaymentPlansPanel`): `GET|PUT /api/portal/estates/{id}/payment-plans`. One deposit type per plan, limits checked before sending, `[]` for outright only. Shows the response's `quotes` per tier (non-corner) and names a tier a fixed deposit left out. The estate page has a *Payment plans* setup card.
+- **Marketplace:** `priceTiers[].paymentPlans` is mapped onto `PriceTier`. A listing offers instalments only when a tier has a plan, so the old "every listing accepts every plan" assumption is gone. The *Instalments* filter is applied to the tiers locally, because the backend has no such filter. The booking card lists each plan's figures. The late-payment row is priced on one instalment (`penaltyBasisPlan`, `penaltyBasisInstalment`).
+- **Checkout:** the picker lists the tier's declared plans, and the hard-coded 20% deposit and duration dropdown are gone. It sends `{ plan: "installment", planId }`, never `installmentMonths`. 409 `PLAN_NOT_OFFERED` reloads the listing and asks again. The purchase's `schedule` drives the deposit amount, the offer step and the order summary.
+- **Paying:** `startPayment(id, { balance })` uses `?balance=true` for a pay-off. The purchase page has *Your plan* (verified of plan total, n of N, the next instalment), the fixed schedule, payment history and the provisional letter. Pay is labelled from state, and pay-off confirms then shows the backend's amount before Paystack. Pay is disabled while a payment awaits verification. New refusals handled: `INSTALMENT_AWAITING_VERIFICATION`, `NOTHING_TO_PAY_OFF`.
+- **Return page** words itself from the purchase: a deposit, or an instalment / pay-off on `on_plan`.
+- **Statuses:** transaction `on_plan` ("On instalment plan"), plot `on-plan` ("On plan"), and document `provisional_allocation_letter` (vault, verify page). The portfolio row shows plan progress and "n of N instalments paid". A plan plot's page links to its purchase page instead of the old demo schedule.
+- **Finance:** rows say what they're for (`paymentFor`, `planName`, `instalmentSequence`, `instalmentCount`, `dueDate`). Verify reads "Verify deposit — hold plot on plan", "Verify instalment" or "Verify — sell plot & issue allocation letter", and the toast follows the response's `status`. Reject on a plan payment says only that payment is refunded. `LATE_DEPOSIT_NOT_SUPPORTED` has its message. The "Paystack received ₦X less" line no longer subtracts in the browser.
+- **Payouts:** `tranche`, `trancheLabel`, `trancheAmount`, `heldInEscrow` on the ready list. The row title is the tranche label, and plan rows say what HomeTrue holds in escrow. `HELD_IN_ESCROW` shows as information. Payout history and the developer's read-only list group and label by tranche.
+- **Demo mode** stands in for the backend in one place (`mockQuote`, `mockSchedule`, `mockDue`): the premium on the price, a percentage deposit of the plan total, the rest split evenly with the leftover kobo on the last instalment. Plan payments made from the purchase page appear in the demo finance queue, and verifying them moves the plan on as the backend does.
+- **Money with kobo:** `formatMoney` (`lib/formatCurrency.ts`) shows kobo when there is any (₦1,796,666.66), so a plan figure is never rounded.
+
+Out of scope (phases 4–5, not on the backend): arrears, penalties charged, reminders, revocation, withdrawal, restructure.
+
 ### Also worth a look, lower priority
 
 - **`POST /api/auth/login`'s OpenAPI description says to "check for a `challengeId` field".** `TwoFactorChallengeResponse` has no such field — it is `challengeToken`. The frontend discriminates on `twoFactorRequired`, which is unambiguous, but the description is misleading and worth correcting.

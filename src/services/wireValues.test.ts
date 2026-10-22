@@ -61,10 +61,11 @@ describe("inventory enums", () => {
     // side, and the backend's reservation sweeper restores whichever variant a
     // plot had when a hold lapses. `withheld` (IE-7) is the developer's own
     // switch off the market — portal-only; buyers see "unavailable".
-    expect(wireValues(["available-dev", "available-inv", "reserved", "sold", "withheld"] satisfies readonly PlotStatus[]))
-      .toEqual(["available-dev", "available-inv", "reserved", "sold", "withheld"]);
+    // `on-plan`: held for a buyer on an instalment plan — not sold, not for sale.
+    expect(wireValues(["available-dev", "available-inv", "reserved", "on-plan", "sold", "withheld"] satisfies readonly PlotStatus[]))
+      .toEqual(["available-dev", "available-inv", "reserved", "on-plan", "sold", "withheld"]);
     // Every status has a label and a colour, so none renders blank.
-    expect(Object.keys(STATUS_LABELS).sort()).toEqual(["available-dev", "available-inv", "reserved", "sold", "withheld"]);
+    expect(Object.keys(STATUS_LABELS).sort()).toEqual(["available-dev", "available-inv", "on-plan", "reserved", "sold", "withheld"]);
     expect(Object.keys(STATUS_COLORS).sort()).toEqual(Object.keys(STATUS_LABELS).sort());
     // Never in a buyer-facing legend, and never a starting status.
     expect(BUYER_FACING_STATUSES).not.toContain("withheld");

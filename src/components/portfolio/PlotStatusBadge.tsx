@@ -13,7 +13,7 @@ const STATUS_INFO: Record<PlotAccountStatus, { label: string; variant: BadgeVari
   reserved: { label: "Reserved", variant: "info" },
   pending_verification: { label: "Pending verification", variant: "warning" },
   allocated: { label: "Allocated", variant: "info" },
-  installment_active: { label: "Active plan", variant: "info" },
+  installment_active: { label: "On instalment plan", variant: "info" },
   completed: { label: "Paid off", variant: "success" },
   in_arrears: { label: "In arrears", variant: "error" },
   upgrade_pending: { label: "Upgrade pending", variant: "warning" },

@@ -15,6 +15,7 @@ import { DownloadIcon, FileCheckIcon, FileTextIcon, ImageIcon, ReceiptIcon, Shar
 export const DOCUMENT_TYPE_LABELS: Record<Document["type"], string> = {
   receipt: "Payment receipt",
   offer_letter: "Offer letter",
+  provisional_allocation_letter: "Provisional allocation letter",
   allocation_letter: "Allocation letter",
   deed_of_assignment: "Deed of assignment",
   poa_draft: "POA draft",
@@ -22,7 +23,7 @@ export const DOCUMENT_TYPE_LABELS: Record<Document["type"], string> = {
 
 export function DocTypeIcon({ type, size = 18 }: { type: Document["type"]; size?: number }) {
   if (type === "receipt") return <ReceiptIcon size={size} />;
-  if (type === "allocation_letter") return <FileCheckIcon size={size} />;
+  if (type === "allocation_letter" || type === "provisional_allocation_letter") return <FileCheckIcon size={size} />;
   return <FileTextIcon size={size} />;
 }
 
@@ -69,6 +70,7 @@ export function statusNote(doc: Document): string | null {
   if (doc.status === "accepted" && doc.acceptedAt) return `Accepted ${formatDay(doc.acceptedAt)}`;
   if (doc.status === "lapsed") return "Purchase not completed";
   if (doc.refundedAt) return `Refunded ${formatDay(doc.refundedAt)}`;
+  if (doc.type === "provisional_allocation_letter") return "Your final allocation letter is issued when the plan is paid in full";
   return null;
 }
 

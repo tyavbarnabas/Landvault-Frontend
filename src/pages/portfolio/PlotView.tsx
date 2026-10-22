@@ -20,7 +20,7 @@ import { CAPABILITIES } from "../../lib/capabilities";
 import { useApp } from "../../contexts/AppContext";
 import { DOCUMENT_TYPE_LABELS, DocTypeChip, DocumentActions } from "../../components/documents/DocumentCard";
 import Badge from "../../components/ui/Badge";
-import Button from "../../components/ui/Button";
+import Button, { LinkButton } from "../../components/ui/Button";
 import { formatDay } from "../../lib/formatDate";
 import { AlertIcon, BuildingIcon, CheckIcon, ChevronRightIcon, FileCheckIcon, MapPinIcon, MessageIcon, WalletIcon } from "../../components/icons";
 import ReceiptDownload from "../../components/documents/ReceiptDownload";
@@ -89,7 +89,10 @@ export default function PlotView() {
   const outstanding = plot.totalPrice - plot.paidAmount;
   const nextPeriod = schedule?.periods.find((p) => p.status !== "paid");
   const installments = installmentsAvailable();
-  const canPay = installments && (plot.status === "installment_active" || plot.status === "in_arrears") && !!nextPeriod;
+  // A plan bought through checkout: its fixed schedule and its Pay buttons are
+  // on the purchase page, every figure the backend's — nothing worked out here.
+  const purchasePlan = plot.plan === "installment" && !!plot.transactionId;
+  const canPay = installments && !purchasePlan && (plot.status === "installment_active" || plot.status === "in_arrears") && !!nextPeriod;
   const pending = plot.status === "pending_verification";
   const docsAvailable = isAvailable("documents");
   // A payment's receipt among this plot's documents (live: receiptId is the
@@ -256,14 +259,17 @@ export default function PlotView() {
                 <p className="text-sm text-[var(--muted-foreground)]">
                   {pending ? "Your equity and acquired date show once finance confirms the payment."
                     : paidOff ? "Paid in full and verified by the developer's finance team."
+                    : purchasePlan ? `${plot.installmentsPaid ?? 0} of ${plot.installmentMonths ?? "?"} instalments paid — held for you on your plan until the last one is verified.`
                     : `${pct}% paid · ${formatAmount(outstanding, plot.currency)} to go`}
                 </p>
               </div>
             </div>
             <dl className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4 border-t border-[var(--border)]">
               <Fact label="Paid" value={formatAmount(plot.paidAmount, plot.currency)} mono green={!pending && plot.paidAmount > 0} />
-              <Fact label={paidOff ? "Price" : "Outstanding"} value={formatAmount(paidOff ? plot.totalPrice : outstanding, plot.currency)} mono />
-              <Fact label="Plan" value={plot.plan === "outright" ? "Outright" : `${plot.installmentMonths}-month ${plot.plan}`} />
+              {purchasePlan
+                ? <Fact label="Plan total" value={formatAmount(plot.totalPrice, plot.currency)} mono />
+                : <Fact label={paidOff ? "Price" : "Outstanding"} value={formatAmount(paidOff ? plot.totalPrice : outstanding, plot.currency)} mono />}
+              <Fact label="Plan" value={plot.plan === "outright" ? "Outright" : purchasePlan ? "Instalment plan" : `${plot.installmentMonths}-month ${plot.plan}`} />
               <Fact label="Acquired" value={plot.acquiredDate ? formatDay(plot.acquiredDate) : "When finance verifies"} />
             </dl>
             {!paidOff && !pending && (
@@ -275,7 +281,7 @@ export default function PlotView() {
                 <div className="h-2.5 bg-[var(--muted)] rounded-full overflow-hidden" role="progressbar" aria-labelledby="equity-label" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
                   <div className="h-full bg-[var(--primary)] rounded-full transition-all" style={{ width: `${pct}%` }} />
                 </div>
-                {plot.installmentMonths && plot.installmentsPaid !== undefined && (
+                {!purchasePlan && plot.installmentMonths && plot.installmentsPaid !== undefined && (
                   <div className="mt-2 text-xs text-[var(--muted-foreground)]">
                     Installment {plot.installmentsPaid} of {plot.installmentMonths} paid · {plot.installmentMonths - plot.installmentsPaid} remaining
                   </div>
@@ -286,7 +292,13 @@ export default function PlotView() {
 
           {/* Installment schedule — fetched from the service layer, never
               synthesized client-side (see portfolioService.ts). */}
-          {schedule && schedule.periods.length > 0 && (
+          {purchasePlan && (
+            <Section title="Your plan">
+              <p className="text-sm text-[var(--muted-foreground)] mb-3">The schedule, every payment and the buttons to pay the next instalment or the balance are on this plot's purchase page.</p>
+              <LinkButton to={`/purchases/${plot.transactionId}`} variant="secondary">Schedule and payments</LinkButton>
+            </Section>
+          )}
+          {!purchasePlan && schedule && schedule.periods.length > 0 && (
             <Section title="Installment schedule">
               <PaymentSchedule periods={schedule.periods} currency={plot.currency} nextPayablePeriodId={nextPeriod?.id} />
             </Section>

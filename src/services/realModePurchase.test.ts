@@ -80,7 +80,8 @@ describe("marketplace listings", () => {
     expect(l.name).toBe("Palm Grove");
     expect(l.area).toBe("");
     expect(l.amenities).toEqual([]);
-    expect(l.paymentPlans).toEqual(["outright", "installment", "milestone"]);
+    // No tier has a declared plan: outright only, and milestone isn't offered online.
+    expect(l.paymentPlans).toEqual(["outright"]);
     // A unit-type tier has no size on the backend.
     expect(l.priceTiers.find((t) => t.id === "t2")?.sizeSqm).toBe(0);
   });
@@ -219,7 +220,7 @@ describe("checkout", () => {
   it("sends only the reservation, intent and plan; prices come from the backend", async () => {
     respond({ "POST /api/checkout/transactions": { status: 201, body: TXN } });
     const { initiateTransaction } = await import("./marketplaceCheckoutService");
-    const t = await initiateTransaction({ ...SHOWN, plan: "outright", installmentMonths: undefined });
+    const t = await initiateTransaction({ ...SHOWN, plan: "outright" });
     expect(calls[0].body).toEqual({ reservationId: "r1", intent: "development", plan: "outright" });
     expect(t).toMatchObject({ id: "x1", reference: "LV-1", totalPrice: 5_000_000, status: "pending_payment" });
   });
@@ -228,7 +229,7 @@ describe("checkout", () => {
     const ADDRESS = { line1: "3 Admiralty Way", line2: null, city: "Lekki", state: "Lagos", postalCode: null, country: "NG" };
     respond({ "POST /api/checkout/transactions": { status: 201, body: { ...TXN, buyerAddress: ADDRESS } } });
     const { initiateTransaction } = await import("./marketplaceCheckoutService");
-    const t = await initiateTransaction({ ...SHOWN, plan: "outright", installmentMonths: undefined });
+    const t = await initiateTransaction({ ...SHOWN, plan: "outright" });
     expect(calls[0].body).not.toHaveProperty("buyer");
     expect(t.buyerAddress).toEqual(ADDRESS);
   });
@@ -236,14 +237,18 @@ describe("checkout", () => {
   it("a buyer with no address gets 409 ADDRESS_REQUIRED", async () => {
     respond({ "POST /api/checkout/transactions": { status: 409, body: { code: "ADDRESS_REQUIRED", message: "Add your address" } } });
     const { initiateTransaction } = await import("./marketplaceCheckoutService");
-    await expect(initiateTransaction({ ...SHOWN, plan: "outright", installmentMonths: undefined })).rejects.toMatchObject({ status: 409, body: { code: "ADDRESS_REQUIRED" } });
+    await expect(initiateTransaction({ ...SHOWN, plan: "outright" })).rejects.toMatchObject({ status: 409, body: { code: "ADDRESS_REQUIRED" } });
   });
 
-  it("sends installment months for installment plans only", async () => {
-    respond({ "POST /api/checkout/transactions": { status: 201, body: { ...TXN, plan: "installment" } } });
+  it("an instalment purchase names the declared plan, never a number of months", async () => {
+    const SCHEDULE = { planId: "pl1", planName: "12-month plan", frequency: "monthly", planTotal: 16_500_000, premium: 1_500_000, deposit: 4_950_000,
+      instalments: [{ sequence: 1, dueDate: "2026-11-22", amount: 962_500 }] };
+    respond({ "POST /api/checkout/transactions": { status: 201, body: { ...TXN, plan: "installment", schedule: SCHEDULE } } });
     const { initiateTransaction } = await import("./marketplaceCheckoutService");
-    await initiateTransaction({ ...SHOWN, plan: "installment", installmentMonths: 12 });
-    expect(calls[0].body).toEqual({ reservationId: "r1", intent: "development", plan: "installment", installmentMonths: 12 });
+    const t = await initiateTransaction({ ...SHOWN, plan: "installment", planId: "pl1" });
+    expect(calls[0].body).toEqual({ reservationId: "r1", intent: "development", plan: "installment", planId: "pl1" });
+    // The first payment is the schedule's deposit, from the backend.
+    expect(t).toMatchObject({ schedule: SCHEDULE, amountDue: 4_950_000 });
   });
 
   it("the demo payment simulation is never used against the backend", async () => {

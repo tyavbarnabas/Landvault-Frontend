@@ -30,7 +30,8 @@ import Alert from "../../../components/ui/Alert";
 import TextLink from "../../../components/ui/TextLink";
 import Button, { LinkButton } from "../../../components/ui/Button";
 import SalesBar from "../../../components/portal/SalesBar";
-import { FileCheckIcon, ImageIcon, ReceiptIcon, ShieldCheckIcon } from "../../../components/icons";
+import { CalendarIcon, FileCheckIcon, ImageIcon, ReceiptIcon, ShieldCheckIcon } from "../../../components/icons";
+import { fetchPaymentPlans } from "../../../services/paymentPlansService";
 
 export default function PortalEstateDetail() {
   const { estateId } = useParams<{ estateId: string }>();
@@ -134,6 +135,7 @@ export default function PortalEstateDetail() {
                   badge={fees === null ? undefined : fees ? { label: "Declared", variant: "success" } : { label: "Not declared", variant: "warning" }}
                   line={fees === false ? "A fee schedule and refund terms are needed to publish." : "Fee schedule, refund terms and default terms."}
                   hint="What a buyer sees before committing, and a preview of how it reads." />
+                {scope && <PlansSummary estateId={estate.id} />}
                 {scope && <TitleSummary estateId={estate.id} scope={scope} canManage={canManage} />}
                 {scope && user?.permissions?.includes(DOCUMENTS_VIEW_PERMISSION) && <LetterSummary estateId={estate.id} scope={scope} />}
               </div>
@@ -190,6 +192,18 @@ export default function PortalEstateDetail() {
 }
 
 // One part of a listing's setup: its state, one line, and where to change it.
+// The estate's payment plans: optional — with none, buyers pay in full.
+function PlansSummary({ estateId }: { estateId: string }) {
+  const { data } = useFetch(() => fetchPaymentPlans(estateId), [estateId]);
+  const plans = data?.plans ?? [];
+  return (
+    <SetupCard icon={<CalendarIcon size={16} />} title="Payment plans" to={`/portal/estates/${estateId}/disclosure?tab=plans`} link="Payment plans"
+      badge={data ? { label: plans.length ? `${plans.length} plan${plans.length === 1 ? "" : "s"}` : "Outright only", variant: "neutral" } : undefined}
+      line={data ? (plans.length ? plans.map((p) => p.name).join(" · ") : "No instalment plans declared.") : "Loading…"}
+      hint="Optional. With none declared, buyers pay in full." />
+  );
+}
+
 function SetupCard({ icon, title, badge, line, hint, to, link, tone, children }: {
   icon: React.ReactNode; title: string; badge?: { label: string; variant: BadgeVariant }; line?: React.ReactNode; hint?: React.ReactNode;
   to: string; link: string; tone?: "error"; children?: React.ReactNode;

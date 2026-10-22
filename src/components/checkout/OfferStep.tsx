@@ -6,7 +6,8 @@
 import { useState } from "react";
 import { formatInCurrency } from "../../data/mockData";
 import { formatDayTime } from "../../lib/formatDate";
-import type { OfferSummary } from "../../services/marketplaceCheckoutService";
+import type { OfferSummary, PlanSchedule } from "../../services/marketplaceCheckoutService";
+import { formatMoney } from "../../lib/formatCurrency";
 import { acceptOffer, offerErrorCode } from "../../services/offerLetterService";
 import Card, { InfoBox } from "../ui/Card";
 import Alert from "../ui/Alert";
@@ -24,10 +25,12 @@ const MEANS: [React.ReactNode, string, string][] = [
   [<LockIcon key="l" size={16} />, "Pay only through HomeTrue.", "Never to a bank account in a letter, an email or a message."],
 ];
 
-export default function OfferStep({ offer, transactionId, price, plot, notAccepted, onAccepted, onContinue }: {
+export default function OfferStep({ offer, transactionId, price, schedule = null, plot, notAccepted, onAccepted, onContinue }: {
   offer: OfferSummary;
   transactionId: string;
   price: number;
+  // An instalment purchase's plan: the offer states it in full.
+  schedule?: PlanSchedule | null;
   plot: string;
   // Pay was pressed before accepting (409 OFFER_NOT_ACCEPTED).
   notAccepted?: boolean;
@@ -80,11 +83,14 @@ export default function OfferStep({ offer, transactionId, price, plot, notAccept
           </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <InfoBox label="Price in the offer"><div className="font-mono-data text-lg text-[var(--foreground)]">{formatInCurrency(price, "NGN")}</div></InfoBox>
+          {schedule
+            ? <InfoBox label={`${schedule.planName} · plan total`}><div className="font-mono-data text-lg text-[var(--foreground)]">{formatMoney(schedule.planTotal, "NGN")}</div></InfoBox>
+            : <InfoBox label="Price in the offer"><div className="font-mono-data text-lg text-[var(--foreground)]">{formatInCurrency(price, "NGN")}</div></InfoBox>}
           <InfoBox label="Plot"><div className="font-medium text-[var(--foreground)]">{plot}</div></InfoBox>
         </div>
         <p className="text-sm text-[var(--muted-foreground)]">
           The letter sets out the price in figures and words, the full commitment, and every fee, condition, refund and default term the developer declared.
+          {schedule ? ` For your ${schedule.planName} it also sets out the deposit (${formatMoney(schedule.deposit, "NGN")}), every instalment and its due date, and what a late instalment costs.` : ""}
         </p>
         <OfferDownloads offer={offer} />
       </Card>

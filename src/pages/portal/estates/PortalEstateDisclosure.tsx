@@ -28,9 +28,10 @@ import DisclosurePreview, { DefaultTermsSummary, RefundSummary } from "../../../
 import { usePortalScope } from "../usePortalScope";
 import EstateSetupPage from "../../../components/portal/EstateSetupPage";
 import Page, { Loading } from "../../../components/ui/Page";
+import PaymentPlansPanel from "../../../components/portal/PaymentPlansPanel";
 
-type Tab = "fees" | "refund" | "default" | "preview";
-const TABS: Tab[] = ["fees", "refund", "default", "preview"];
+type Tab = "fees" | "refund" | "default" | "plans" | "preview";
+const TABS: Tab[] = ["fees", "refund", "default", "plans", "preview"];
 
 export default function PortalEstateDisclosure() {
   const { estateId } = useParams<{ estateId: string }>();
@@ -79,15 +80,16 @@ export default function PortalEstateDisclosure() {
       estate={estate}
       step="fees"
       title="Fees & terms"
-      description="Declared here, shown to buyers before they commit. The fee schedule and refund terms are required before this estate can be published."
+      description="Declared here, shown to buyers before they commit: fees, refund and default terms, and the payment plans you offer. The fee schedule and refund terms are required before this estate can be published."
     >
-      <div className="max-w-3xl">
+      <div className={tab === "plans" ? "max-w-4xl" : "max-w-3xl"}>
       <div className="border-b border-[var(--border)] mb-5">
         <TabBar
           tabs={[
             { id: "fees", label: "Fee schedule" },
             { id: "refund", label: "Refund terms" },
             { id: "default", label: "Default terms" },
+            { id: "plans", label: "Payment plans" },
             { id: "preview", label: "Buyer preview" },
           ]}
           active={tab}
@@ -195,6 +197,8 @@ export default function PortalEstateDisclosure() {
             what="default terms"
           />
         )}
+
+        {tab === "plans" && <PaymentPlansPanel estateId={estateId} scope={scope} canManage={canManage} />}
 
         {tab === "preview" && <DisclosurePreview computed={computed} fees={fees} refund={refund} defaults={defaults} />}
       </div>

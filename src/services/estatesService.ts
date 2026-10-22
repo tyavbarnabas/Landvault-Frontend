@@ -6,6 +6,7 @@
 import { ESTATES, type Estate, type Plot } from "../data/mockData";
 import { apiClient } from "../lib/apiClient";
 import { isMock } from "../lib/backends";
+import type { TierPlan } from "./paymentPlansService";
 
 export async function fetchEstates(): Promise<Estate[]> {
   if (isMock("estates")) return ESTATES;
@@ -44,6 +45,9 @@ export interface PriceTier {
   // The tier's own currency when the backend gives one (a diaspora tier can
   // be priced in USD). Absent means NGN.
   currency?: string;
+  // The developer's instalment plans at this tier, every figure HomeTrue's.
+  // Empty (or absent) means outright only.
+  paymentPlans?: TierPlan[];
 }
 
 // Exported so marketplaceService.ts's projectListing() can reuse this exact

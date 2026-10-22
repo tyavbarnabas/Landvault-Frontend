@@ -37,7 +37,7 @@ export default function Vault() {
   const documents = useMemo(() => [...(first.data?.items ?? []), ...(more?.items ?? [])], [first.data, more]);
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return documents.filter((d) => (tab === "all" || d.type === tab) && (!q || [d.number, d.title, d.qrCode, plotLine(d)].some((s) => s?.toLowerCase().includes(q))));
+    return documents.filter((d) => (tab === "all" || d.type === tab || (tab === "allocation_letter" && d.type === "provisional_allocation_letter")) && (!q || [d.number, d.title, d.qrCode, plotLine(d)].some((s) => s?.toLowerCase().includes(q))));
   }, [documents, tab, query]);
 
   if (first.loading && !first.data) return <Page title="Document vault"><Loading label="Loading your documents…" /></Page>;
@@ -59,7 +59,8 @@ export default function Vault() {
   };
 
   const receipts = documents.filter((d) => d.type === "receipt").length;
-  const letters = documents.filter((d) => d.type === "allocation_letter").length;
+  // A plan's provisional letter files with the allocation letters.
+  const letters = documents.filter((d) => d.type === "allocation_letter" || d.type === "provisional_allocation_letter").length;
   const refunded = documents.filter((d) => d.refundedAt).length;
   const TABS: { id: Tab; label: string; count: number }[] = [
     { id: "all", label: "All", count: documents.length },

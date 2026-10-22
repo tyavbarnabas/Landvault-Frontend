@@ -5,6 +5,8 @@
 // panel, and every cost is in one breakdown. Everything shown is the API's;
 // nothing is estimated.
 
+import { formatMoney } from "../../lib/formatCurrency";
+import { frequencyWord } from "../../services/paymentPlansService";
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { isLive } from "../../lib/backends";
@@ -440,11 +442,17 @@ function BookingCard({ listing, shownTier, commitment, currency, onSelectSize, p
         </div>
       )}
 
-      {listing.paymentPlans.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
-          <WalletIcon /><span className="mr-0.5">Payment plans:</span>
-          {listing.paymentPlans.map((p) => (
-            <span key={p} className="px-2 py-0.5 rounded-full bg-[var(--secondary)] text-[var(--secondary-foreground)] font-medium capitalize">{p}</span>
+      {/* Ways to pay the shown tier: in full, or each declared plan with
+          HomeTrue's figures (the tier's paymentPlans). Nothing worked out here. */}
+      {shownTier && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-[var(--muted-foreground)]">
+            <WalletIcon />Ways to pay · {shownTier.sizeSqm} sqm
+          </div>
+          <WayToPay name="Pay in full" total={formatMoney(shownTier.price, shownTier.currency ?? "NGN")} />
+          {(shownTier.paymentPlans ?? []).map((p) => (
+            <WayToPay key={p.planId} name={p.name} total={formatMoney(p.planTotal, shownTier.currency ?? "NGN")}
+              line={`${formatMoney(p.deposit, shownTier.currency ?? "NGN")} deposit, then ${p.instalmentCount} ${frequencyWord(p.frequency)} × ${formatMoney(p.instalment, shownTier.currency ?? "NGN")}`} />
           ))}
         </div>
       )}
@@ -473,6 +481,18 @@ function BookingCard({ listing, shownTier, commitment, currency, onSelectSize, p
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+function WayToPay({ name, total, line }: { name: string; total: string; line?: string }) {
+  return (
+    <div className="rounded-lg border border-[var(--border)] px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-semibold text-[var(--foreground)]">{name}</span>
+        <span className="font-mono-data text-sm font-medium text-[var(--foreground)]">{total}</span>
+      </div>
+      {line && <div className="text-xs text-[var(--muted-foreground)] mt-0.5">{line}</div>}
     </div>
   );
 }

@@ -26,6 +26,7 @@ const PURCHASE_LOOK: Record<PurchaseStage, Omit<Look, "action">> = {
   pay: { badge: "Awaiting payment", tone: "warning", icon: <CreditCardIcon size={20} /> },
   payment_failed: { badge: "Payment didn't go through", tone: "error", icon: <CreditCardIcon size={20} /> },
   verifying: { badge: "Being verified", tone: "info", icon: <ShieldCheckIcon size={20} /> },
+  on_plan: { badge: "On instalment plan", tone: "info", icon: <CreditCardIcon size={20} /> },
   under_review: { badge: "Under review", tone: "info", icon: <ShieldCheckIcon size={20} /> },
   refund: { badge: "Refund", tone: "warning", icon: <ReceiptIcon size={20} /> },
 };

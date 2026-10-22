@@ -24,7 +24,8 @@ export default function PurchaseStatusPanel({ purchase, refundShown = false }: {
       {state.canPay && offerWaiting && (
         <p className="text-sm text-[var(--muted-foreground)]">Accept the offer letter for this purchase, then pay here.</p>
       )}
-      {state.canPay && !offerWaiting && <PayButton transactionId={purchase.id} label={state.payLabel} busy={paying} onBusy={setPaying} />}
+      {/* On a plan, its card has the instalment and pay-off buttons. */}
+      {state.canPay && !offerWaiting && purchase.status !== "on_plan" && <PayButton transactionId={purchase.id} label={state.payLabel} busy={paying} onBusy={setPaying} />}
       {state.payNote && purchase.status === "pending_payment" && (
         <p className="text-xs text-[var(--muted-foreground)]">{state.payNote}</p>
       )}

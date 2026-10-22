@@ -6,7 +6,7 @@ import type { TransactionStatus } from "../services/marketplaceCheckoutService";
 const purchase = (status: TransactionStatus, payment: Partial<PaymentSummary> | null = null, extra: Partial<Purchase> = {}): Purchase => ({
   id: "t1", reference: "LV-1", estateId: "e1", plotId: "p1", reservationId: "r1", basePrice: 15_000_000, cornerPremiumPct: null,
   totalPrice: 15_000_000, currency: "NGN", intent: "development", plan: "outright", installmentMonths: null, status,
-  createdAt: "2026-10-09T10:00:00Z", buyerAddress: null, offer: null,
+  createdAt: "2026-10-09T10:00:00Z", buyerAddress: null, offer: null, schedule: null,
   payment: payment && { reference: "PAY-1", status: "succeeded", amountPaid: null, paidAt: null, underReview: false, reviewKind: null, refundStatus: null, receiptId: null, receiptNumber: null, ...payment },
   ...extra,
 });
@@ -45,13 +45,27 @@ describe("what a purchase means to its buyer", () => {
     expect(describePurchase(purchase("abandoned")).title).toBe("This reservation ended before payment arrived");
   });
 
-  it("pending: Pay now, Continue payment, or Pay again — and never for installments or non-naira", () => {
+  it("pending: Pay now, Continue payment, or Pay again — never without a plan's schedule, or in another currency", () => {
     expect(describePurchase(purchase("pending_payment"))).toMatchObject({ canPay: true, payLabel: "Pay now" });
     expect(describePurchase(purchase("pending_payment", { status: "initialized" }))).toMatchObject({ canPay: true, payLabel: "Continue payment" });
     expect(describePurchase(purchase("pending_payment", { status: "failed" }))).toMatchObject({ canPay: true, payLabel: "Pay again" });
     expect(describePurchase(purchase("pending_payment", { status: "mismatched" }))).toMatchObject({ canPay: false, title: "We received a payment we need to review" });
-    expect(describePurchase(purchase("pending_payment", null, { plan: "installment" }))).toMatchObject({ canPay: false, payNote: "Online payment is for outright purchases only for now." });
+    expect(describePurchase(purchase("pending_payment", null, { plan: "installment" }))).toMatchObject({ canPay: false, payNote: "Online payment isn't available for this payment plan yet." });
     expect(describePurchase(purchase("pending_payment", null, { currency: "USD" }))).toMatchObject({ canPay: false });
+  });
+
+  it("a plan: Pay deposit, then held on the plan (never 'yours'), then paid in full", () => {
+    const schedule = { planId: "pl1", planName: "12-month plan", frequency: "monthly" as const, planTotal: 16_500_000, premium: 1_500_000, deposit: 4_950_000,
+      instalments: [{ sequence: 1, dueDate: "2026-11-22", amount: 962_500 }] };
+    const plan = { plan: "installment" as const, schedule };
+    expect(describePurchase(purchase("pending_payment", null, plan))).toMatchObject({ canPay: true, payLabel: "Pay deposit ₦4,950,000" });
+    const deposit = describePurchase(purchase("awaiting_finance", { status: "succeeded" }, plan));
+    expect(deposit.title).toBe("Deposit received — awaiting verification");
+    expect(deposit.body).not.toMatch(/allocated to you/);
+    const onPlan = describePurchase(purchase("on_plan", { status: "succeeded" }, plan));
+    expect(onPlan).toMatchObject({ owned: false, title: "Held for you on the 12-month plan" });
+    expect(onPlan.title + onPlan.body).not.toMatch(/yours\b(?! once)|sold|allocated/i);
+    expect(describePurchase(purchase("verified", { status: "succeeded" }, plan))).toMatchObject({ owned: true, title: "Paid in full — the plot is yours" });
   });
 
   it("every refund status reads as something, including sending and needs-attention", () => {

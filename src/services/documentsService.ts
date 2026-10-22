@@ -107,7 +107,7 @@ export interface DocumentVerification {
   // refunded: the payment was later returned; still genuine. Offer letters
   // are issued (not accepted yet), accepted, or lapsed with their purchase.
   status: "valid" | "refunded" | "issued" | "accepted" | "lapsed";
-  documentType: "receipt" | "allocation_letter" | "offer_letter";
+  documentType: "receipt" | "allocation_letter" | "provisional_allocation_letter" | "offer_letter";
   number: string;
   issuedAt: string;
   issuedBy: string; // always "HomeTrue"
@@ -133,7 +133,7 @@ export async function verifyDocument(code: string): Promise<DocumentVerification
   const normalized = normalizeVerifyCode(code);
   if (isMock("documents")) {
     const doc = mockDocuments.find((d) => normalizeVerifyCode(d.qrCode) === normalized);
-    if (!doc || (doc.type !== "receipt" && doc.type !== "allocation_letter" && doc.type !== "offer_letter")) {
+    if (!doc || (doc.type !== "receipt" && doc.type !== "allocation_letter" && doc.type !== "provisional_allocation_letter" && doc.type !== "offer_letter")) {
       throw new ApiError(404, "This is not a HomeTrue document.", { code: "NOT_A_HOMETRUE_DOCUMENT" });
     }
     // Demo documents carry only a type, a date and a code — nothing else is shown.

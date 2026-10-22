@@ -8,6 +8,8 @@ export const STATUS_COLORS: Record<PlotStatus, string> = {
   "available-dev": "#16A34A",
   "available-inv": "#2563EB",
   reserved: "#D97706",
+  // Held for a buyer on an instalment plan: off the market, not yet sold.
+  "on-plan": "#7C3AED",
   sold: "#DC2626",
   // Neutral slate — the same fallback grey the portal map already uses.
   withheld: "#64748B",
@@ -17,6 +19,7 @@ export const STATUS_LABELS: Record<PlotStatus, string> = {
   "available-dev": "Available — development",
   "available-inv": "Available — investment",
   reserved: "Reserved / pending",
+  "on-plan": "On plan",
   sold: "Sold / allocated",
   withheld: "Withheld by developer",
 };

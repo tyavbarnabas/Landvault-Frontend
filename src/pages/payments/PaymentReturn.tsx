@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { formatInCurrency } from "../../data/mockData";
+import { formatMoney } from "../../lib/formatCurrency";
 import { ApiError, ApiTransportError } from "../../lib/apiClient";
 import { pollUntilSettled, purchaseTimeline } from "../../lib/purchaseStatus";
 import PayButton from "../../components/purchases/PayButton";
@@ -118,7 +118,7 @@ export default function PaymentReturn() {
 function Outcome({ payment, bought, polling, gaveUp, onCheckAgain }: {
   payment: Payment; bought: Bought | null; polling: boolean; gaveUp: boolean; onCheckAgain: () => void;
 }) {
-  const amount = formatInCurrency(payment.amount, payment.currency);
+  const amount = formatMoney(payment.amount, payment.currency);
   const forWhat = bought?.what ? ` for ${bought.what}` : "";
   const paidBy = paidWithLabel(payment.channel, null);
   const facts = (
@@ -150,15 +150,29 @@ function Outcome({ payment, bought, polling, gaveUp, onCheckAgain }: {
   }
 
   switch (payment.status) {
-    case "succeeded":
+    case "succeeded": {
+      // PaymentDto carries no purpose, so the purchase words it: a plan's
+      // deposit (awaiting_finance with a schedule), an instalment or a pay-off
+      // (on_plan), or a full-price payment. Never "before the plot is
+      // allocated" for a deposit.
+      const plan = bought?.purchase.schedule ? bought.purchase : null;
+      const deposit = !!plan && (plan.status === "awaiting_finance" || plan.status === "payment_received");
+      const instalment = plan?.status === "on_plan";
+      const title = deposit ? "Deposit received — awaiting verification" : instalment ? "Payment received — awaiting verification" : "Payment received";
+      const body = deposit
+        ? `Paystack confirmed ${amount}, the deposit on your ${plan!.schedule!.planName}${forWhat}. Once the developer's finance team verifies it, the plot is held for you on your plan and you'll get a provisional allocation letter.`
+        : instalment
+          ? `Paystack confirmed ${amount}${forWhat}. It counts towards your plan once the developer's finance team verifies it.`
+          : `Paystack confirmed ${amount}${forWhat}. The developer's finance team now checks it before the plot is allocated to you.`;
       return (
-        <Status tone="success" icon={<CheckIcon size={22} />} title="Payment received"
-          body={`Paystack confirmed ${amount}${forWhat}. The developer's finance team now checks it before the plot is allocated to you.`}
+        <Status tone="success" icon={<CheckIcon size={22} />} title={title}
+          body={body}
           actions={<>{purchaseLink()}{back}</>}>
           {facts}
           {timeline}
         </Status>
       );
+    }
     case "initialized":
     case "abandoned":
       return (

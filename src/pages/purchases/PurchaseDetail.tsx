@@ -25,24 +25,36 @@ import { addressLines } from "../../services/addressService";
 import OfferCard from "../../components/purchases/OfferCard";
 import { fetchListingById } from "../../services/marketplaceService";
 import { fetchPlotById, plotLabel } from "../../services/marketplacePlotsService";
+import { fetchOwnedPlotById } from "../../services/portfolioService";
+import { fetchDocumentsByPlotId } from "../../services/documentsService";
+import PlanCard from "../../components/purchases/PlanCard";
+import { PlanPaymentsCard, PlanScheduleCard } from "../../components/purchases/PlanScheduleCard";
+import LetterCard from "../../components/purchases/LetterCard";
+import { formatMoney } from "../../lib/formatCurrency";
+import { frequencyWord } from "../../services/paymentPlansService";
 
 export default function PurchaseDetail() {
   const { id } = useParams<{ id: string }>();
   const loaded = useFetch(async () => {
     const purchase = id ? await fetchPurchase(id) : null;
-    if (!purchase) return { purchase: null, estateName: null, plot: null };
+    if (!purchase) return { purchase: null, estateName: null, plot: null, owned: null, documents: [] };
+    // Paid purchases are in the portfolio (by their transaction id) with a
+    // plan's progress and payments, and have their documents.
+    const paid = isAvailable("portfolio") && ["awaiting_finance", "on_plan", "verified"].includes(purchase.status);
     // Names for display only. An estate taken off the market still has its
     // purchase; it just shows without them.
-    const [listing, plot] = await Promise.all([
+    const [listing, plot, owned, documents] = await Promise.all([
       fetchListingById(purchase.estateId).catch(() => undefined),
       fetchPlotById(purchase.estateId, purchase.plotId).catch(() => undefined),
+      paid && purchase.schedule ? fetchOwnedPlotById(purchase.id).catch(() => undefined) : undefined,
+      paid ? fetchDocumentsByPlotId(purchase.id).catch(() => []) : [],
     ]);
-    return { purchase, estateName: listing?.name ?? null, plot: plot ?? null };
+    return { purchase, estateName: listing?.name ?? null, plot: plot ?? null, owned: owned ?? null, documents };
   }, [id]);
 
   if (loaded.loading && !loaded.data) return <Page title="Your purchase" back={{ to: "/purchases", label: "My purchases" }}><Loading label="Loading your purchase…" /></Page>;
   if (loaded.error) return <LoadError error={loaded.errorValue} what="this purchase" onRetry={loaded.refetch} />;
-  const { purchase, estateName, plot } = loaded.data!;
+  const { purchase, estateName, plot, owned, documents } = loaded.data!;
   if (!purchase) {
     return (
       <Page title="Purchase not found" back={{ to: "/purchases", label: "My purchases" }}>
@@ -56,10 +68,13 @@ export default function PurchaseDetail() {
   // Paid purchases are in the portfolio from the moment they await finance.
   // Its transaction id keeps opening the plot after finance verifies it, when
   // the owned plot gets an id of its own.
-  const inPortfolio = isAvailable("portfolio") && (purchase.status === "awaiting_finance" || purchase.status === "verified");
+  const inPortfolio = isAvailable("portfolio") && ["awaiting_finance", "on_plan", "verified"].includes(purchase.status);
+  const schedule = purchase.schedule;
+  // The final letter once the plot is the buyer's, else a plan's provisional one.
+  const letter = documents.find((d) => d.type === "allocation_letter") ?? documents.find((d) => d.type === "provisional_allocation_letter");
   const badge = purchaseBadge(purchase);
   const steps = purchaseTimeline(purchase);
-  const plan = purchase.plan === "outright" ? "Pay in full" : purchase.installmentMonths ? `Instalments over ${purchase.installmentMonths} months` : "Instalments";
+  const plan = schedule ? `${schedule.planName} · ${frequencyWord(schedule.frequency)}` : purchase.plan === "outright" ? "Pay in full" : "Instalments";
   return (
     <Page width="xl" back={{ to: "/purchases", label: "My purchases" }} eyebrow={purchase.reference}
       title={<span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">{plot ? plotLabel(plot) : estateName ?? "Your purchase"}<span className="font-[family-name:var(--font-body)] inline-flex"><Badge label={badge.label} variant={badge.tone} /></span></span>}
@@ -69,6 +84,13 @@ export default function PurchaseDetail() {
         <div className="space-y-6 min-w-0">
           <PurchaseStatusPanel purchase={purchase} refundShown={showRefund} />
           {showRefund && p && <RefundPanel paymentReference={p.reference} />}
+          {schedule && purchase.status !== "rejected" && purchase.status !== "abandoned" && (
+            <>
+              <PlanCard purchase={purchase} owned={owned} onChanged={loaded.refetch} />
+              <PlanScheduleCard purchase={purchase} owned={owned} />
+              <PlanPaymentsCard purchase={purchase} owned={owned} documents={documents} />
+            </>
+          )}
 
           <Card as="section" aria-labelledby="progress-heading">
             <h2 id="progress-heading" className="font-semibold text-[var(--foreground)] mb-4">Progress</h2>
@@ -81,6 +103,7 @@ export default function PurchaseDetail() {
               {estateName && <Row label="Estate" value={estateName} />}
               {plot && <Row label="Plot" value={`${plotLabel(plot)}${plot.sizeSqm ? ` · ${plot.sizeSqm} sqm` : ""}`} />}
               <Row label="Agreed price" value={formatInCurrency(purchase.totalPrice, purchase.currency)} mono />
+              {schedule && <Row label="Plan total" value={formatMoney(schedule.planTotal, purchase.currency)} mono />}
               {purchase.cornerPremiumPct !== null && <Row label="Includes corner premium" value={`${purchase.cornerPremiumPct}%`} />}
               <Row label="Payment plan" value={plan} />
               <Row label="Use" value={purchase.intent === "investment" ? "To hold as an investment" : "To build on it (development)"} />
@@ -103,7 +126,9 @@ export default function PurchaseDetail() {
         </div>
 
         <div className="space-y-6">
-          {p && (
+          {letter && <LetterCard letter={letter} />}
+          {/* A plan's payments are in its history; this is a single payment's card. */}
+          {p && !schedule && (
             <Card as="section" aria-labelledby="payment-heading">
               <h2 id="payment-heading" className="font-semibold text-[var(--foreground)] mb-3">Payment</h2>
               <dl className="space-y-2.5 text-sm">

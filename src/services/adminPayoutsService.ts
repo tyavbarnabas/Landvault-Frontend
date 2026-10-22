@@ -8,7 +8,7 @@
 
 import { apiClient } from "../lib/apiClient";
 import { isMock } from "../lib/backends";
-import type { Payout } from "./financeService";
+import type { Payout, Tranche } from "./financeService";
 import type { PayoutBlocker, PayoutStatus, RefundStatus } from "./paymentTypes";
 
 // A verified sale that's owed money (ReadyPayoutDto). Sales with a payout in
@@ -22,6 +22,16 @@ export interface ReadyPayout {
   plotLabel: string;
   amount: number;
   currency: string;
+  // Escrow (instalment plans, changeset 103): what this row pays — the whole
+  // sale, the developer's share of one verified plan payment, or the release
+  // of what HomeTrue held once the plan completes — and how much HomeTrue
+  // still holds (null for outright). The parts below refer to the tranche;
+  // amountOwed is everything owed now. Absent on older responses.
+  tranche?: Tranche;
+  trancheLabel?: string | null;
+  sharePaymentId?: string | null;
+  trancheAmount?: number | null;
+  heldInEscrow?: number | null;
   // These five are null only for a sale that isn't in naira.
   amountOwed: number | null;
   partCount: number | null;
@@ -61,6 +71,7 @@ export async function sendPayout(transactionId: string): Promise<Payout> {
     partNumber: sale.nextPart, partCount: sale.partCount ?? 1, status: "awaiting_otp", reference: `PO-${Date.now().toString(36).toUpperCase()}`,
     gatewayMessage: null, bankName: sale.payoutAccount?.bankName ?? null, accountLast4: sale.payoutAccount?.accountLast4 ?? null,
     createdAt: new Date().toISOString(), transferredAt: null, reviewReason: null,
+    tranche: sale.tranche, trancheLabel: sale.trancheLabel ?? null, sharePaymentId: sale.sharePaymentId ?? null,
   };
   mock.payouts.unshift(payout);
   return { ...payout };
@@ -247,6 +258,13 @@ const mock: { ready: ReadyPayout[]; payouts: Payout[]; due: RefundDue[]; refunds
       estateName: "Northbridge Court", plotLabel: "Block C, Plot 2", amount: 6_000_000, currency: "NGN",
       amountOwed: 6_000_000, partCount: 1, partsPaid: 0, nextPart: 1, nextPartAmount: 6_000_000, verifiedAt: "2026-10-07T16:00:00Z",
       payoutAccount: null, blockers: ["NO_APPROVED_PAYOUT_ACCOUNT"], lastAttempt: null },
+    // An instalment plan: the developer's share of the verified deposit now,
+    // the rest held in escrow until the plan completes.
+    { transactionId: "txn-demo-12", transactionReference: "LV-DEMO0012", tenantId: "estintin-group", companyName: "Estintin Group",
+      estateName: "Greenfield Park", plotLabel: "Block A, Plot 3", amount: 4_950_000, currency: "NGN",
+      tranche: "share", trancheLabel: "Developer's share of the deposit", sharePaymentId: "pay-demo-12", trancheAmount: 297_000, heldInEscrow: 1_188_000,
+      amountOwed: 297_000, partCount: 1, partsPaid: 0, nextPart: 1, nextPartAmount: 297_000, verifiedAt: "2026-10-10T10:00:00Z",
+      payoutAccount: GTB, blockers: [], lastAttempt: null },
   ],
   payouts: [
     { id: "po-old-1", transactionId: "txn-demo-9", tenantId: "estintin-group", companyName: "Estintin Group", amount: 4_000_000, currency: "NGN", partNumber: 1, partCount: 1,

@@ -14,7 +14,7 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useApp } from "../../../contexts/AppContext";
 import { DOCUMENTS_VIEW_PERMISSION } from "../../../services/authService";
-import { formatInCurrency } from "../../../data/mockData";
+import { formatMoney } from "../../../lib/formatCurrency";
 import { ApiError, ApiTransportError } from "../../../lib/apiClient";
 import { useFetch, type UseFetchResult } from "../../../lib/useFetch";
 import { AlertIcon, CheckIcon } from "../../../components/icons";
@@ -30,7 +30,7 @@ import Alert from "../../../components/ui/Alert";
 import { ErrorText, Field, Textarea, describedBy } from "../../../components/ui/Field";
 import {
   REASON_MAX, allocateLatePayment, failedPayouts, fetchCompanyPayouts, saleGroups, type SaleGroupData, fetchFinanceQueue, fetchLatePayments, paidWithLabel,
-  refundLatePayment, rejectPurchase, verifyPurchase, type FinanceDecision, type FinanceQueueItem, type LatePayment, type Payout,
+  refundLatePayment, rejectPurchase, verifyPurchase, verifySells, type FinanceDecision, type FinanceQueueItem, type LatePayment, type Payout,
 } from "../../../services/financeService";
 
 type Tab = "verify" | "late" | "payouts";
@@ -40,7 +40,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "payouts", label: "Payouts" },
 ];
 
-const money = (amount: number, currency: string) => formatInCurrency(amount, currency);
+const money = (amount: number, currency: string) => formatMoney(amount, currency);
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : null);
 
 export default function PortalFinance() {
@@ -110,7 +110,7 @@ function VerificationQueue({ list }: { list: UseFetchResult<FinanceQueueItem[]> 
   if (items.length === 0) return <EmptyState title="Nothing waiting for verification" description="Paid purchases appear here for you to check against Paystack's record." />;
   return (
     <div className="space-y-4">
-      <p className="text-sm text-[var(--muted-foreground)]">Check each payment against Paystack's record. Verifying sells the plot, issues the buyer's documents and starts your payout.</p>
+      <p className="text-sm text-[var(--muted-foreground)]">Check each payment against Paystack's record. A full-price payment, or a plan's last payment, sells the plot; a deposit or an instalment doesn't.</p>
     <ul className="space-y-3">
       {items.map((item) => (
         <QueueCard key={item.transactionId} item={item} outcome={done[item.transactionId]}
@@ -127,6 +127,8 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
   const paymentOk = item.amountsMatch && !!p;
   const canVerify = paymentOk && item.letterApproved;
   const buyer = item.buyerEmail ?? "the buyer";
+  const kind = item.paymentFor ?? "full_price";
+  const sells = verifySells(item);
   const { user } = useApp();
   const seesLetters = !!user?.permissions?.includes(DOCUMENTS_VIEW_PERMISSION);
 
@@ -134,6 +136,7 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
     <ListCard className="space-y-4" alert={!paymentOk}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
+          {kind !== "full_price" && <div className="text-xs font-semibold uppercase tracking-wide text-[var(--accent)]">{paymentForLabel(item)}</div>}
           <div className="font-semibold text-[var(--foreground)]">{item.estateName} — {item.plotLabel}</div>
           <div className="text-xs text-[var(--muted-foreground)]">
             {item.buyerEmail ?? "Buyer email not shown"} · <span className="font-mono-data">{item.transactionReference}</span> · waiting since {when(item.awaitingSince)}
@@ -144,7 +147,7 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
       </div>
 
       <div className="grid sm:grid-cols-[1fr_auto_1fr] gap-3 items-center">
-        <InfoBox label="Agreed price">
+        <InfoBox label={kind === "deposit" ? "This deposit should be" : kind === "instalment" ? "This instalment should be" : kind === "balance" ? "The balance should be" : "Agreed price"}>
           <div className="font-mono-data text-lg">{money(item.expectedAmount, item.currency)}</div>
         </InfoBox>
         <span aria-hidden="true" className={`hidden sm:flex w-8 h-8 rounded-full items-center justify-center ${paymentOk ? "bg-[var(--success-surface)] text-[var(--success-text)]" : "bg-[var(--error-surface)] text-[var(--error-text)]"}`}>
@@ -170,7 +173,7 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
 
       {!paymentOk && (
         <Alert role="alert">
-          {p ? `${shortfall(item)}Don't verify this purchase — reject it so the buyer is refunded, or contact HomeTrue.`
+          {p ? `The amount Paystack received doesn't match ${kind === "full_price" ? "the agreed price" : "what this payment should be"}. Don't verify it — reject it so the buyer is refunded, or contact HomeTrue.`
             : "There's no confirmed payment for this purchase, so it can't be verified."}
         </Alert>
       )}
@@ -180,37 +183,77 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
       ) : (
         <div className="flex gap-3">
           <Button onClick={() => setDialog("verify")} disabled={!canVerify}
-            aria-describedby={paymentOk && !item.letterApproved ? `letter-${item.transactionId}` : undefined}>Verify and sell</Button>
+            aria-describedby={paymentOk && !item.letterApproved ? `letter-${item.transactionId}` : undefined}>{verifyLabel(item)}</Button>
           <Button variant="secondary" onClick={() => setDialog("reject")}>Reject</Button>
         </div>
       )}
 
       {dialog === "verify" && (
-        <ConfirmDialog title="Verify this payment?" confirmLabel="Verify and sell the plot" onClose={() => setDialog(null)}
+        <ConfirmDialog title={kind === "deposit" ? "Verify this deposit?" : kind === "instalment" && !sells ? "Verify this instalment?" : kind === "full_price" ? "Verify this payment?" : "Verify and sell the plot?"}
+          confirmLabel={kind === "full_price" ? "Verify and sell the plot" : verifyLabel(item)} onClose={() => setDialog(null)}
           action={() => verifyPurchase(item.transactionId)}
-          onDone={(decision) => onDone(`Verified — ${item.plotLabel} is sold to ${buyer}. ${letterIssued(decision)}`)}>
-          This sells <strong>{item.plotLabel}</strong> at {item.estateName} to <strong>{buyer}</strong> for {money(item.expectedAmount, item.currency)}. It can't be undone.
+          onDone={(decision) => onDone(verifiedMessage(item, decision, buyer))}>
+          {kind === "deposit" ? (
+            <><strong>{item.plotLabel}</strong> at {item.estateName} is held for <strong>{buyer}</strong> on the {item.planName ?? "plan"}, and they get a provisional allocation letter. The plot isn't sold until the plan is paid in full.</>
+          ) : !sells ? (
+            <>This records {money(item.expectedAmount, item.currency)} as paid on {buyer}'s {item.planName ?? "plan"}. The plan carries on; the plot isn't sold yet.</>
+          ) : kind === "full_price" ? (
+            <>This sells <strong>{item.plotLabel}</strong> at {item.estateName} to <strong>{buyer}</strong> for {money(item.expectedAmount, item.currency)}. It can't be undone.</>
+          ) : (
+            <>This is the last payment on the plan. Verifying sells <strong>{item.plotLabel}</strong> at {item.estateName} to <strong>{buyer}</strong> and issues their allocation letter. It can't be undone.</>
+          )}
         </ConfirmDialog>
       )}
       {dialog === "reject" && (
-        <ReasonDialog title="Reject this payment?" confirmLabel="Reject and refund the buyer" reasonLabel="Why are you rejecting it?"
+        <ReasonDialog title="Reject this payment?"
+          confirmLabel={kind === "instalment" || kind === "balance" ? "Reject and refund this payment" : "Reject and refund the buyer"} reasonLabel="Why are you rejecting it?"
           reasonHint="Recorded with the decision." onClose={() => setDialog(null)}
           action={(reason) => rejectPurchase(item.transactionId, reason)}
-          onDone={() => onDone(`Rejected — ${item.plotLabel} is back on sale and HomeTrue is refunding ${buyer} in full.`)}>
-          The plot goes back on sale, and HomeTrue returns the buyer's {p ? money(p.amountPaid, p.currency) : "payment"} in full.
+          onDone={() => onDone(kind === "instalment" || kind === "balance"
+            ? `Rejected — HomeTrue is refunding this payment to ${buyer}. The plan carries on.`
+            : `Rejected — ${item.plotLabel} is back on sale and HomeTrue is refunding ${buyer} in full.`)}>
+          {kind === "instalment" || kind === "balance"
+            ? <>HomeTrue refunds only this payment ({p ? money(p.amountPaid, p.currency) : "the payment"}). The plan carries on: the buyer keeps their schedule and what's already verified.</>
+            : <>The plot goes back on sale, and HomeTrue returns the buyer's {p ? money(p.amountPaid, p.currency) : "payment"} in full.</>}
         </ReasonDialog>
       )}
     </ListCard>
   );
 }
 
-// "Paystack received ₦500,000 less than the agreed price." — only when the
-// two are in the same currency; otherwise just that they differ.
-function shortfall(item: FinanceQueueItem): string {
-  const p = item.payment;
-  if (!p || p.currency !== item.currency || p.amountPaid === item.expectedAmount) return "The amount Paystack received doesn't match the agreed price. ";
-  const gap = Math.abs(item.expectedAmount - p.amountPaid);
-  return `Paystack received ${money(gap, item.currency)} ${p.amountPaid < item.expectedAmount ? "less" : "more"} than the agreed price. `;
+// What this row is for: "Deposit — 12-month plan", "Instalment 3 of 12 (due
+// 22 Jan 2027)", "Balance paid off".
+export function paymentForLabel(item: FinanceQueueItem): string {
+  const plan = item.planName ? ` — ${item.planName}` : "";
+  switch (item.paymentFor) {
+    case "deposit": return `Deposit${plan}`;
+    case "instalment": {
+      const of = item.instalmentSequence != null ? ` ${item.instalmentSequence}${item.instalmentCount ? ` of ${item.instalmentCount}` : ""}` : "";
+      return `Instalment${of}${item.dueDate ? ` (due ${new Date(item.dueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })})` : ""}${plan}`;
+    }
+    case "balance": return `Balance paid off${plan}`;
+    default: return "Full price";
+  }
+}
+
+// Never "sell" for a deposit or a non-final instalment.
+export function verifyLabel(item: FinanceQueueItem): string {
+  const kind = item.paymentFor ?? "full_price";
+  if (kind === "full_price") return "Verify and sell";
+  if (kind === "deposit") return "Verify deposit — hold plot on plan";
+  return verifySells(item) ? "Verify — sell plot & issue allocation letter" : "Verify instalment";
+}
+
+// The success line, worded from what the backend answered: `on_plan` (the
+// plan carries on) or `verified` (sold).
+function verifiedMessage(item: FinanceQueueItem, decision: FinanceDecision, buyer: string): string {
+  if (decision.status === "on_plan") {
+    if (item.paymentFor === "deposit") {
+      return `Deposit verified. ${item.plotLabel} is held for ${buyer} on the plan${decision.allocationLetterNumber ? `; provisional allocation letter ${decision.allocationLetterNumber} issued` : ""}.`;
+    }
+    return `${item.paymentFor === "instalment" && item.instalmentSequence ? `Instalment ${item.instalmentSequence}${item.instalmentCount ? ` of ${item.instalmentCount}` : ""}` : "Payment"} verified. The plan carries on.`;
+  }
+  return `Verified — ${item.plotLabel} is sold to ${buyer}. ${letterIssued(decision)}`;
 }
 
 // ─── Late payments ───────────────────────────────────────────────────────────
@@ -302,10 +345,10 @@ function Payouts({ list }: { list: UseFetchResult<Payout[]> }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-[var(--muted-foreground)]">
-        What HomeTrue has sent{bank?.bankName ? ` to ${bank.bankName}${bank.accountLast4 ? ` ••${bank.accountLast4}` : ""}` : " to your payout account"}, one row per sale. A sale over ₦10,000,000 is paid in parts.
+        What HomeTrue has sent{bank?.bankName ? ` to ${bank.bankName}${bank.accountLast4 ? ` ••${bank.accountLast4}` : ""}` : " to your payout account"}, one row per sale — or, on an instalment plan, per share of a verified payment and the release when the plan completes. A payout over ₦10,000,000 is paid in parts.
       </p>
       <Card padding="none" className="overflow-hidden">
-        <ul className="divide-y divide-[var(--border)]">{groups.map((g) => <SaleGroup key={g.transactionId} group={g} />)}</ul>
+        <ul className="divide-y divide-[var(--border)]">{groups.map((g) => <SaleGroup key={`${g.transactionId}-${g.started}`} group={g} />)}</ul>
       </Card>
     </div>
   );
@@ -326,7 +369,7 @@ function SaleGroup({ group: g }: { group: SaleGroupData }) {
     <li className="px-4 sm:px-5 py-4 space-y-2.5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="font-semibold text-[var(--foreground)]">Sale · <span className="font-mono-data">{money(g.amount, g.currency)}</span></div>
+          <div className="font-semibold text-[var(--foreground)]">{g.label ?? "Sale"} · <span className="font-mono-data">{money(g.amount, g.currency)}</span></div>
           <div className="text-xs text-[var(--muted-foreground)]">Started {dayOf(g.started)}{g.retried ? " · retried after an earlier attempt failed" : ""}</div>
         </div>
         <StatusBadge label={badge.label} variant={badge.variant} />
@@ -372,6 +415,7 @@ export function financeErrorMessage(err: unknown): string {
     case "LETTER_NOT_APPROVED": return "This estate's allocation letter isn't approved, so the plot can't be allocated yet. Nothing was changed. Ask the Executive Director to approve it.";
     // Separation of duties: the backend refuses anyone deciding on a purchase
     // they made themselves.
+    case "LATE_DEPOSIT_NOT_SUPPORTED": return "A late deposit can only be refunded — it can't be allocated. Refund it, and the buyer can open a new purchase. Nothing was changed.";
     case "OWN_PURCHASE": return "You can't decide on your own purchase — another finance officer or director must. Nothing was changed.";
     default: return err instanceof Error && err.message ? err.message : "That didn't go through. Nothing was changed.";
   }

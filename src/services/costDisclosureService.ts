@@ -140,8 +140,8 @@ export interface RefundOutcome {
 export interface PenaltyStep {
   monthsLate: number;
   penaltyPct: number;
-  // Already computed against basisLandPrice. A percentage alone is abstract;
-  // this is the figure a buyer reacts to.
+  // Already computed, on one instalment of the basis plan. A percentage alone
+  // is abstract; this is the figure a buyer reacts to.
   amount: number;
 }
 
@@ -164,8 +164,12 @@ export interface ExitCosts {
   // Assumes payment in full: a buyer's maximum exposure, not a personal
   // figure. A refund against what was actually paid needs payment records.
   ifYouWithdraw: RefundOutcome;
-  // In naira rather than percentages.
+  // In naira rather than percentages, on ONE instalment of penaltyBasisPlan
+  // (penaltyBasisInstalment). Empty when the estate offers no plans: an
+  // outright buyer has nothing to fall behind on.
   ifYouFallBehind: PenaltyStep[];
+  penaltyBasisPlan?: string | null;
+  penaltyBasisInstalment?: number | null;
   // Null when no revocation clause has been sourced for this estate. Absent
   // is honest; an invented clause is not.
   revocation: Revocation | null;
