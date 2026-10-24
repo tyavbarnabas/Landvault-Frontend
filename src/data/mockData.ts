@@ -136,6 +136,8 @@ export interface Payment {
   receiptId: string | null;
   rejectionReason?: string;
   verifiedAt?: string;
+  // A late instalment's penalty, inside `amount` (phase 4).
+  penaltyAmount?: number | null;
 }
 
 // Explicit alias so the "PaymentRecord" contract named in the portfolio-fixes
@@ -156,6 +158,8 @@ export type PlotAccountStatus =
   | "completed" // paid in full
   | "in_arrears" // a scheduled payment is overdue past the grace period
   | "upgrade_pending" // an upgrade/swap request is awaiting developer-side approval
+  | "withdrawn" // the buyer left an instalment plan; refunds follow in parts
+  | "revoked" // the developer ended an instalment plan after notice
   | "transferred" // ownership moved to a new buyer via resale — see resaleService.ts
   | "superseded"; // this record's equity moved to a new OwnedPlot via upgrade/swap — see upgradeService.ts. Distinct from "transferred": ownership stays with the same buyer, just reallocated to a different plot.
 
@@ -165,7 +169,14 @@ export interface ArrearsInfo {
   gracePeriodDays: number;
   graceEndsDate: string;
   penaltyAmount?: number;
+  // As written by the backend, e.g. "Instalment 1 is 1 month late, so the
+  // declared 5% penalty applies to it." Shown verbatim.
   penaltyReason?: string;
+  // Live plans (phase 4); the older demo records don't carry these.
+  status?: string;
+  instalmentsLate?: number;
+  totalDue?: number;
+  daysLate?: number;
 }
 
 export interface OwnedPlot {
@@ -230,7 +241,7 @@ export interface Document {
   plotId?: string;
   // provisional_allocation_letter: issued when a plan's deposit is verified
   // (HT-PAL-…); the final allocation_letter follows when it's paid in full.
-  type: "receipt" | "offer_letter" | "provisional_allocation_letter" | "allocation_letter" | "deed_of_assignment" | "poa_draft";
+  type: "receipt" | "offer_letter" | "provisional_allocation_letter" | "allocation_letter" | "restructure_letter" | "deed_of_assignment" | "poa_draft";
   title: string;
   date: string;
   // Live documents are always "valid" — a refunded receipt stays valid (the
@@ -238,7 +249,9 @@ export interface Document {
   // mock resale/upgrade flows' only; the backend has no void or reissue.
   // Offer letters (backend changeset 098) are "issued", "accepted" or
   // "lapsed" instead.
-  status: "valid" | "void" | "superseded" | "issued" | "accepted" | "lapsed";
+  // Provisional letters read "withdrawn" or "revoked" when a plan ends;
+  // restructure letters are issued / accepted / declined / withdrawn / lapsed.
+  status: "valid" | "void" | "superseded" | "issued" | "accepted" | "lapsed" | "withdrawn" | "revoked" | "declined";
   // Offers only: when the buyer accepted it.
   acceptedAt?: string | null;
   // The printed verification code, e.g. "D897-0A03-3C97-202D".

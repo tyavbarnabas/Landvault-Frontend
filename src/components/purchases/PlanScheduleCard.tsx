@@ -3,12 +3,13 @@
 // exactly as the purchase's schedule gives them, with where each one stands.
 // The history lists what was actually paid, each with its receipt.
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { Document, OwnedPlot } from "../../data/mockData";
 import type { Purchase } from "../../services/paymentsService";
 import { formatMoney } from "../../lib/formatCurrency";
 import { formatDay } from "../../lib/formatDate";
-import { paymentHistory, scheduleRows, type RowState } from "../../lib/planProgress";
+import { paymentHistory, scheduleRows, type RowState, type ScheduleRow } from "../../lib/planProgress";
+import { isCarriedPenalty } from "../../services/planService";
 import Card from "../ui/Card";
 import Badge from "../ui/Badge";
 import Button from "../ui/Button";
@@ -17,17 +18,26 @@ import { ReceiptIcon } from "../icons";
 
 const STATE_BADGE: Record<RowState, { label: string; variant: "success" | "warning" | "info" | "neutral" } | null> = {
   verified: { label: "Verified", variant: "success" },
-  awaiting: { label: "Received — awaiting verification", variant: "warning" },
+  awaiting: { label: "Received — awaiting verification", variant: "info" },
   next: { label: "Next", variant: "info" },
   upcoming: null,
+  due_today: { label: "Due today", variant: "info" },
+  overdue: { label: "Overdue", variant: "warning" },
+  in_arrears: { label: "In arrears", variant: "warning" },
 };
+
+function badgeFor(r: ScheduleRow): { label: string; variant: "success" | "warning" | "info" | "neutral" } | null {
+  const b = STATE_BADGE[r.state];
+  if (b && (r.state === "overdue" || r.state === "in_arrears") && r.daysLate) return { ...b, label: `${b.label} · ${r.daysLate} day${r.daysLate === 1 ? "" : "s"}` };
+  return b;
+}
 
 // Shown before "Show all": the first few and the last.
 const FOLDED = 4;
 
 export function PlanScheduleCard({ purchase, owned }: { purchase: Purchase; owned: OwnedPlot | null }) {
   const schedule = purchase.schedule!;
-  const rows = scheduleRows(schedule, owned, purchase.status);
+  const rows = scheduleRows(schedule, owned, purchase.status, purchase.standing);
   const [all, setAll] = useState(rows.length <= FOLDED + 2);
   // Fold the middle, but never past the row that's next or awaiting.
   const lastKeep = Math.max(FOLDED, rows.findIndex((r) => r.state === "next" || r.state === "awaiting") + 2);
@@ -38,7 +48,9 @@ export function PlanScheduleCard({ purchase, owned }: { purchase: Purchase; owne
     <Card as="section" aria-labelledby="schedule-heading">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mb-3">
         <h2 id="schedule-heading" className="font-semibold text-[var(--foreground)]">Schedule</h2>
-        <span className="text-xs text-[var(--muted-foreground)]">Fixed when your offer was issued</span>
+        <span className="text-xs text-[var(--muted-foreground)]">
+          {(schedule.version ?? 1) > 1 ? `Restructured · version ${schedule.version}` : "Fixed when your offer was issued"}{purchase.standing ? " · statuses as of today" : ""}
+        </span>
       </div>
       <table className="w-full text-sm">
         <thead className="max-sm:sr-only">
@@ -50,8 +62,8 @@ export function PlanScheduleCard({ purchase, owned }: { purchase: Purchase; owne
           </tr>
         </thead>
         <tbody>
-          {shown.map((r, i) => (
-            <tr key={r.key} className="border-b border-[var(--border)] last:border-b-0">
+          {shown.map((r, i) => (<Fragment key={r.key}>
+            <tr className={`${r.penalty ? "" : "border-b"} border-[var(--border)] last:border-b-0`}>
               <td className="py-2.5 pr-3 text-[var(--foreground)]">
                 {r.label}
                 {!all && hidden > 0 && i === shown.length - 2 && (
@@ -60,9 +72,19 @@ export function PlanScheduleCard({ purchase, owned }: { purchase: Purchase; owne
               </td>
               <td className="py-2.5 pr-3 text-[var(--muted-foreground)]">{r.dueDate ? formatDay(r.dueDate) : "On paying"}</td>
               <td className="py-2.5 text-right font-mono-data text-[var(--foreground)]">{money(r.amount)}</td>
-              <td className="py-2.5 pl-3 text-right">{STATE_BADGE[r.state] && <Badge label={STATE_BADGE[r.state]!.label} variant={STATE_BADGE[r.state]!.variant} />}</td>
+              <td className="py-2.5 pl-3 text-right">{badgeFor(r) && <Badge label={badgeFor(r)!.label} variant={badgeFor(r)!.variant} />}</td>
             </tr>
-          ))}
+            {/* The penalty on its own line, as given — never added to the instalment. */}
+            {r.penalty && (
+              <tr className="border-b border-[var(--border)]">
+                <td colSpan={2} className="pb-2.5 pr-3 text-xs text-[var(--muted-foreground)]">
+                  {isCarriedPenalty(r.penalty) ? "+ penalty carried from before the restructure" : `+ late-payment penalty · ${r.penalty.penaltyPct}%, ${r.penalty.monthsLate} month${r.penalty.monthsLate === 1 ? "" : "s"} late`}
+                </td>
+                <td className="pb-2.5 text-right font-mono-data text-xs text-[var(--warning-text)]">{money(r.penalty.amount)}</td>
+                <td />
+              </tr>
+            )}
+          </Fragment>))}
         </tbody>
       </table>
       <div className="flex items-center justify-between gap-3 pt-3 mt-1 border-t border-[var(--border)]">
@@ -90,7 +112,7 @@ export function PlanPaymentsCard({ purchase, owned, documents }: { purchase: Pur
               <span className="w-8 h-8 shrink-0 rounded-lg bg-[var(--secondary)] text-[var(--secondary-foreground)] flex items-center justify-center"><ReceiptIcon size={16} /></span>
               <div className="flex-1 min-w-40">
                 <div className="text-sm font-medium text-[var(--foreground)]">{r.label}</div>
-                <div className="text-xs text-[var(--muted-foreground)]">Paid {formatDay(r.date)}</div>
+                <div className="text-xs text-[var(--muted-foreground)]">Paid {formatDay(r.date)}{r.penaltyAmount ? ` · includes ${formatMoney(r.penaltyAmount, r.currency)} late-payment penalty` : ""}</div>
               </div>
               <span className="font-mono-data text-sm text-[var(--foreground)]">{formatMoney(r.amount, r.currency)}</span>
               <Badge label={r.verified ? "Verified" : "Received — awaiting verification"} variant={r.verified ? "success" : "warning"} />

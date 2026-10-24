@@ -68,6 +68,15 @@ export function describePurchase(purchase: Purchase): PurchaseState {
       return { ...base, tone: "info", title: "Payment received — the developer is verifying it",
         body: "Paystack has confirmed your payment. The developer's finance team checks it before allocating the plot to you. Until then it's held for you, not yet yours." };
 
+    // A plan that ended: refunds come back in parts, one per payment.
+    case "withdrawn":
+      return { ...base, tone: "neutral", title: "You withdrew from this plan",
+        body: "The plot is back on sale. What comes back to you is returned in parts, one per payment, under your offer's terms — see each payment below." };
+
+    case "revoked":
+      return { ...base, tone: "neutral", title: "This plan was revoked",
+        body: "The developer ended the plan after the notice ran out. You're refunded exactly what withdrawing returns, in parts, one per payment. The plot is back on sale." };
+
     case "rejected":
       return { ...base, tone: "warning", title: "The developer didn't accept this payment",
         body: "Your money is being returned to you in full. The plot is back on sale." };
@@ -158,6 +167,8 @@ export function purchaseBadge(p: Purchase): { label: string; tone: PurchaseTone 
     case "under_review": return { label: "Under review", tone: "info", note: "Your payment arrived after the reservation ended." };
     case "refund": return { label: p.payment?.refundStatus === "needs-attention" ? "Refund needs your details" : "Refund on its way", tone: "warning", note: refund };
   }
+  if (p.status === "withdrawn") return { label: "Withdrawn", tone: "neutral", note: "Refunds come back in parts" };
+  if (p.status === "revoked") return { label: "Plan revoked", tone: "neutral", note: "Refunded as on withdrawal" };
   if (p.status === "verified") return { label: p.schedule ? "Paid in full" : "Plot allocated", tone: "success", note: p.payment?.receiptNumber ? `Receipt ${p.payment.receiptNumber}` : null };
   if (p.payment?.refundStatus === "processed") {
     return { label: "Refunded", tone: "neutral", note: p.status === "rejected" ? "The developer didn't accept the payment; refund paid" : "Your refund has been paid" };
@@ -184,7 +195,7 @@ export interface TimelineStep {
 
 export function purchaseTimeline(p: Purchase): TimelineStep[] {
   const pay = p.payment;
-  const paid = pay?.paidAt != null || pay?.amountPaid != null || ["payment_received", "awaiting_finance", "on_plan", "verified"].includes(p.status);
+  const paid = pay?.paidAt != null || pay?.amountPaid != null || ["payment_received", "awaiting_finance", "on_plan", "verified", "withdrawn", "revoked"].includes(p.status);
   const paidNote = pay?.amountPaid != null ? `${formatInCurrency(pay.amountPaid, p.currency)} confirmed by Paystack` : null;
   const steps: TimelineStep[] = [{ key: "reserved", label: "Reserved", at: p.createdAt, note: "Held for you while you pay", state: "done" }];
 
@@ -217,6 +228,13 @@ export function purchaseTimeline(p: Purchase): TimelineStep[] {
   const verifying = p.status === "payment_received" || p.status === "awaiting_finance";
   // A plan: the deposit's check holds the plot on the plan; only the last
   // instalment (or a pay-off) being verified makes it the buyer's.
+  if (p.schedule && (p.status === "withdrawn" || p.status === "revoked")) {
+    steps[1] = { ...steps[1], label: "Deposit paid" };
+    steps.push({ key: "verified", label: "Held for you on the plan", at: null, note: null, state: "done" });
+    steps.push({ key: "ended", label: p.status === "withdrawn" ? "You withdrew" : "Revoked by the developer", at: (p.status === "withdrawn" ? p.withdrawnAt : p.revokedAt) ?? null,
+      note: "Refunded in parts, as on withdrawal.", state: "failed" });
+    return steps;
+  }
   if (p.schedule) {
     steps[1] = { ...steps[1], label: "Deposit paid", note: pay?.amountPaid != null && verifying ? paidNote : steps[1].note };
     const onPlan = p.status === "on_plan" || p.status === "verified";

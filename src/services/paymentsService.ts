@@ -18,6 +18,7 @@ import { addDocuments } from "./documentsService";
 import { confirmOwnedPayments, fetchOwnedPlotById, recordOwnedPayment, updateOwnedPlotStatus } from "./portfolioService";
 import type { PaymentStatus, RefundStatus } from "./paymentTypes";
 import type { PurchaseAddress } from "./addressService";
+import type { PlanStanding } from "./planService";
 
 // Why a payment is with a person (PaymentSummary.reviewKind):
 //   late_payment — paid after the reservation ended; the developer will either
@@ -64,6 +65,11 @@ export interface Purchase {
   offer: OfferSummary | null;
   // An instalment purchase's fixed plan; null for outright.
   schedule: PlanSchedule | null;
+  // Where a running plan stands today (phase 4), worked out by the backend
+  // on every read. Absent before a plan runs and in demo mode.
+  standing?: PlanStanding | null;
+  withdrawnAt?: string | null;
+  revokedAt?: string | null;
 }
 
 // One attempt to collect money (PaymentDto).
@@ -82,6 +88,9 @@ export interface Payment {
   channel: string | null;
   paidAt: string | null;
   underReview: boolean;
+  // A late instalment's penalty, included in `amount` and fixed when Pay was
+  // pressed. Shown beside it, never added to anything here.
+  penaltyAmount?: number | null;
 }
 
 export async function fetchPurchase(id: string): Promise<Purchase | null> {

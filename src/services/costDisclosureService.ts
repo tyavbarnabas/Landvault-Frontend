@@ -146,12 +146,14 @@ export interface PenaltyStep {
 }
 
 export interface Revocation {
-  trigger: string;
-  // Null when no notice period was declared — never 0, which reads as "none".
-  noticeDays: number | null;
-  // What happens to money already paid — the part buyers never think to ask
-  // about, and the reason this field exists separately at all.
-  paymentsAlreadyMade: string;
+  // Revocable once an instalment is this many whole months unpaid, after
+  // this many days' written notice (phase 5b). HomeTrue words the sentence.
+  afterMonthsUnpaid: number;
+  noticeDays: number;
+  // Always true: a revoked buyer gets what withdrawing would return.
+  refundedAsOnWithdrawal: boolean;
+  developmentDeadlineMonths?: number | null;
+  transferRequiresConsent?: boolean;
 }
 
 export interface ExitCosts {
@@ -168,6 +170,9 @@ export interface ExitCosts {
   // (penaltyBasisInstalment). Empty when the estate offers no plans: an
   // outright buyer has nothing to fall behind on.
   ifYouFallBehind: PenaltyStep[];
+  // Whether penalties paid are refunded on withdrawal; null when no penalty
+  // is declared.
+  penaltiesRefundable?: boolean | null;
   penaltyBasisPlan?: string | null;
   penaltyBasisInstalment?: number | null;
   // Null when no revocation clause has been sourced for this estate. Absent
@@ -376,9 +381,7 @@ export async function fetchCostDisclosure(estateId: string): Promise<EstateCostD
 
 interface CostDisclosureDto {
   fees: (Omit<PublicFee, "label" | "notes" | "variationBasis"> & { label: string | null; notes: string | null; variationBasis: string | null })[];
-  exitCosts: (Omit<ExitCosts, "revocation"> & {
-    revocation: { trigger: string; noticeDays: number | null; onRevocationRefund: string } | null;
-  }) | null;
+  exitCosts: ExitCosts | null;
 }
 
 interface TierCommitmentDto {
@@ -407,12 +410,7 @@ function fromListingDisclosure(listing: ListingDto): EstateCostDisclosure {
   return {
     estateId: listing.id,
     fees,
-    exitCosts: exit ? {
-      ...exit,
-      revocation: exit.revocation
-        ? { trigger: exit.revocation.trigger, noticeDays: exit.revocation.noticeDays, paymentsAlreadyMade: exit.revocation.onRevocationRefund }
-        : null,
-    } : null,
+    exitCosts: exit ? { ...exit, revocation: exit.revocation ?? null } : null,
     tiers: listing.priceTiers
       .filter((t) => t.commitment)
       .map((t) => {

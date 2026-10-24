@@ -53,7 +53,9 @@ export function paymentMethodsForCountry(country: string): MarketplacePaymentMet
 // relied on. `abandoned`: the reservation ended before payment arrived.
 // `on_plan` (instalment plans): the deposit is verified and the plot is held
 // for the buyer on the plan — never theirs until `verified`.
-export type TransactionStatus = "pending_payment" | "payment_received" | "awaiting_finance" | "on_plan" | "verified" | "rejected" | "abandoned";
+// `withdrawn` (the buyer left the plan) and `revoked` (the developer ended it
+// after notice): the plan is over and the buyer is refunded in parts.
+export type TransactionStatus = "pending_payment" | "payment_received" | "awaiting_finance" | "on_plan" | "verified" | "rejected" | "abandoned" | "withdrawn" | "revoked";
 
 // An instalment purchase's plan, worked out by the backend from the agreed
 // price when the purchase opened and never recomputed: the developer
@@ -62,6 +64,9 @@ export interface ScheduledInstalment {
   sequence: number;
   dueDate: string;
   amount: number;
+  // A restructured schedule's first new instalment carries the penalties
+  // already reached. Zero otherwise.
+  carriedPenalty?: number;
 }
 
 export interface PlanSchedule {
@@ -72,6 +77,14 @@ export interface PlanSchedule {
   premium: number;
   deposit: number;
   instalments: ScheduledInstalment[];
+  // 2+ once restructured: paid instalments first, then the new ones.
+  version?: number;
+  // The late-payment terms copied onto the purchase when it opened.
+  lateTerms?: {
+    steps: { monthsLate: number; penaltyPct: number }[];
+    penaltiesRefundable: boolean;
+    revocation: { afterMonths: number; noticeDays: number } | null;
+  } | null;
 }
 
 // The developer's offer letter, issued when the purchase opens (backend

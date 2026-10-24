@@ -12,7 +12,7 @@ import type { Currency } from "../../data/mockData";
 // Structurally identical to marketplaceCheckoutService.ts's TransactionStatus
 // — kept as its own export here so this component doesn't need to import a
 // checkout-specific service to be reused from the portfolio.
-export type VerificationStageStatus = "pending_payment" | "payment_received" | "awaiting_finance" | "on_plan" | "verified" | "rejected";
+export type VerificationStageStatus = "pending_payment" | "payment_received" | "awaiting_finance" | "on_plan" | "verified" | "rejected" | "withdrawn" | "revoked";
 
 interface VerificationProgressProps {
   status: VerificationStageStatus;
@@ -33,7 +33,9 @@ function stageStates(status: VerificationStageStatus): [StageState, StageState, 
     case "awaiting_finance": return ["done", "active", "upcoming"];
     case "on_plan":
     case "verified": return ["done", "done", "done"];
-    case "rejected": return ["done", "failed", "upcoming"];
+    case "rejected":
+    case "withdrawn":
+    case "revoked": return ["done", "failed", "upcoming"];
   }
 }
 

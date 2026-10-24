@@ -126,7 +126,7 @@ describe("declaring again writes a new version", () => {
     expect((await fetchRefundTerms(estateId))?.deductionPct).toBe(15);
 
     const terms = {
-      revocationTrigger: "12 months overdue", revocationNoticeDays: 30, onRevocationRefund: "Refunded less 20%.",
+      revocationAfterMonths: 3, revocationNoticeDays: 30, penaltiesRefundable: null,
       developmentDeadlineMonths: 3, transferRequiresConsent: true, penaltyTiers: [], notes: null,
     };
     expect((await declareDefaultTerms(estateId, terms)).version).toBe(1);
@@ -159,18 +159,29 @@ describe("refund terms", () => {
 
 // PD-6.
 describe("default terms", () => {
-  it("requires what happens to money already paid", () => {
-    const result = buildDefaultRequest({ ...defaultDraftFrom(null), revocationTrigger: "12 months overdue", transferRequiresConsent: false });
-    expect(result.errors?.onRevocationRefund).toMatch(/money already paid/);
+  it("revocation is two numbers: 3–120 months unpaid, and at least 14 days' notice (14 when left empty)", () => {
+    const base = { ...defaultDraftFrom(null), transferRequiresConsent: false };
+    expect(buildDefaultRequest(base).errors?.revocationAfterMonths).toMatch(/3 to 120/);
+    expect(buildDefaultRequest({ ...base, revocationAfterMonths: "2" }).errors?.revocationAfterMonths).toBeDefined();
+    expect(buildDefaultRequest({ ...base, revocationAfterMonths: "3", revocationNoticeDays: "7" }).errors?.revocationNoticeDays).toMatch(/14/);
+    expect(buildDefaultRequest({ ...base, revocationAfterMonths: "3" }).request).toMatchObject({ revocationAfterMonths: 3, revocationNoticeDays: null });
+  });
+
+  it("asks whether penalties are refunded only when there are penalty steps", () => {
+    const base = { ...defaultDraftFrom(null), revocationAfterMonths: "3", transferRequiresConsent: true };
+    expect(buildDefaultRequest(base).errors).toBeUndefined();
+    const withSteps = { ...base, penaltyTiers: [{ monthsLate: "1", penaltyPct: "5" }] };
+    expect(buildDefaultRequest(withSteps).errors?.penaltiesRefundable).toBeDefined();
+    expect(buildDefaultRequest({ ...withSteps, penaltiesRefundable: false }).request).toMatchObject({ penaltiesRefundable: false });
   });
 
   it("requires the transfer-consent question to be answered", () => {
-    const result = buildDefaultRequest({ ...defaultDraftFrom(null), revocationTrigger: "x", onRevocationRefund: "y" });
+    const result = buildDefaultRequest({ ...defaultDraftFrom(null), revocationAfterMonths: "3" });
     expect(result.errors?.transferRequiresConsent).toBeDefined();
   });
 
   it("accepts the source letter's ladder — 5% at 3, 10% at 6, 20% at 12 — and rejects a repeated month", () => {
-    const base = { ...defaultDraftFrom(null), revocationTrigger: "x", onRevocationRefund: "y", transferRequiresConsent: true };
+    const base = { ...defaultDraftFrom(null), revocationAfterMonths: "3", penaltiesRefundable: true, transferRequiresConsent: true };
     const ladder = [{ monthsLate: "3", penaltyPct: "5" }, { monthsLate: "6", penaltyPct: "10" }, { monthsLate: "12", penaltyPct: "20" }];
     expect(buildDefaultRequest({ ...base, penaltyTiers: ladder }).request?.penaltyTiers).toHaveLength(3);
     expect(buildDefaultRequest({ ...base, penaltyTiers: [...ladder, { monthsLate: "6", penaltyPct: "15" }] }).errors?.["penaltyTiers.3.monthsLate"])

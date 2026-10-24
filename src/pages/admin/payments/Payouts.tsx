@@ -392,6 +392,8 @@ export function payoutProblem(err: unknown): PayoutProblem {
     case "PAYOUT_IN_PROGRESS": return { message: "A payout for this sale is already in progress. Finish or cancel it under Awaiting code." };
     case "SALE_ALREADY_PAID": return { message: "This sale has already been paid in full." };
     // Information, not an error: an instalment plan's escrow.
+    case "WITHDRAWN_PLAN_PAID": return { message: "Every share owed on this withdrawn plan has been paid. There's no release: the buyer gets the rest back.", info: true };
+    case "REVOKED_PLAN_PAID": return { message: "Every share owed on this revoked plan has been paid. There's no release: the buyer gets the rest back.", info: true };
     case "HELD_IN_ESCROW": return { message: "Every share owed so far has been paid; the rest is released when the buyer completes the plan.", info: true };
     case "PAYOUT_NOT_AWAITING_OTP": return { message: "This payout isn't waiting for a code any more — check History." };
     case "COMPANY_NOT_ACTIVE": return { message: "The company is suspended, so payouts are on hold." };

@@ -106,8 +106,8 @@ export async function shareFile(file: File, title: string): Promise<boolean> {
 export interface DocumentVerification {
   // refunded: the payment was later returned; still genuine. Offer letters
   // are issued (not accepted yet), accepted, or lapsed with their purchase.
-  status: "valid" | "refunded" | "issued" | "accepted" | "lapsed";
-  documentType: "receipt" | "allocation_letter" | "provisional_allocation_letter" | "offer_letter";
+  status: "valid" | "refunded" | "issued" | "accepted" | "lapsed" | "declined" | "withdrawn" | "revoked";
+  documentType: "receipt" | "allocation_letter" | "provisional_allocation_letter" | "offer_letter" | "restructure_letter";
   number: string;
   issuedAt: string;
   issuedBy: string; // always "HomeTrue"

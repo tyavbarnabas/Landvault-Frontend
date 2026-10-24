@@ -27,12 +27,16 @@ const TYPE_NAMES: Record<DocumentVerification["documentType"], string> = {
   allocation_letter: "allocation letter",
   provisional_allocation_letter: "provisional allocation letter",
   offer_letter: "offer letter",
+  restructure_letter: "restructure letter",
 };
 
 const OFFER_STATUS: Record<string, string> = {
   issued: "Issued — not accepted yet",
   accepted: "Accepted by the buyer",
-  lapsed: "Lapsed — the purchase wasn't completed",
+  lapsed: "Lapsed — not taken up in time",
+  declined: "Declined by the buyer",
+  withdrawn: "Withdrawn",
+  revoked: "Revoked — the plan was ended",
 };
 
 export default function VerifyDocument() {
@@ -95,7 +99,9 @@ function Result({ code }: { code: string }) {
 
   const v = verification;
   const kind = TYPE_NAMES[v.documentType];
-  const offer = v.documentType === "offer_letter";
+  // Offers and restructure letters carry a status a buyer acts on; a
+  // provisional letter can read withdrawn or revoked when its plan ends.
+  const offer = v.documentType === "offer_letter" || v.documentType === "restructure_letter" || v.status === "withdrawn" || v.status === "revoked";
   // Genuine either way — a lapsed offer just stands for nothing now.
   const lapsed = offer && v.status === "lapsed";
   return (

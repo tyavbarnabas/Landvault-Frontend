@@ -109,6 +109,10 @@ export const TITLE_REVIEW_PERMISSION = "admin.titles.review";
 export const DOCUMENTS_VIEW_PERMISSION = "portal.documents.view";
 export const DOCUMENTS_MANAGE_PERMISSION = "portal.documents.manage";
 export const DOCUMENTS_REVIEW_PERMISSION = "admin.documents.review";
+// Instalment plans, phase 5b: giving notice of revocation and confirming it.
+// executive_director only, and company-wide: a director narrowed to a branch
+// is refused (REVOCATION_REQUIRES_COMPANY_WIDE_SCOPE).
+export const PLANS_REVOKE_PERMISSION = "portal.plans.revoke";
 
 const SUPER_ADMIN_PERMISSIONS = [
   "admin.dashboard.view",
@@ -145,7 +149,8 @@ export const STAFF_REQUEST_PERMISSION = "portal.staff.request";
 export const ROLES_MANAGE_PERMISSION = "portal.roles.manage";
 
 const DIRECTOR_PERMISSIONS = [...PORTAL_PERMISSIONS, BRANCHES_MANAGE_PERMISSION, STAFF_INVITE_PERMISSION, STAFF_REQUEST_PERMISSION,
-  PAYMENTS_VERIFY_PERMISSION, SETTLEMENT_MANAGE_PERMISSION, ROLES_MANAGE_PERMISSION, DOCUMENTS_VIEW_PERMISSION, DOCUMENTS_MANAGE_PERMISSION];
+  PAYMENTS_VERIFY_PERMISSION, SETTLEMENT_MANAGE_PERMISSION, ROLES_MANAGE_PERMISSION, DOCUMENTS_VIEW_PERMISSION, DOCUMENTS_MANAGE_PERMISSION,
+  PLANS_REVOKE_PERMISSION];
 // NOT portal.estates.manage: changeset 041 grants that to executive_director
 // and surveyor_project_manager only. A branch manager reads their branch's
 // estates and asks head office for staff — the surveyor they ask for is the

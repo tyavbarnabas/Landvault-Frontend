@@ -61,13 +61,14 @@ export default function ExitCostsPanel({ exitCosts, layout = "cards" }: { exitCo
         <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
           <h3 className="text-sm font-semibold text-[var(--foreground)] mb-2">If an instalment is late</h3>
           {lateBasis(exitCosts) && <p className="text-xs text-[var(--muted-foreground)] mb-2">{lateBasis(exitCosts)}</p>}
+          {penaltiesRefundLine(exitCosts) && <p className="text-xs text-[var(--muted-foreground)] mb-2">{penaltiesRefundLine(exitCosts)}</p>}
           {penaltySteps.length === 0 ? (
             <p className="text-sm text-[var(--muted-foreground)]">{noPenalty(exitCosts)}</p>
           ) : (
             <div className="divide-y divide-[var(--border)]">
               {penaltySteps.map((step) => (
                 <div key={step.monthsLate} className="flex items-center justify-between gap-3 py-2 text-sm">
-                  <span className="text-[var(--muted-foreground)]">{step.monthsLate} months late ({step.penaltyPct}%)</span>
+                  <span className="text-[var(--muted-foreground)]">{step.monthsLate} month{step.monthsLate === 1 ? "" : "s"} late ({step.penaltyPct}%)</span>
                   <span className="font-mono-data text-[var(--foreground)]">{formatDeclaredAmount(step.amount, currency)}</span>
                 </div>
               ))}
@@ -82,25 +83,23 @@ export default function ExitCostsPanel({ exitCosts, layout = "cards" }: { exitCo
           absent, never filled in with plausible wording. */}
       {revocation && (
       <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 mt-4">
-        <h3 className="text-sm font-semibold text-[var(--foreground)] mb-2">If the allocation is revoked</h3>
-        <dl className="space-y-2 text-sm">
-          <div>
-            <dt className="text-xs text-[var(--muted-foreground)]">What triggers it</dt>
-            <dd className="text-[var(--foreground)]">{revocation.trigger}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-[var(--muted-foreground)]">Notice you receive first</dt>
-            <dd className="text-[var(--foreground)]">{revocation.noticeDays} days</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-[var(--muted-foreground)]">What happens to money already paid</dt>
-            <dd className="text-[var(--foreground)]">{revocation.paymentsAlreadyMade}</dd>
-          </div>
-        </dl>
+        <h3 className="text-sm font-semibold text-[var(--foreground)] mb-2">If the plan is revoked</h3>
+        <p className="text-sm text-[var(--foreground)]">{revocationSentence(revocation)}</p>
       </div>
       )}
     </div>
   );
+}
+
+// HomeTrue's own sentence, from the developer's two numbers.
+function revocationSentence(r: NonNullable<ExitCosts["revocation"]>): string {
+  return `If an instalment is ${r.afterMonthsUnpaid} months unpaid, the developer may revoke the plan after ${r.noticeDays} days' written notice. You'd be refunded exactly what withdrawing returns.`;
+}
+
+// Whether penalties come back on withdrawal; nothing when none are declared.
+function penaltiesRefundLine(e: ExitCosts): string | null {
+  if (e.penaltiesRefundable == null || e.ifYouFallBehind.length === 0) return null;
+  return `Late-payment penalties are ${e.penaltiesRefundable ? "refunded" : "not refunded"} if you withdraw.`;
 }
 
 // "If an instalment of ₦962,500 (12-month plan, Standard 250) is late" — the
@@ -158,13 +157,14 @@ function ExitRows({ exitCosts }: { exitCosts: ExitCosts }) {
       </ExitRow>
       <ExitRow title="If an instalment is late" summary={penaltySteps.length === 0 ? noPenalty(exitCosts) : `${penaltySteps.length} penalty step${penaltySteps.length > 1 ? "s" : ""} declared`}>
         {lateBasis(exitCosts) && <p className="text-xs text-[var(--muted-foreground)] mb-2">{lateBasis(exitCosts)}</p>}
+          {penaltiesRefundLine(exitCosts) && <p className="text-xs text-[var(--muted-foreground)] mb-2">{penaltiesRefundLine(exitCosts)}</p>}
         {penaltySteps.length === 0 ? (
           <p className="text-sm text-[var(--muted-foreground)]">{noPenalty(exitCosts)}</p>
         ) : (
           <div className="divide-y divide-[var(--border)]">
             {penaltySteps.map((step) => (
               <div key={step.monthsLate} className="flex items-center justify-between gap-3 py-2 text-sm">
-                <span className="text-[var(--muted-foreground)]">{step.monthsLate} months late ({step.penaltyPct}%)</span>
+                <span className="text-[var(--muted-foreground)]">{step.monthsLate} month{step.monthsLate === 1 ? "" : "s"} late ({step.penaltyPct}%)</span>
                 {money(step.amount)}
               </div>
             ))}
@@ -172,11 +172,8 @@ function ExitRows({ exitCosts }: { exitCosts: ExitCosts }) {
         )}
       </ExitRow>
       {revocation && (
-        <ExitRow title="If the allocation is revoked" summary={`${revocation.noticeDays} days' notice first`}>
-          <dl className="space-y-2 text-sm">
-            <div><dt className="text-xs text-[var(--muted-foreground)]">What triggers it</dt><dd>{revocation.trigger}</dd></div>
-            <div><dt className="text-xs text-[var(--muted-foreground)]">What happens to money already paid</dt><dd>{revocation.paymentsAlreadyMade}</dd></div>
-          </dl>
+        <ExitRow title="If the plan is revoked" summary={`After ${revocation.afterMonthsUnpaid} months unpaid and ${revocation.noticeDays} days' notice`}>
+          <p className="text-sm text-[var(--foreground)]">{revocationSentence(revocation)}</p>
         </ExitRow>
       )}
     </div>

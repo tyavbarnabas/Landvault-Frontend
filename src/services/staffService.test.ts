@@ -191,12 +191,12 @@ describe("company-made roles", () => {
   let r = 0;
   const name = () => `Accounts Clerk ${++r}`;
 
-  it("lists the 10 portal permissions, marking those you hold and the company-wide-only ones", async () => {
+  it("lists the 11 portal permissions, marking those you hold and the company-wide-only ones", async () => {
     const all = await fetchPortalPermissions(FINANCE);
-    expect(all).toHaveLength(10);
+    expect(all).toHaveLength(11);
     expect(all.filter((p) => p.held).map((p) => p.code).sort()).toEqual(["portal.documents.view", "portal.estates.view", "portal.payments.verify"]);
     expect(all.filter((p) => p.requiresCompanyWide).map((p) => p.code).sort())
-      .toEqual(["portal.branches.manage", "portal.documents.manage", "portal.roles.manage", "portal.settlement.manage", "portal.staff.invite"]);
+      .toEqual(["portal.branches.manage", "portal.documents.manage", "portal.plans.revoke", "portal.roles.manage", "portal.settlement.manage", "portal.staff.invite"]);
     expect(companyOnlyPermissions("either", ["portal.estates.view", "portal.staff.invite"], all)).toEqual(["portal.staff.invite"]);
     expect(companyOnlyPermissions("company", ["portal.staff.invite"], all)).toEqual([]);
   });

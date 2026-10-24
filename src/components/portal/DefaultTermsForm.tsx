@@ -84,24 +84,40 @@ export default function DefaultTermsForm({ estateId, current, onDeclared }: {
         </button>
       </fieldset>
 
-      <Field id="revocationTrigger" label="What triggers revocation" error={errors.revocationTrigger}>
-        <textarea id="revocationTrigger" rows={2} value={draft.revocationTrigger} onChange={(e) => set({ revocationTrigger: e.target.value })} className={inputClass}
-          placeholder="Payment more than 12 months overdue, or failure to start building within the stated period." />
-      </Field>
+      {draft.penaltyTiers.length > 0 && (
+        <Choice<boolean>
+          name="penaltiesRefundable"
+          legend="If a buyer withdraws or is revoked, are penalties they've paid refunded?"
+          value={draft.penaltiesRefundable}
+          onChange={(penaltiesRefundable) => set({ penaltiesRefundable })}
+          error={errors.penaltiesRefundable}
+          options={[{ value: true, label: "Refunded" }, { value: false, label: "Not refunded" }]}
+          hint="Buyers see this on the listing and in their offer letter."
+        />
+      )}
 
-      <Field id="revocationNoticeDays" label="Notice given before revocation (days, optional)" error={errors.revocationNoticeDays}>
-        <input id="revocationNoticeDays" type="number" min={0} step="1" value={draft.revocationNoticeDays} onChange={(e) => set({ revocationNoticeDays: e.target.value })} className={inputClass} />
-      </Field>
-
-      <Field
-        id="onRevocationRefund"
-        label="What happens to money already paid"
-        error={errors.onRevocationRefund}
-        hint="Required. Saying an allocation may be revoked without saying this leaves a buyer unable to judge their exposure."
-      >
-        <textarea id="onRevocationRefund" rows={2} value={draft.onRevocationRefund} onChange={(e) => set({ onRevocationRefund: e.target.value })} className={inputClass}
-          placeholder="Payments to date are refunded less a 20% administrative charge, within 90 days." />
-      </Field>
+      {/* Revocation as numbers (phase 5b): HomeTrue words it for buyers. */}
+      <fieldset className="rounded-lg bg-[var(--muted)] p-4 space-y-2">
+        <legend className="sr-only">Revocation</legend>
+        <p className="text-sm font-semibold text-[var(--foreground)]">Revocation</p>
+        <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--foreground)]">
+          <span>A plan can be revoked once an instalment is</span>
+          <label htmlFor="revocationAfterMonths" className="sr-only">Months unpaid before a plan can be revoked</label>
+          <input id="revocationAfterMonths" type="number" min={3} max={120} step="1" value={draft.revocationAfterMonths}
+            onChange={(e) => set({ revocationAfterMonths: e.target.value })} className={`${inputClass} w-20 font-mono-data`}
+            aria-invalid={!!errors.revocationAfterMonths} aria-describedby="revocation-hint" />
+          <span>months unpaid, after</span>
+          <label htmlFor="revocationNoticeDays" className="sr-only">Days of written notice</label>
+          <input id="revocationNoticeDays" type="number" min={14} step="1" value={draft.revocationNoticeDays} placeholder="14"
+            onChange={(e) => set({ revocationNoticeDays: e.target.value })} className={`${inputClass} w-20 font-mono-data`}
+            aria-invalid={!!errors.revocationNoticeDays} aria-describedby="revocation-hint" />
+          <span>days' written notice.</span>
+        </div>
+        <FieldError message={errors.revocationAfterMonths ?? errors.revocationNoticeDays} />
+        <p id="revocation-hint" className="text-xs text-[var(--muted-foreground)]">
+          3–120 months; notice at least 14 days (14 if left empty). HomeTrue words this for buyers; a revoked buyer is refunded exactly as if they had withdrawn.
+        </p>
+      </fieldset>
 
       <Field id="developmentDeadlineMonths" label="Development deadline (months, optional)" error={errors.developmentDeadlineMonths} hint={DEADLINE_NOT_TRACKED}>
         <input id="developmentDeadlineMonths" type="number" min={1} step="1" value={draft.developmentDeadlineMonths} onChange={(e) => set({ developmentDeadlineMonths: e.target.value })} className={inputClass} />

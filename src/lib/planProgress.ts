@@ -11,8 +11,9 @@
 import type { OwnedPlot, Payment } from "../data/mockData";
 import type { PlanSchedule } from "../services/marketplaceCheckoutService";
 import type { TransactionStatus } from "../services/marketplaceCheckoutService";
+import type { Penalty, PlanStanding } from "../services/planService";
 
-export type RowState = "verified" | "awaiting" | "next" | "upcoming";
+export type RowState = "verified" | "awaiting" | "next" | "upcoming" | "due_today" | "overdue" | "in_arrears";
 
 export interface ScheduleRow {
   key: string;
@@ -21,6 +22,10 @@ export interface ScheduleRow {
   dueDate: string | null;
   amount: number;
   state: RowState;
+  // From today's standing (phase 4): days late, and the penalty reached — or
+  // carried from before a restructure.
+  daysLate?: number;
+  penalty?: Penalty | null;
 }
 
 const isInstalment = (p: Payment) => p.type === "instalment" || p.type === "installment";
@@ -37,7 +42,7 @@ export function instalmentsVerified(schedule: PlanSchedule, owned: OwnedPlot | n
   return owned?.installmentsPaid ?? 0;
 }
 
-export function scheduleRows(schedule: PlanSchedule, owned: OwnedPlot | null | undefined, status: TransactionStatus): ScheduleRow[] {
+export function scheduleRows(schedule: PlanSchedule, owned: OwnedPlot | null | undefined, status: TransactionStatus, standing?: PlanStanding | null): ScheduleRow[] {
   const count = schedule.instalments.length;
   const depositState: RowState = status === "on_plan" || status === "verified" ? "verified"
     : status === "awaiting_finance" || status === "payment_received" ? "awaiting"
@@ -53,6 +58,19 @@ export function scheduleRows(schedule: PlanSchedule, owned: OwnedPlot | null | u
     else if (status === "on_plan" && (balanceWaiting || (pending && i.sequence === paid + 1))) state = "awaiting";
     else if (status === "on_plan" && !pending && i.sequence === paid + 1) state = "next";
     rows.push({ key: `i${i.sequence}`, label: `Instalment ${i.sequence} of ${count}`, dueDate: i.dueDate, amount: i.amount, state });
+  }
+  // A running plan's standing is today's word on every instalment: use it as
+  // given (awaiting verification is never late).
+  if (standing && status === "on_plan") {
+    for (const r of rows) {
+      const st = standing.instalments.find((i) => `i${i.sequence}` === r.key);
+      if (!st) continue;
+      r.state = st.status === "paid" ? "verified" : st.status === "awaiting_verification" ? "awaiting" : st.status === "upcoming" ? r.state === "next" ? "next" : "upcoming" : st.status;
+      r.amount = st.amount;
+      r.dueDate = st.dueDate;
+      r.daysLate = st.daysLate;
+      r.penalty = st.penalty;
+    }
   }
   return rows;
 }
@@ -88,6 +106,8 @@ export interface HistoryRow {
   currency: string;
   verified: boolean;
   receiptId: string | null;
+  // A late instalment's penalty, already inside `amount`.
+  penaltyAmount: number | null;
 }
 
 export function paymentHistory(owned: OwnedPlot | null | undefined, schedule: PlanSchedule): HistoryRow[] {
@@ -102,6 +122,6 @@ export function paymentHistory(owned: OwnedPlot | null | undefined, schedule: Pl
       const label = p.type === "deposit" ? "Deposit"
         : p.type === "balance" ? "Balance paid off"
           : isInstalment(p) ? `Instalment ${++n} of ${count}` : "Payment";
-      return { id: p.id, label, date: p.date, amount: p.amount, currency: p.currency, verified: p.status === "confirmed", receiptId: p.receiptId };
+      return { id: p.id, label, date: p.date, amount: p.amount, currency: p.currency, verified: p.status === "confirmed", receiptId: p.receiptId, penaltyAmount: p.penaltyAmount ?? null };
     });
 }

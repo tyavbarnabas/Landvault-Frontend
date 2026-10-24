@@ -143,20 +143,22 @@ export function RefundSummary({ refund }: { refund: RefundTerms }) {
 export function DefaultTermsSummary({ terms }: { terms: DefaultTerms }) {
   return (
     <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5">
-      <h3 className="text-sm font-semibold text-[var(--foreground)] mb-2">If the allocation is revoked</h3>
+      <h3 className="text-sm font-semibold text-[var(--foreground)] mb-2">If the plan is revoked</h3>
       <dl className="space-y-2 text-sm">
         <div>
-          <dt className="text-xs text-[var(--muted-foreground)]">What triggers it</dt>
-          <dd className="text-[var(--foreground)]">{terms.revocationTrigger}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-[var(--muted-foreground)]">Notice given first</dt>
-          <dd className="text-[var(--foreground)]">{terms.revocationNoticeDays === null ? "Not stated" : `${terms.revocationNoticeDays} days`}</dd>
+          <dt className="text-xs text-[var(--muted-foreground)]">When</dt>
+          <dd className="text-[var(--foreground)]">Once an instalment is {terms.revocationAfterMonths} months unpaid, after {terms.noticeDaysGiven} days' written notice.</dd>
         </div>
         <div>
           <dt className="text-xs text-[var(--muted-foreground)]">What happens to money already paid</dt>
-          <dd className="text-[var(--foreground)]">{terms.onRevocationRefund}</dd>
+          <dd className="text-[var(--foreground)]">Refunded exactly as if the buyer had withdrawn.</dd>
         </div>
+        {terms.penaltyTiers.length > 0 && (
+          <div>
+            <dt className="text-xs text-[var(--muted-foreground)]">Late-payment penalties</dt>
+            <dd className="text-[var(--foreground)]">{terms.penaltiesRefundable ? "Refunded" : "Not refunded"} if the buyer withdraws or is revoked.</dd>
+          </div>
+        )}
         {terms.developmentDeadlineMonths !== null && (
           <div>
             <dt className="text-xs text-[var(--muted-foreground)]">Development deadline</dt>

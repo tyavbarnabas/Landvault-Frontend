@@ -30,6 +30,7 @@ import { fetchDocumentsByPlotId } from "../../services/documentsService";
 import PlanCard from "../../components/purchases/PlanCard";
 import { PlanPaymentsCard, PlanScheduleCard } from "../../components/purchases/PlanScheduleCard";
 import LetterCard from "../../components/purchases/LetterCard";
+import { PlanOptionsCard, PlanSettlementCard, StandingPanel } from "../../components/purchases/PlanStanding";
 import { formatMoney } from "../../lib/formatCurrency";
 import { frequencyWord } from "../../services/paymentPlansService";
 
@@ -40,7 +41,7 @@ export default function PurchaseDetail() {
     if (!purchase) return { purchase: null, estateName: null, plot: null, owned: null, documents: [] };
     // Paid purchases are in the portfolio (by their transaction id) with a
     // plan's progress and payments, and have their documents.
-    const paid = isAvailable("portfolio") && ["awaiting_finance", "on_plan", "verified"].includes(purchase.status);
+    const paid = isAvailable("portfolio") && ["awaiting_finance", "on_plan", "verified", "withdrawn", "revoked"].includes(purchase.status);
     // Names for display only. An estate taken off the market still has its
     // purchase; it just shows without them.
     const [listing, plot, owned, documents] = await Promise.all([
@@ -82,9 +83,12 @@ export default function PurchaseDetail() {
       actions={inPortfolio ? <LinkButton to={`/portfolio/${purchase.id}`} variant="secondary">View in portfolio</LinkButton> : undefined}>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
         <div className="space-y-6 min-w-0">
+          {/* A notice of revocation or arrears comes first: what's owed and what to do. */}
+          <StandingPanel purchase={purchase} onPay={() => document.getElementById("plan-heading")?.scrollIntoView({ behavior: "smooth", block: "start" })} />
           <PurchaseStatusPanel purchase={purchase} refundShown={showRefund} />
+          <PlanSettlementCard purchase={purchase} />
           {showRefund && p && <RefundPanel paymentReference={p.reference} />}
-          {schedule && purchase.status !== "rejected" && purchase.status !== "abandoned" && (
+          {schedule && !["rejected", "abandoned", "withdrawn", "revoked"].includes(purchase.status) && (
             <>
               <PlanCard purchase={purchase} owned={owned} onChanged={loaded.refetch} />
               <PlanScheduleCard purchase={purchase} owned={owned} />
@@ -127,6 +131,7 @@ export default function PurchaseDetail() {
 
         <div className="space-y-6">
           {letter && <LetterCard letter={letter} />}
+          <PlanOptionsCard purchase={purchase} />
           {/* A plan's payments are in its history; this is a single payment's card. */}
           {p && !schedule && (
             <Card as="section" aria-labelledby="payment-heading">

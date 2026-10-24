@@ -12,6 +12,7 @@
 
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { RestructureQueue, RunningPlans } from "../../../components/portal/RunningPlans";
 import { useApp } from "../../../contexts/AppContext";
 import { DOCUMENTS_VIEW_PERMISSION } from "../../../services/authService";
 import { formatMoney } from "../../../lib/formatCurrency";
@@ -33,9 +34,11 @@ import {
   refundLatePayment, rejectPurchase, verifyPurchase, verifySells, type FinanceDecision, type FinanceQueueItem, type LatePayment, type Payout,
 } from "../../../services/financeService";
 
-type Tab = "verify" | "late" | "payouts";
+type Tab = "verify" | "plans" | "restructures" | "late" | "payouts";
 const TABS: { id: Tab; label: string }[] = [
   { id: "verify", label: "Awaiting verification" },
+  { id: "plans", label: "Running plans" },
+  { id: "restructures", label: "Restructures" },
   { id: "late", label: "Late payments" },
   { id: "payouts", label: "Payouts" },
 ];
@@ -52,6 +55,8 @@ export default function PortalFinance() {
   const payouts = useFetch(() => fetchCompanyPayouts(), []);
   const count: Record<Tab, string | null> = {
     verify: queue.data ? String(queue.data.length) : null,
+    plans: null,
+    restructures: null,
     late: late.data ? String(late.data.length) : null,
     payouts: payouts.data ? `${saleGroups(payouts.data).length} sale${saleGroups(payouts.data).length === 1 ? "" : "s"}` : null,
   };
@@ -62,6 +67,8 @@ export default function PortalFinance() {
       <TabBar tabs={tabs} active={tab} onActivate={(t) => setParams({ tab: t }, { replace: true })} ariaLabel="Finance" divider />
       <div id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
         {tab === "verify" && <VerificationQueue list={queue} />}
+        {tab === "plans" && <RunningPlans />}
+        {tab === "restructures" && <RestructureQueue />}
         {tab === "late" && <LatePayments list={late} />}
         {tab === "payouts" && <Payouts list={payouts} />}
       </div>
@@ -157,6 +164,19 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
           <div className="font-mono-data text-lg">{p ? money(p.amountPaid, p.currency) : "Nothing confirmed"}</div>
         </InfoBox>
       </div>
+      {(item.penalties ?? []).length > 0 && (
+        <div className="rounded-lg bg-[var(--muted)] px-3 py-2 text-sm space-y-0.5">
+          {item.penalties!.map((pl) => (
+            <div key={pl.instalmentSequence}>Instalment {pl.instalmentSequence} + {pl.penaltyPct}% penalty ({pl.monthsLate} month{pl.monthsLate === 1 ? "" : "s"} late) <span className="font-mono-data">{money(pl.amount, item.currency)}</span></div>
+          ))}
+          <div className="text-xs text-[var(--muted-foreground)]">Penalties are inside the amount above.</div>
+        </div>
+      )}
+      {(item.planWithdrawn || item.planRevoked) && (
+        <Alert tone="info" role="status">
+          {item.planWithdrawn ? "The buyer withdrew." : "This plan was revoked."} Verifying releases only your share of this payment; rejecting returns your share to the buyer too.
+        </Alert>
+      )}
       {p && (
         <p className="text-xs text-[var(--muted-foreground)]">
           {[paidWithLabel(p.channel, p.last4) && `Paid with ${paidWithLabel(p.channel, p.last4)}`, p.paidAt && when(p.paidAt), p.gatewayResponse && `Paystack: “${p.gatewayResponse}”`].filter(Boolean).join(" · ")}
@@ -239,6 +259,8 @@ export function paymentForLabel(item: FinanceQueueItem): string {
 // Never "sell" for a deposit or a non-final instalment.
 export function verifyLabel(item: FinanceQueueItem): string {
   const kind = item.paymentFor ?? "full_price";
+  // The plan ended while this waited: verifying only releases the developer's share.
+  if (item.planWithdrawn || item.planRevoked) return "Verify — release your share";
   if (kind === "full_price") return "Verify and sell";
   if (kind === "deposit") return "Verify deposit — hold plot on plan";
   return verifySells(item) ? "Verify — sell plot & issue allocation letter" : "Verify instalment";
@@ -247,6 +269,7 @@ export function verifyLabel(item: FinanceQueueItem): string {
 // The success line, worded from what the backend answered: `on_plan` (the
 // plan carries on) or `verified` (sold).
 function verifiedMessage(item: FinanceQueueItem, decision: FinanceDecision, buyer: string): string {
+  if (decision.status === "withdrawn" || decision.status === "revoked") return "Verified. Only your share of this payment is released for payout; the buyer's part is returned to them.";
   if (decision.status === "on_plan") {
     if (item.paymentFor === "deposit") {
       return `Deposit verified. ${item.plotLabel} is held for ${buyer} on the plan${decision.allocationLetterNumber ? `; provisional allocation letter ${decision.allocationLetterNumber} issued` : ""}.`;

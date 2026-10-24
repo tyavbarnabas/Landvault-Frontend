@@ -147,6 +147,46 @@ Built from the Figma page "Screen — Instalment plans". The rule throughout: **
 
 Out of scope (phases 4–5, not on the backend): arrears, penalties charged, reminders, revocation, withdrawal, restructure.
 
+### I. Instalment plans, phases 4–5 — wired 2026-10-24 (backend PRs #24–#28)
+
+Built from the Figma page "Screen — Instalments: arrears, withdraw, revoke, restructure". As in H, **no money arithmetic and nothing stored about lateness**: every status, days late, penalty, refund and share is the latest response's, for today in Lagos. **No demo data** for any of it, per the brief: in demo mode the lists are empty and the actions say they need the live service.
+
+- **Phase 4 — arrears and penalties.** `Purchase.standing` (`status`, `instalments[]` with `status`/`daysLate`/`penalty`, `arrears`, `revocation`, `restructureStatus`) drives:
+  - a calm, warning-tinted arrears panel on the purchase page;
+  - a status chip;
+  - each schedule row's status and its penalty on its own line;
+  - the Pay flow for a late instalment: the instalment and its penalty side by side, then the backend's `PaymentDto.amount`/`penaltyAmount` before Paystack.
+  - Awaiting verification is never late. A carried penalty (`monthsLate 0, penaltyPct 0`) reads "carried from before the restructure".
+  - Payment history shows "includes ₦X late-payment penalty".
+  - Portfolio: `in_arrears`, `withdrawn`, `revoked`; the arrears line shows `totalDue` and the penalty; a restructure badge appears while one is open.
+  - Listing: `penaltiesRefundable`, plus the revocation sentence built from `afterMonthsUnpaid`/`noticeDays`.
+- **Default terms (wire change).** `revocationTrigger`/`onRevocationRefund` are gone. `revocationAfterMonths` (3–120, required) and `revocationNoticeDays` (≥ 14, optional) are entered as numbers in one sentence. `penaltiesRefundable` is asked only when there are penalty steps. `DefaultTerms` returns `noticeDaysGiven`.
+- **5a — withdraw** (`/purchases/:id/withdraw`, `planService.fetchWithdrawal`/`withdraw`):
+  - the quote comes first: paid, comes back, developer keeps, then each payment; a payment awaiting finance counts as paid;
+  - then an "I understand" tick before confirming;
+  - the POST names the quote's `refund`; `WITHDRAWAL_QUOTE_CHANGED` reloads the quote and asks again;
+  - once withdrawn or revoked, the purchase page lists each payment's refund, with the bank-account step (`RefundPanel`) where needed.
+- **5b — revoke.**
+  - Buyer: the notice of revocation sits at the top of the purchase page (Pay now · See withdrawal figures · Ask to restructure); `revocableFrom` is a quiet line in the arrears panel.
+  - Portal: on `/portal/finance/plans/:id`, an Executive Director with `portal.plans.revoke` (added to the permission list and the roles catalogue) sees what revoking would mean, gives notice with a reason, withdraws a notice, and confirms from `confirmableFrom` behind a confirm dialog. The notice history is listed, and every `REVOCATION_*` code has words.
+- **5c — restructure.**
+  - Buyer (`/purchases/:id/restructure`):
+    - ask (reason, preferred instalments);
+    - wait, with a Withdraw request link;
+    - see the proposal side by side with today's plan, with the carried penalty, the total unchanged and the deadline;
+    - read the restructure letter (`/api/documents/restructure-letters/{id}/pdf`), then Accept or Decline, which sends the proposal's id;
+    - the history lists earlier requests.
+  - Portal: a Restructures tab; on the plan page, propose with a debounced live `preview`, or reject with a reason, or withdraw a proposal.
+- **Finance:**
+  - a Running plans tab with filter chips (most urgent first);
+  - queue rows show `penalties[]` as their own lines;
+  - `planWithdrawn`/`planRevoked` rows explain that verifying releases only the developer's share, and their Verify reads "Verify — release your share".
+  - Decisions answering `withdrawn`/`revoked` are worded for it.
+- **Payouts:** `WITHDRAWN_PLAN_PAID`/`REVOKED_PLAN_PAID` are shown as information.
+- **Documents:** `restructure_letter` in the vault (its own tab when there are any) and on the verify page. Statuses `withdrawn`/`revoked`/`declined` have labels.
+
+Out of scope: penalty waivers (`penaltyWaived` is ignored), developer-initiated restructures, reminder emails, reinstating a plan.
+
 ### Also worth a look, lower priority
 
 - **`POST /api/auth/login`'s OpenAPI description says to "check for a `challengeId` field".** `TwoFactorChallengeResponse` has no such field — it is `challengeToken`. The frontend discriminates on `twoFactorRequired`, which is unambiguous, but the description is misleading and worth correcting.

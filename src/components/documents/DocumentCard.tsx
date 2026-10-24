@@ -16,6 +16,7 @@ export const DOCUMENT_TYPE_LABELS: Record<Document["type"], string> = {
   receipt: "Payment receipt",
   offer_letter: "Offer letter",
   provisional_allocation_letter: "Provisional allocation letter",
+  restructure_letter: "Restructure letter",
   allocation_letter: "Allocation letter",
   deed_of_assignment: "Deed of assignment",
   poa_draft: "POA draft",
@@ -23,7 +24,7 @@ export const DOCUMENT_TYPE_LABELS: Record<Document["type"], string> = {
 
 export function DocTypeIcon({ type, size = 18 }: { type: Document["type"]; size?: number }) {
   if (type === "receipt") return <ReceiptIcon size={size} />;
-  if (type === "allocation_letter" || type === "provisional_allocation_letter") return <FileCheckIcon size={size} />;
+  if (type === "allocation_letter" || type === "provisional_allocation_letter" || type === "restructure_letter") return <FileCheckIcon size={size} />;
   return <FileTextIcon size={size} />;
 }
 
@@ -60,6 +61,10 @@ export function DocStatus({ doc }: { doc: Document }) {
   if (doc.status === "issued") return <Badge label="Waiting for you" variant="warning" />;
   if (doc.status === "accepted") return <Badge label="Accepted" variant="success" />;
   if (doc.status === "lapsed") return <Badge label="Lapsed" variant="neutral" />;
+  // A plan that ended (provisional letters), or a restructure not taken up.
+  if (doc.status === "withdrawn") return <Badge label="Withdrawn" variant="neutral" />;
+  if (doc.status === "revoked") return <Badge label="Revoked" variant="neutral" />;
+  if (doc.status === "declined") return <Badge label="Declined" variant="neutral" />;
   if (doc.status !== "valid") return <Badge label={doc.status === "void" ? "Void" : "Superseded"} variant="error" />;
   return <Badge label="Valid" variant="success" />;
 }
@@ -70,7 +75,10 @@ export function statusNote(doc: Document): string | null {
   if (doc.status === "accepted" && doc.acceptedAt) return `Accepted ${formatDay(doc.acceptedAt)}`;
   if (doc.status === "lapsed") return "Purchase not completed";
   if (doc.refundedAt) return `Refunded ${formatDay(doc.refundedAt)}`;
+  if (doc.type === "provisional_allocation_letter" && doc.status === "withdrawn") return "You withdrew from the plan";
+  if (doc.type === "provisional_allocation_letter" && doc.status === "revoked") return "The plan was revoked";
   if (doc.type === "provisional_allocation_letter") return "Your final allocation letter is issued when the plan is paid in full";
+  if (doc.type === "restructure_letter" && doc.status === "issued") return "New terms to read, then accept or decline on the purchase page";
   return null;
 }
 

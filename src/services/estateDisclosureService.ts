@@ -95,11 +95,15 @@ export interface PenaltyTier {
 // DefaultTermsDto.
 export interface DefaultTerms {
   version: number;
-  revocationTrigger: string;
+  // Revocation (phase 5b): a plan may be revoked once an instalment is this
+  // many whole months unpaid, after written notice. HomeTrue words it for
+  // buyers; a revoked buyer is refunded exactly as on withdrawal.
+  revocationAfterMonths: number;
+  // As declared (null = left out); noticeDaysGiven is what applies (≥ 14).
   revocationNoticeDays: number | null;
-  // What happens to money already paid. Required: "your allocation may be
-  // revoked" without this is not a disclosure.
-  onRevocationRefund: string;
+  noticeDaysGiven: number;
+  // Penalties paid come back on withdrawal or revocation.
+  penaltiesRefundable: boolean;
   // Stored, NOT tracked — nothing watches the clock or warns as it approaches.
   developmentDeadlineMonths: number | null;
   // Disclosed, NOT enforced — there is no resale flow yet.
@@ -141,9 +145,10 @@ export interface DeclareRefundTermsRequest {
 }
 
 export interface DeclareDefaultTermsRequest {
-  revocationTrigger: string;
+  revocationAfterMonths: number;
   revocationNoticeDays: number | null;
-  onRevocationRefund: string;
+  // Required when there are penalty steps.
+  penaltiesRefundable: boolean | null;
   developmentDeadlineMonths: number | null;
   transferRequiresConsent: boolean;
   penaltyTiers: PenaltyTier[];
@@ -214,15 +219,20 @@ export function validateRefundTerms(input: Partial<DeclareRefundTermsRequest>): 
   return errors;
 }
 
+export const REVOCATION_LIMITS = { afterMonths: [3, 120], minNoticeDays: 14 } as const;
+
 // Mirrors DeclareDefaultTermsRequest plus the service's duplicate-month check.
 export function validateDefaultTerms(input: Partial<DeclareDefaultTermsRequest>): FieldErrors {
   const errors: FieldErrors = {};
-  if (blank(input.revocationTrigger)) errors.revocationTrigger = "Say what triggers revocation.";
-  if (blank(input.onRevocationRefund)) {
-    errors.onRevocationRefund = "Say what happens to money already paid. Revocation without this is not a disclosure.";
+  const after = input.revocationAfterMonths;
+  if (!isNum(after) || !Number.isInteger(after) || after < REVOCATION_LIMITS.afterMonths[0] || after > REVOCATION_LIMITS.afterMonths[1]) {
+    errors.revocationAfterMonths = "A whole number of months, from 3 to 120.";
   }
-  if (input.revocationNoticeDays != null && (input.revocationNoticeDays < 0 || !Number.isInteger(input.revocationNoticeDays))) {
-    errors.revocationNoticeDays = "Enter a whole number of days.";
+  if (input.revocationNoticeDays != null && (!Number.isInteger(input.revocationNoticeDays) || input.revocationNoticeDays < REVOCATION_LIMITS.minNoticeDays)) {
+    errors.revocationNoticeDays = "At least 14 days, or leave it empty for 14.";
+  }
+  if ((input.penaltyTiers ?? []).length > 0 && typeof input.penaltiesRefundable !== "boolean") {
+    errors.penaltiesRefundable = "Say whether penalties are refunded if a buyer withdraws or is revoked.";
   }
   if (input.developmentDeadlineMonths != null && (input.developmentDeadlineMonths <= 0 || !Number.isInteger(input.developmentDeadlineMonths))) {
     errors.developmentDeadlineMonths = "Enter a whole number of months, or leave it blank.";
@@ -381,9 +391,9 @@ export function buildRefundRequest(draft: RefundDraft): BuildResult<DeclareRefun
 }
 
 export interface DefaultDraft {
-  revocationTrigger: string;
+  revocationAfterMonths: string;
   revocationNoticeDays: string;
-  onRevocationRefund: string;
+  penaltiesRefundable: boolean | null;
   developmentDeadlineMonths: string;
   transferRequiresConsent: boolean | null;
   penaltyTiers: { monthsLate: string; penaltyPct: string }[];
@@ -393,14 +403,14 @@ export interface DefaultDraft {
 export function defaultDraftFrom(terms: DefaultTerms | null): DefaultDraft {
   if (!terms) {
     return {
-      revocationTrigger: "", revocationNoticeDays: "", onRevocationRefund: "", developmentDeadlineMonths: "",
+      revocationAfterMonths: "", revocationNoticeDays: "", penaltiesRefundable: null, developmentDeadlineMonths: "",
       transferRequiresConsent: null, penaltyTiers: [], notes: "",
     };
   }
   const str = (n: number | null) => (n === null ? "" : String(n));
   return {
-    revocationTrigger: terms.revocationTrigger, revocationNoticeDays: str(terms.revocationNoticeDays),
-    onRevocationRefund: terms.onRevocationRefund, developmentDeadlineMonths: str(terms.developmentDeadlineMonths),
+    revocationAfterMonths: str(terms.revocationAfterMonths ?? null), revocationNoticeDays: str(terms.revocationNoticeDays ?? null),
+    penaltiesRefundable: terms.penaltyTiers.length ? terms.penaltiesRefundable : null, developmentDeadlineMonths: str(terms.developmentDeadlineMonths),
     transferRequiresConsent: terms.transferRequiresConsent,
     penaltyTiers: terms.penaltyTiers.map((t) => ({ monthsLate: String(t.monthsLate), penaltyPct: String(t.penaltyPct) })),
     notes: terms.notes ?? "",
@@ -409,9 +419,9 @@ export function defaultDraftFrom(terms: DefaultTerms | null): DefaultDraft {
 
 export function buildDefaultRequest(draft: DefaultDraft): BuildResult<DeclareDefaultTermsRequest> {
   const request = {
-    revocationTrigger: draft.revocationTrigger.trim(),
+    revocationAfterMonths: Number(draft.revocationAfterMonths.trim() || NaN),
     revocationNoticeDays: numOrNull(draft.revocationNoticeDays),
-    onRevocationRefund: draft.onRevocationRefund.trim(),
+    penaltiesRefundable: draft.penaltyTiers.length ? draft.penaltiesRefundable : null,
     developmentDeadlineMonths: numOrNull(draft.developmentDeadlineMonths),
     transferRequiresConsent: draft.transferRequiresConsent,
     penaltyTiers: draft.penaltyTiers.map((t) => ({ monthsLate: Number(t.monthsLate.trim() || NaN), penaltyPct: Number(t.penaltyPct.trim() || NaN) })),
@@ -470,6 +480,8 @@ export async function declareDefaultTerms(estateId: string, request: DeclareDefa
   rejectIfInvalid(validateDefaultTerms(request));
   const next: DefaultTerms = {
     ...request,
+    penaltiesRefundable: request.penaltiesRefundable ?? true,
+    noticeDaysGiven: request.revocationNoticeDays ?? REVOCATION_LIMITS.minNoticeDays,
     version: (latest(mockDefault, estateId)?.version ?? 0) + 1,
     penaltyTiers: [...request.penaltyTiers].sort((a, b) => a.monthsLate - b.monthsLate),
   };

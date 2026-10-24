@@ -19,7 +19,7 @@ import EmptyState from "../../components/ui/EmptyState";
 import { ErrorText } from "../../components/ui/Field";
 import { FileCheckIcon, InfoIcon, ReceiptIcon, SearchIcon, ShieldCheckIcon } from "../../components/icons";
 
-type Tab = "all" | "receipt" | "allocation_letter" | "offer_letter";
+type Tab = "all" | "receipt" | "allocation_letter" | "offer_letter" | "restructure_letter";
 
 // A buyer has a handful of documents: one page of the API's maximum (100)
 // holds them all, so the counts below are the whole vault. "Load more" is
@@ -67,6 +67,9 @@ export default function Vault() {
     { id: "receipt", label: "Receipts", count: receipts },
     { id: "allocation_letter", label: "Allocation letters", count: letters },
     { id: "offer_letter", label: "Offer letters", count: documents.filter((d) => d.type === "offer_letter").length },
+    // Only when there are any: most buyers never restructure.
+    ...(documents.some((d) => d.type === "restructure_letter")
+      ? [{ id: "restructure_letter" as const, label: "Restructure letters", count: documents.filter((d) => d.type === "restructure_letter").length }] : []),
   ];
 
   return (

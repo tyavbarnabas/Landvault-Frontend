@@ -54,7 +54,7 @@ const LISTING = {
       { label: "Estate dues", notes: "Per year", variationBasis: null, isMandatory: true, dueTrigger: "annual", amount: range(100_000), currency: "NGN" },
       { label: "Fencing", notes: null, variationBasis: null, isMandatory: false, dueTrigger: "on_request", amount: range(300_000), currency: "NGN" },
     ],
-    exitCosts: { revocation: { trigger: "default", noticeDays: null, onRevocationRefund: "refunded_less_fees" } },
+    exitCosts: { revocation: { afterMonthsUnpaid: 3, noticeDays: 30, refundedAsOnWithdrawal: true, developmentDeadlineMonths: null, transferRequiresConsent: true } },
   },
 };
 
@@ -119,7 +119,7 @@ describe("cost disclosure comes from the listing", () => {
     expect(d?.tiers[0].totalCommitment).toEqual(range(5_500_000));
     expect(d?.tiers[0].recurringFees.map((f) => f.label)).toEqual(["Estate dues"]);
     expect(d?.tiers[0].optionalFees.map((f) => f.label)).toEqual(["Fencing"]);
-    expect(d?.exitCosts?.revocation).toEqual({ trigger: "default", noticeDays: null, paymentsAlreadyMade: "refunded_less_fees" });
+    expect(d?.exitCosts?.revocation).toMatchObject({ afterMonthsUnpaid: 3, noticeDays: 30, refundedAsOnWithdrawal: true });
   });
 
   it("names an unlabelled fee by its type (the backend sends label: null)", async () => {

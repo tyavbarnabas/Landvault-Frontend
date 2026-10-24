@@ -3,6 +3,8 @@
 // on the plot page), and plots grouped by estate as compact tables that
 // become one card per plot on a phone.
 
+import StatusBadge from "../../components/StatusBadge";
+import { formatMoney } from "../../lib/formatCurrency";
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { formatAmount, type Currency, type OwnedPlot } from "../../data/mockData";
@@ -240,9 +242,17 @@ function planText(plot: OwnedPlot): string {
 
 // What's due next, worded and coloured by how pressing it is.
 function NextPayment({ plot }: { plot: OwnedPlot }) {
-  if (plot.status === "in_arrears" && plot.arrears) {
-    return <div className="text-sm text-[var(--error-text)]"><div className="font-medium">{formatAmount(plot.arrears.amountOwed, plot.currency)} overdue</div><div className="text-xs">since {formatDay(plot.arrears.overdueSinceDate)}</div></div>;
+  if (plot.arrears && (plot.status === "in_arrears" || plot.status === "installment_active")) {
+    // The backend's figures as given: what's due now, and the penalty inside it.
+    const a = plot.arrears;
+    return (
+      <div className="text-sm text-[var(--warning-text)]">
+        <div className="font-medium font-mono-data">{formatMoney(a.totalDue ?? a.amountOwed, plot.currency)} due now</div>
+        {a.penaltyAmount ? <div className="text-xs">incl. {formatMoney(a.penaltyAmount, plot.currency)} penalty</div> : <div className="text-xs">since {formatDay(a.overdueSinceDate)}</div>}
+      </div>
+    );
   }
+  if (plot.status === "withdrawn" || plot.status === "revoked") return <span className="text-sm text-[var(--muted-foreground)]">Refund in parts</span>;
   if (plot.status === "pending_verification") return <span className="text-sm text-[var(--muted-foreground)]">Awaiting verification</span>;
   if (plot.nextDueDate && plot.nextDueAmount !== undefined) {
     const days = Math.round((new Date(plot.nextDueDate).getTime() - Date.now()) / 86_400_000);
@@ -256,6 +266,13 @@ function NextPayment({ plot }: { plot: OwnedPlot }) {
   }
   if (plot.status === "completed") return <span className="text-sm text-[var(--muted-foreground)]">Paid in full</span>;
   return <span className="text-sm text-[var(--muted-foreground)]">—</span>;
+}
+
+// While a restructure is open (requested / proposed), a small badge.
+function RestructureBadge({ plot }: { plot: OwnedPlot }) {
+  const r = plot.restructureStatus as string | undefined;
+  if (r !== "requested" && r !== "proposed") return null;
+  return <StatusBadge label={r === "proposed" ? "Restructure proposed" : "Restructure requested"} variant={r === "proposed" ? "info" : "neutral"} />;
 }
 
 function PlotRow({ plot }: { plot: OwnedPlot }) {
@@ -274,7 +291,7 @@ function PlotRow({ plot }: { plot: OwnedPlot }) {
               {plot.acquiredDate ? `Acquired ${formatDay(plot.acquiredDate)}` : "Not acquired until finance verifies"}
             </div>
           </div>
-          <span className="lg:hidden shrink-0"><PlotStatusBadge status={plot.status} /></span>
+          <span className="lg:hidden shrink-0 flex flex-col items-end gap-1"><PlotStatusBadge status={plot.status} /><RestructureBadge plot={plot} /></span>
         </div>
         <div className="hidden lg:block text-sm font-mono-data text-[var(--foreground)]">{size ?? "—"}</div>
         <div className="hidden lg:block text-sm text-[var(--foreground)]">{planText(plot)}</div>
@@ -298,7 +315,7 @@ function PlotRow({ plot }: { plot: OwnedPlot }) {
             </>
           )}
         </div>
-        <div className="hidden lg:block"><PlotStatusBadge status={plot.status} /></div>
+        <div className="hidden lg:flex flex-col items-start gap-1"><PlotStatusBadge status={plot.status} /><RestructureBadge plot={plot} /></div>
         <div className="mt-2 lg:mt-0"><NextPayment plot={plot} /></div>
         <ChevronRightIcon size={16} className="hidden lg:block text-[var(--muted-foreground)]" />
       </Link>

@@ -15,7 +15,10 @@ const STATUS_INFO: Record<PlotAccountStatus, { label: string; variant: BadgeVari
   allocated: { label: "Allocated", variant: "info" },
   installment_active: { label: "On instalment plan", variant: "info" },
   completed: { label: "Paid off", variant: "success" },
-  in_arrears: { label: "In arrears", variant: "error" },
+  // Calm, not alarming: a person in difficulty, not an error.
+  in_arrears: { label: "In arrears", variant: "warning" },
+  withdrawn: { label: "Withdrawn", variant: "neutral" },
+  revoked: { label: "Revoked", variant: "neutral" },
   upgrade_pending: { label: "Upgrade pending", variant: "warning" },
   transferred: { label: "Transferred", variant: "neutral" },
   superseded: { label: "Superseded by upgrade", variant: "neutral" },

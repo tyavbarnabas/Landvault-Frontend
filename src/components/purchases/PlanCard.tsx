@@ -19,6 +19,8 @@ import Button from "../ui/Button";
 import Dialog, { DialogActions } from "../ui/Dialog";
 import { ErrorText } from "../ui/Field";
 import { CalendarIcon } from "../icons";
+import Badge from "../ui/Badge";
+import { PLAN_STATUS_BADGE, isCarriedPenalty, type InstalmentStanding } from "../../services/planService";
 import PayButton, { goToPaystack, paymentErrorMessage } from "./PayButton";
 import { useNavigate } from "react-router-dom";
 
@@ -41,6 +43,14 @@ export default function PlanCard({ purchase, owned, onChanged }: { purchase: Pur
   const verified = owned?.paidAmount ?? (completed ? schedule.planTotal : 0);
   const total = owned?.totalPrice ?? schedule.planTotal;
   const share = total > 0 ? Math.min(100, (verified / total) * 100) : 0;
+  // Today's standing for the next instalment (phase 4): late or not, and its
+  // penalty — the backend's, shown beside the instalment, never added here.
+  const standing = purchase.standing ?? null;
+  const nextStanding: InstalmentStanding | null = next ? standing?.instalments.find((i) => i.sequence === next.sequence) ?? null : null;
+  const penalty = nextStanding?.penalty ?? null;
+  const late = nextStanding?.status === "overdue" || nextStanding?.status === "in_arrears";
+  const [payingLate, setPayingLate] = useState(false);
+  const chip = standing ? PLAN_STATUS_BADGE[standing.status] : null;
 
   return (
     <Card as="section" aria-labelledby="plan-heading" className="space-y-4">
@@ -48,6 +58,14 @@ export default function PlanCard({ purchase, owned, onChanged }: { purchase: Pur
         <h2 id="plan-heading" className="font-semibold text-[var(--foreground)] whitespace-nowrap">Your plan</h2>
         <span className="text-sm text-[var(--muted-foreground)]">{schedule.planName} · {paid} of {count} instalment{count === 1 ? "" : "s"} paid</span>
       </div>
+      {(chip || standing?.restructureStatus === "requested" || standing?.restructureStatus === "proposed" || (schedule.version ?? 1) > 1) && (
+        <div className="flex flex-wrap gap-1.5 -mt-2">
+          {chip && purchase.status === "on_plan" && <Badge label={chip.label} variant={chip.tone} />}
+          {standing?.restructureStatus === "requested" && <Badge label="Restructure requested" variant="neutral" />}
+          {standing?.restructureStatus === "proposed" && <Badge label="Restructure proposed" variant="info" />}
+          {(schedule.version ?? 1) > 1 && <Badge label={`Restructured · schedule version ${schedule.version}`} variant="neutral" />}
+        </div>
+      )}
 
       {purchase.status === "pending_payment" || purchase.status === "awaiting_finance" ? (
         <dl className="space-y-1.5 text-sm">
@@ -71,12 +89,16 @@ export default function PlanCard({ purchase, owned, onChanged }: { purchase: Pur
             <div className="flex items-center gap-3 rounded-lg bg-[var(--muted)] px-3.5 py-3">
               <CalendarIcon size={18} className="shrink-0 text-[var(--primary)]" />
               <div className="flex-1 min-w-0 text-sm">
-                <div className="font-semibold text-[var(--foreground)]">{waitingBalance ? "Balance paid off" : waiting ? `Instalment ${next.sequence} of ${next.count}` : `Next: instalment ${next.sequence} of ${next.count}`}</div>
+                <div className="font-semibold text-[var(--foreground)]">
+                  {waitingBalance ? "Balance paid off" : waiting ? `Instalment ${next.sequence} of ${next.count}` : late ? `Instalment ${next.sequence} of ${next.count} · ${nextStanding!.daysLate} days late` : `Next: instalment ${next.sequence} of ${next.count}`}
+                </div>
                 <div className="text-[var(--muted-foreground)]">
-                  {waiting ? "Received — awaiting verification" : `${next.dueDate ? `Due ${formatDay(next.dueDate)} · ` : ""}paying early is fine`}
+                  {waiting ? "Received — awaiting verification · a payment waiting for finance is never late"
+                    : late && next.dueDate ? `Was due ${formatDay(next.dueDate)}${penalty ? ` · ${penaltyWords(penalty)}` : ""}`
+                    : `${next.dueDate ? `Due ${formatDay(next.dueDate)} · ` : ""}${penalty && isCarriedPenalty(penalty) ? "with a penalty carried from before the restructure" : "paying early is fine"}`}
                 </div>
               </div>
-              <span className="font-mono-data font-medium text-[var(--foreground)]">{money(next.amount)}</span>
+              <span className="font-mono-data font-medium text-[var(--foreground)] text-right">{money(nextStanding?.amount ?? next.amount)}{penalty && !waiting ? ` + ${money(penalty.amount)}` : ""}</span>
             </div>
           )}
         </>
@@ -86,7 +108,12 @@ export default function PlanCard({ purchase, owned, onChanged }: { purchase: Pur
         <>
           {waiting && <Alert tone="info" role="status">Your last payment is waiting for the developer's finance team to verify it. You can pay the next one after that.</Alert>}
           <div className="flex flex-col sm:flex-row gap-3">
-            {next && !waitingBalance && (waiting ? after : true) && (
+            {next && !waiting && penalty && (
+              <Button size="lg" className="sm:flex-1" onClick={() => setPayingLate(true)}>
+                Pay instalment {next.sequence} — {money(nextStanding?.amount ?? next.amount)} + {money(penalty.amount)} penalty
+              </Button>
+            )}
+            {next && !waitingBalance && !(penalty && !waiting) && (waiting ? after : true) && (
               <div className="sm:flex-1">
                 <PayButton transactionId={purchase.id} disabled={waiting} note={false} onRefused={(code) => code === "INSTALMENT_AWAITING_VERIFICATION" && onChanged()}
                   label={waiting && after
@@ -103,6 +130,10 @@ export default function PlanCard({ purchase, owned, onChanged }: { purchase: Pur
       )}
 
       {payingOff && <PayOffDialog purchase={purchase} onClose={() => setPayingOff(false)} onRefused={onChanged} />}
+      {payingLate && next && penalty && (
+        <LatePayDialog purchase={purchase} sequence={next.sequence} instalment={nextStanding?.amount ?? next.amount} penalty={penalty}
+          late={late ? nextStanding!.daysLate : null} onClose={() => setPayingLate(false)} onRefused={onChanged} />
+      )}
     </Card>
   );
 }
@@ -132,7 +163,7 @@ function PayOffDialog({ purchase, onClose, onRefused }: { purchase: Purchase; on
     return (
       <Dialog title="Pay off the balance?" onClose={onClose}>
         <p className="text-sm text-[var(--muted-foreground)] mb-3">
-          You'll pay everything still owed on your {schedule.planName} in one payment. There's no discount for paying early. We'll show you the exact amount before you go to Paystack.
+          You'll pay everything still owed on your {schedule.planName} in one payment, including any late instalment's penalty. There's no discount for paying early. We'll show you the exact amount before you go to Paystack.
         </p>
         {error && <div className="mb-3"><ErrorText>{error}</ErrorText></div>}
         <DialogActions onCancel={onClose} onConfirm={getAmount} confirmLabel="Continue" busy={busy} busyLabel="Working out the amount…" />
@@ -149,6 +180,62 @@ function PayOffDialog({ purchase, onClose, onRefused }: { purchase: Purchase; on
         </div>
         <p className="text-xs text-[var(--muted-foreground)] mt-1.5">When finance verifies it, the plot is yours and your allocation letter is issued.</p>
       </div>
+      <DialogActions onCancel={onClose} onConfirm={() => goToPaystack(payment.authorizationUrl, navigate)} confirmLabel="Pay on Paystack" />
+    </Dialog>
+  );
+}
+
+// "5% penalty, 1 month late" — or a penalty carried over by a restructure.
+function penaltyWords(p: { monthsLate: number; penaltyPct: number }): string {
+  if (isCarriedPenalty({ ...p, amount: 1 })) return "penalty carried from before the restructure";
+  return `${p.penaltyPct}% late-payment penalty (${p.monthsLate} month${p.monthsLate === 1 ? "" : "s"} late)`;
+}
+
+// A late (or penalty-carrying) instalment: the instalment and its penalty side
+// by side as given, then the total the backend charges, then Paystack.
+function LatePayDialog({ purchase, sequence, instalment, penalty, late, onClose, onRefused }: {
+  purchase: Purchase; sequence: number; instalment: number; penalty: { monthsLate: number; penaltyPct: number; amount: number };
+  late: number | null; onClose: () => void; onRefused: () => void;
+}) {
+  const [payment, setPayment] = useState<Payment | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
+  const money = (n: number) => formatMoney(n, purchase.currency);
+
+  const getAmount = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      setPayment(await startPayment(purchase.id));
+    } catch (err) {
+      setError(paymentErrorMessage(err));
+      onRefused();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!payment) {
+    return (
+      <Dialog title={`Pay instalment ${sequence}`} onClose={onClose}>
+        <p className="text-sm text-[var(--muted-foreground)] mb-3">
+          {late != null ? `It's ${late} days late, so a late-payment penalty applies.` : "A penalty carried from before your plan was restructured is payable with this instalment."}
+        </p>
+        <dl className="rounded-lg bg-[var(--muted)] p-3.5 mb-4 text-sm space-y-1.5">
+          <Row label={`Instalment ${sequence}`} value={money(instalment)} />
+          <Row label={isCarriedPenalty(penalty) ? "Penalty carried from before the restructure" : `Late-payment penalty (${penalty.penaltyPct}%, ${penalty.monthsLate} month${penalty.monthsLate === 1 ? "" : "s"} late)`} value={money(penalty.amount)} />
+        </dl>
+        {error && <div className="mb-3"><ErrorText>{error}</ErrorText></div>}
+        <DialogActions onCancel={onClose} onConfirm={getAmount} confirmLabel="Continue" busy={busy} busyLabel="Working out the amount…" />
+      </Dialog>
+    );
+  }
+  return (
+    <Dialog title={`${formatMoney(payment.amount, payment.currency)} to pay`} onClose={onClose}>
+      <p className="text-sm text-[var(--muted-foreground)] mb-3">
+        That's instalment {sequence}{payment.penaltyAmount ? ` with its ${formatMoney(payment.penaltyAmount, payment.currency)} penalty` : ""}, as HomeTrue worked it out. Nothing is charged until you pay on Paystack.
+      </p>
       <DialogActions onCancel={onClose} onConfirm={() => goToPaystack(payment.authorizationUrl, navigate)} confirmLabel="Pay on Paystack" />
     </Dialog>
   );

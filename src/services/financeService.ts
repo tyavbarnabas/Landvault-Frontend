@@ -52,6 +52,14 @@ export interface FinanceQueueItem {
   instalmentSequence?: number | null;
   instalmentCount?: number | null;
   dueDate?: string | null;
+  // Phase 4: late-payment penalties already inside expectedAmount, one line
+  // per late instalment. Shown as their own line; nothing is added here.
+  penaltyAmount?: number | null;
+  penalties?: { instalmentSequence: number; monthsLate: number; penaltyPct: number; amount: number }[];
+  // 5a / 5b: the plan ended while this payment waited. Verifying releases
+  // only the developer's share; rejecting returns it to the buyer too.
+  planWithdrawn?: boolean;
+  planRevoked?: boolean;
 }
 
 export type PaymentFor = "full_price" | "deposit" | "instalment" | "balance";
@@ -132,7 +140,7 @@ export interface FinanceDecision {
   transactionId: string;
   // `on_plan`: a deposit or a non-final instalment, verified — the plot is
   // held on the plan, not sold. `verified`: sold.
-  status: "verified" | "on_plan" | "rejected" | "refund_due";
+  status: "verified" | "on_plan" | "rejected" | "refund_due" | "withdrawn" | "revoked";
   // The buyer's allocation letter, issued in the same step as the sale. Null
   // on a rejection or refund. Finance can't open it (it's the buyer's), so it
   // is shown as a confirmation, never a link.

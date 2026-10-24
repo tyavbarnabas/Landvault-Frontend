@@ -75,6 +75,7 @@ const RoleEditor = lazy(() => import("./pages/portal/staff/PortalRoles").then((m
 const StorageTest = lazy(() => import("./pages/dev/StorageTest"));
 const AcceptInvitation = lazy(() => import("./pages/auth/AcceptInvitation"));
 const PortalFinance = lazy(() => import("./pages/portal/finance/PortalFinance"));
+const PortalPlan = lazy(() => import("./pages/portal/finance/PortalPlan"));
 const PayoutAccount = lazy(() => import("./pages/portal/finance/PayoutAccount"));
 const PayoutAccountHistory = lazy(() => import("./pages/portal/finance/PayoutAccountHistory"));
 const ImportPortalPlots = lazy(() => import("./pages/portal/estates/ImportPortalPlots"));
@@ -97,6 +98,8 @@ const MarketplaceResaleDetail = lazy(() => import("./pages/marketplace/Marketpla
 const MarketplacePlotSelection = lazy(() => import("./pages/marketplace/MarketplacePlotSelection"));
 const MarketplaceCheckout = lazy(() => import("./pages/marketplace/MarketplaceCheckout"));
 const PurchaseDetail = lazy(() => import("./pages/purchases/PurchaseDetail"));
+const WithdrawPlan = lazy(() => import("./pages/purchases/WithdrawPlan"));
+const RestructurePlan = lazy(() => import("./pages/purchases/RestructurePlan"));
 const MyPurchases = lazy(() => import("./pages/purchases/MyPurchases"));
 const PaymentReturn = lazy(() => import("./pages/payments/PaymentReturn"));
 const Wishlist = lazy(() => import("./pages/marketplace/Wishlist"));
@@ -270,6 +273,8 @@ function AppRoutes() {
       <Route path="/payments/return" element={<MarketplaceLayout><PrivateRoute><Suspense fallback={<PageLoading />}><PaymentReturn /></Suspense></PrivateRoute></MarketplaceLayout>} />
       <Route path="/purchases" element={<AppPage><Suspense fallback={<PageLoading />}><MyPurchases /></Suspense></AppPage>} />
       <Route path="/purchases/:id" element={<AppPage><Suspense fallback={<PageLoading />}><PurchaseDetail /></Suspense></AppPage>} />
+      <Route path="/purchases/:id/withdraw" element={<AppPage><Suspense fallback={<PageLoading />}><WithdrawPlan /></Suspense></AppPage>} />
+      <Route path="/purchases/:id/restructure" element={<AppPage><Suspense fallback={<PageLoading />}><RestructurePlan /></Suspense></AppPage>} />
       <Route path="/marketplace/checkout/:listingId/:plotId" element={<PrivateRoute><Suspense fallback={<PageLoading />}><MarketplaceCheckout /></Suspense></PrivateRoute>} />
 
       {/* Inspections & enquiries — Parts 3–4 of the buyer flow */}
@@ -299,6 +304,7 @@ function AppRoutes() {
       <Route path="/portal/staff/roles/new" element={<PortalPage><PermissionGate anyOf={["portal.roles.manage"]}><RoleEditor /></PermissionGate></PortalPage>} />
       <Route path="/portal/staff/roles/:code/edit" element={<PortalPage><PermissionGate anyOf={["portal.roles.manage"]}><RoleEditor /></PermissionGate></PortalPage>} />
       <Route path="/portal/finance" element={<PortalPage><PermissionGate anyOf={["portal.payments.verify"]}><PortalFinance /></PermissionGate></PortalPage>} />
+      <Route path="/portal/finance/plans/:id" element={<PortalPage><PermissionGate anyOf={["portal.payments.verify"]}><PortalPlan /></PermissionGate></PortalPage>} />
       <Route path="/portal/payout-account" element={<PortalPage><PermissionGate anyOf={["portal.settlement.manage"]}><PayoutAccount /></PermissionGate></PortalPage>} />
       <Route path="/portal/payout-account/history" element={<PortalPage><PermissionGate anyOf={["portal.settlement.manage"]}><PayoutAccountHistory /></PermissionGate></PortalPage>} />
       <Route path="/portal/staff/invitations" element={<Navigate to="/portal/staff" replace />} />

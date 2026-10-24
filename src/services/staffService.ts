@@ -696,6 +696,7 @@ const MOCK_PORTAL_PERMISSIONS: Omit<PortalPermission, "held">[] = [
   { code: "portal.staff.request", label: "Ask head office to invite staff to a branch", description: "Request a staff invitation into your own branch; it is sent only once a company-wide approver approves it.", requiresCompanyWide: false, group: "staff", groupLabel: "Staff and roles" },
   { code: "portal.roles.manage", label: "Create and edit company roles", description: "Create, edit and delete your company's own roles, from permissions you hold. Company-wide roles only.", requiresCompanyWide: true, group: "staff", groupLabel: "Staff and roles" },
   { code: "portal.documents.view", label: "See letterheads and letters", description: "See your company's letterheads, signatories and the letters HomeTrue issues for your sales.", requiresCompanyWide: false, group: "documents", groupLabel: "Documents" },
+  { code: "portal.plans.revoke", label: "Revoke instalment plans", description: "Give a buyer who is far behind notice of revocation, withdraw it, or confirm it once the notice runs out. Company-wide roles only.", requiresCompanyWide: true, group: "finance", groupLabel: "Money" },
   { code: "portal.documents.manage", label: "Set letterheads, signatures and seals", description: "Set your company's and branches' letterheads, signatories, signatures and seals. Company-wide roles only.", requiresCompanyWide: true, group: "documents", groupLabel: "Documents" },
 ];
 
