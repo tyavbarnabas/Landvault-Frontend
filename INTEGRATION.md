@@ -185,7 +185,19 @@ Built from the Figma page "Screen — Instalments: arrears, withdraw, revoke, re
 - **Payouts:** `WITHDRAWN_PLAN_PAID`/`REVOKED_PLAN_PAID` are shown as information.
 - **Documents:** `restructure_letter` in the vault (its own tab when there are any) and on the verify page. Statuses `withdrawn`/`revoked`/`declined` have labels.
 
-Out of scope: penalty waivers (`penaltyWaived` is ignored), developer-initiated restructures, reminder emails, reinstating a plan.
+Out of scope: developer-initiated restructures, reminder emails, reinstating a plan. (Penalty waivers were added after phase 5c: see J.)
+
+### J. Penalty waivers — wired 2026-10-25 (backend changeset 109, `feature/penalty-waivers`)
+
+Built from the Figma "Penalty waivers" page (developer plan page, Running plans, buyer schedule).
+
+- **Developer** (`portal.payments.verify`; the plan route is already gated on it): a "Late-payment penalties" table on `/portal/finance/plans/:id` from `GET /api/portal/plans/{id}/penalty-waivers` — instalment, due date, status, reached / waived / outstanding. "Waive" opens a form under the row: amount prefilled with `outstanding` (checked ≤ it client-side as a convenience — `checkWaiver`), required reason (≤ 500, "the buyer is emailed this"), the fixed-amount sentence, then a confirm dialog before `POST`. The screen redraws from the response. History: instalment, date, amount, reason, newest first. No "by whom": `waivedBy` is a user id only. Empty: "No penalties to waive on this plan."; plan not `on_plan`: history only.
+- **Errors**: the backend's `message` is shown. `WAIVER_TOO_LARGE` and `VALIDATION_ERROR` `fieldErrors` go under their fields; `PENALTY_NOT_WAIVABLE` shows the message and re-fetches (the screen was stale); `OWN_PURCHASE` and the rest under the form.
+- **Running plans**: "Waive penalty" beside "Open plan" on rows whose `arrears.penaltyAmount` > 0 (`?section=penalties`).
+- **Buyer**: `standing.instalments[].penaltyWaived` is read; the penalty shown stays the net one. "₦X waived by the developer" under the instalment; fully waived reads "Late-payment penalty of ₦X waived by the developer". No buyer request flow.
+- **Also from the Figma page**: a restructured schedule says "Restructured on {date} · version n" (date = the accepted restructure's `acceptedAt` from `GET /api/transactions/{id}/restructure`); the schedule card stacks per payment on a phone; the plot page's instalment list uses the status tokens and badges instead of raw red/amber/emerald.
+- **Not checked live**: the backend running on 8080 predates changeset 109 (its waiver code was still uncommitted on `feature/penalty-waivers`), so the GET answered 404. The screens were checked against the Figma frames with the two GETs answered from fixtures in the browser; nothing was posted. The "Done means" walkthrough (backdated instalment, waive part then the rest, buyer email) is still to do once the backend is restarted on that branch.
+- No demo data (by design): in demo mode the section says it needs the live service.
 
 ### Also worth a look, lower priority
 

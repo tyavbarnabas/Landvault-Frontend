@@ -1,7 +1,9 @@
 // The plan's fixed schedule and its payment history, from the Figma
 // "Instalment plans" proposal: every payment, when it's due and its amount,
 // exactly as the purchase's schedule gives them, with where each one stands.
-// The history lists what was actually paid, each with its receipt.
+// The history lists what was actually paid, each with its receipt. A penalty
+// the developer waived shows under its instalment (Figma "Penalty waivers"),
+// and a restructured schedule says when it was restructured.
 
 import { Fragment, useState } from "react";
 import type { Document, OwnedPlot } from "../../data/mockData";
@@ -9,7 +11,8 @@ import type { Purchase } from "../../services/paymentsService";
 import { formatMoney } from "../../lib/formatCurrency";
 import { formatDay } from "../../lib/formatDate";
 import { paymentHistory, scheduleRows, type RowState, type ScheduleRow } from "../../lib/planProgress";
-import { isCarriedPenalty } from "../../services/planService";
+import { fetchRestructures, isCarriedPenalty, waivedLine } from "../../services/planService";
+import { useFetch } from "../../lib/useFetch";
 import Card from "../ui/Card";
 import Badge from "../ui/Badge";
 import Button from "../ui/Button";
@@ -44,16 +47,24 @@ export function PlanScheduleCard({ purchase, owned }: { purchase: Purchase; owne
   const shown = all ? rows : [...rows.slice(0, lastKeep), rows[rows.length - 1]];
   const hidden = rows.length - shown.length;
   const money = (n: number) => formatMoney(n, purchase.currency);
+  const version = schedule.version ?? 1;
+  // The date comes from the accepted restructure; the schedule only carries its version.
+  const restructures = useFetch(() => (version > 1 ? fetchRestructures(purchase.id) : Promise.resolve(null)), [purchase.id, version]);
+  const restructuredOn = restructures.data?.history
+    .filter((h) => h.status === "accepted" && h.acceptedAt)
+    .map((h) => h.acceptedAt!)
+    .sort()
+    .pop();
   return (
     <Card as="section" aria-labelledby="schedule-heading">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mb-3">
         <h2 id="schedule-heading" className="font-semibold text-[var(--foreground)]">Schedule</h2>
         <span className="text-xs text-[var(--muted-foreground)]">
-          {(schedule.version ?? 1) > 1 ? `Restructured · version ${schedule.version}` : "Fixed when your offer was issued"}{purchase.standing ? " · statuses as of today" : ""}
+          {version > 1 ? `Restructured${restructuredOn ? ` on ${formatDay(restructuredOn)}` : ""} · version ${version}` : "Fixed when your offer was issued"}{purchase.standing ? " · statuses as of today" : ""}
         </span>
       </div>
-      <table className="w-full text-sm">
-        <thead className="max-sm:sr-only">
+      <table className="w-full text-sm max-sm:hidden">
+        <thead>
           <tr className="text-xs text-[var(--muted-foreground)] border-b border-[var(--border)]">
             <th className="text-left font-medium py-2">Payment</th>
             <th className="text-left font-medium py-2">Due</th>
@@ -62,8 +73,11 @@ export function PlanScheduleCard({ purchase, owned }: { purchase: Purchase; owne
           </tr>
         </thead>
         <tbody>
-          {shown.map((r, i) => (<Fragment key={r.key}>
-            <tr className={`${r.penalty ? "" : "border-b"} border-[var(--border)] last:border-b-0`}>
+          {shown.map((r, i) => {
+            const penalty = r.penalty && r.penalty.amount > 0 ? r.penalty : null;
+            const waived = waivedLine(r.penalty, r.penaltyWaived, money);
+            return (<Fragment key={r.key}>
+            <tr className={`${penalty || waived ? "" : "border-b"} border-[var(--border)] last:border-b-0`}>
               <td className="py-2.5 pr-3 text-[var(--foreground)]">
                 {r.label}
                 {!all && hidden > 0 && i === shown.length - 2 && (
@@ -75,18 +89,55 @@ export function PlanScheduleCard({ purchase, owned }: { purchase: Purchase; owne
               <td className="py-2.5 pl-3 text-right">{badgeFor(r) && <Badge label={badgeFor(r)!.label} variant={badgeFor(r)!.variant} />}</td>
             </tr>
             {/* The penalty on its own line, as given — never added to the instalment. */}
-            {r.penalty && (
-              <tr className="border-b border-[var(--border)]">
-                <td colSpan={2} className="pb-2.5 pr-3 text-xs text-[var(--muted-foreground)]">
-                  {isCarriedPenalty(r.penalty) ? "+ penalty carried from before the restructure" : `+ late-payment penalty · ${r.penalty.penaltyPct}%, ${r.penalty.monthsLate} month${r.penalty.monthsLate === 1 ? "" : "s"} late`}
+            {penalty && (
+              <tr className={waived ? "" : "border-b border-[var(--border)]"}>
+                <td colSpan={2} className={`${waived ? "pb-1" : "pb-2.5"} pr-3 text-xs text-[var(--muted-foreground)]`}>
+                  {isCarriedPenalty(penalty) ? "+ penalty carried from before the restructure" : `+ late-payment penalty · ${penalty.penaltyPct}%, ${penalty.monthsLate} month${penalty.monthsLate === 1 ? "" : "s"} late`}
                 </td>
-                <td className="pb-2.5 text-right font-mono-data text-xs text-[var(--warning-text)]">{money(r.penalty.amount)}</td>
+                <td className={`${waived ? "pb-1" : "pb-2.5"} text-right font-mono-data text-xs text-[var(--warning-text)]`}>{money(penalty.amount)}</td>
                 <td />
               </tr>
             )}
-          </Fragment>))}
+            {/* What the developer waived: the penalty above is already net of it. */}
+            {waived && (
+              <tr className="border-b border-[var(--border)]">
+                <td colSpan={4} className="pb-2.5 pr-3 text-xs text-[var(--muted-foreground)]">{waived}</td>
+              </tr>
+            )}
+          </Fragment>);
+          })}
         </tbody>
       </table>
+      {/* On a phone each payment stacks (Figma phone frames): label and status, then due date and amount, then its penalty lines. */}
+      <ul className="sm:hidden divide-y divide-[var(--border)] border-t border-[var(--border)]" aria-label="Schedule">
+        {shown.map((r, i) => {
+          const penalty = r.penalty && r.penalty.amount > 0 ? r.penalty : null;
+          const waived = waivedLine(r.penalty, r.penaltyWaived, money);
+          const b = badgeFor(r);
+          return (
+            <li key={r.key} className="py-3 space-y-1">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-[var(--foreground)]">{r.label}</span>
+                {b && <Badge label={b.label} variant={b.variant} />}
+              </div>
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-xs text-[var(--muted-foreground)]">{r.dueDate ? formatDay(r.dueDate) : "On paying"}</span>
+                <span className="font-mono-data text-sm text-[var(--foreground)]">{money(r.amount)}</span>
+              </div>
+              {penalty && (
+                <div className="flex items-baseline justify-between gap-3 text-xs">
+                  <span className="text-[var(--muted-foreground)]">{isCarriedPenalty(penalty) ? "+ penalty carried from before the restructure" : `+ late-payment penalty · ${penalty.penaltyPct}%, ${penalty.monthsLate} month${penalty.monthsLate === 1 ? "" : "s"} late`}</span>
+                  <span className="font-mono-data text-[var(--warning-text)]">{money(penalty.amount)}</span>
+                </div>
+              )}
+              {waived && <p className="text-xs text-[var(--muted-foreground)]">{waived}</p>}
+              {!all && hidden > 0 && i === shown.length - 2 && (
+                <Button variant="link" onClick={() => setAll(true)} className="text-xs">Show {hidden} more</Button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
       <div className="flex items-center justify-between gap-3 pt-3 mt-1 border-t border-[var(--border)]">
         <span className="font-semibold text-sm text-[var(--foreground)]">Plan total</span>
         <span className="font-mono-data font-medium text-[var(--foreground)]">{money(schedule.planTotal)}</span>

@@ -299,7 +299,7 @@ export default function PlotView() {
             </Section>
           )}
           {!purchasePlan && schedule && schedule.periods.length > 0 && (
-            <Section title="Installment schedule">
+            <Section title="Instalment schedule">
               <PaymentSchedule periods={schedule.periods} currency={plot.currency} nextPayablePeriodId={nextPeriod?.id} />
             </Section>
           )}

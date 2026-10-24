@@ -37,7 +37,20 @@ export interface InstalmentStanding {
   amount: number;
   status: InstalmentStatus;
   daysLate: number;
+  // Already net of any waiver.
   penalty: Penalty | null;
+  // How much of this instalment's penalty the developer waived; null when
+  // nothing was. Never added back onto `penalty`.
+  penaltyWaived?: number | null;
+}
+
+// The buyer's line under a waived instalment, or null. A penalty waived in
+// full reads as such, not as a ₦0 penalty.
+export function waivedLine(penalty: Penalty | null | undefined, penaltyWaived: number | null | undefined, money: (n: number) => string): string | null {
+  if (!penaltyWaived || penaltyWaived <= 0) return null;
+  return penalty && penalty.amount > 0
+    ? `${money(penaltyWaived)} waived by the developer`
+    : `Late-payment penalty of ${money(penaltyWaived)} waived by the developer`;
 }
 
 // Only while something is late.
@@ -297,6 +310,78 @@ export async function withdrawProposal(transactionId: string, note?: string): Pr
   return apiClient.post<PlanRestructures>(`${portalBase(transactionId)}/withdraw`, note?.trim() ? { note: note.trim() } : {});
 }
 
+// ─── Developer portal: waiving a penalty (changeset 109) ────────────────────
+
+// An unpaid instalment carrying a penalty today. `reached` includes a penalty
+// carried by a restructure; `outstanding` is the most a new waiver can be.
+export interface WaivablePenalty {
+  instalmentSequence: number;
+  dueDate: string;
+  // overdue / in_arrears, or upcoming / due_today for a carried penalty.
+  instalmentStatus: string;
+  reached: number;
+  waived: number;
+  outstanding: number;
+}
+
+// waivedBy is a user id only: no name comes back, so none is shown.
+export interface PenaltyWaiver {
+  id: string;
+  instalmentSequence: number;
+  scheduleVersion: number;
+  amount: number;
+  reason: string;
+  waivedAt: string;
+  waivedBy: string;
+}
+
+export interface PenaltyWaivers {
+  transactionId: string;
+  transactionReference: string;
+  // Waivers only while on_plan; otherwise the history is read-only.
+  planStatus: string;
+  currency: string;
+  penalties: WaivablePenalty[];
+  waivers: PenaltyWaiver[];
+}
+
+export interface WaivePenaltyRequest {
+  instalmentSequence: number;
+  amount: number;
+  reason: string;
+}
+
+const waiverBase = (id: string) => `/api/portal/plans/${id}/penalty-waivers`;
+
+export async function fetchPenaltyWaivers(transactionId: string): Promise<PenaltyWaivers> {
+  if (isMock("finance")) notInDemo();
+  return apiClient.get<PenaltyWaivers>(waiverBase(transactionId));
+}
+
+// Answers the same shape as GET: redraw from it.
+export async function waivePenalty(transactionId: string, req: WaivePenaltyRequest): Promise<PenaltyWaivers> {
+  if (isMock("finance")) notInDemo();
+  return apiClient.post<PenaltyWaivers>(waiverBase(transactionId), { ...req, reason: req.reason.trim() });
+}
+
+export const WAIVER_REASON_MAX = 500;
+
+// The form's own check, as a convenience: the server decides. Reads "28,125",
+// "₦28,125" or "28125.50"; at most 2 decimals, above zero, at most what's
+// outstanding. Returns the amount or the field errors.
+export function checkWaiver(amountText: string, reason: string, outstanding: number):
+  { amount: number; errors: null } | { amount: null; errors: { amount?: string; reason?: string } } {
+  const errors: { amount?: string; reason?: string } = {};
+  const cleaned = amountText.replace(/[₦,\s]/g, "");
+  const amount = /^\d+(\.\d{1,2})?$/.test(cleaned) ? Number(cleaned) : NaN;
+  if (Number.isNaN(amount)) errors.amount = "Enter an amount, like 28125 or 28125.50.";
+  else if (amount <= 0) errors.amount = "Enter an amount above zero.";
+  else if (amount > outstanding) errors.amount = "That's more than is still owed on this penalty.";
+  if (!reason.trim()) errors.reason = "Give a reason — the buyer is emailed it.";
+  else if (reason.trim().length > WAIVER_REASON_MAX) errors.reason = `Keep it to ${WAIVER_REASON_MAX} characters.`;
+  return errors.amount || errors.reason ? { amount: null, errors } : { amount, errors: null };
+}
+
 // ─── Developer portal: revocation (5b, Executive Director) ──────────────────
 
 export interface RevocationNotice {
@@ -372,6 +457,8 @@ export function planErrorMessage(err: unknown, fallback = "That didn't go throug
     case "NO_OPEN_REVOCATION": return "There's no notice running for this plan any more.";
     case "REVOCATION_NOTICE_RUNNING": return "The notice is still running — you can confirm once its deadline has passed.";
     case "REVOCATION_NOT_DUE": return message || "The plan can't be revoked yet.";
+    case "WAIVER_TOO_LARGE": return message || "That's more than is still owed on this penalty.";
+    case "PENALTY_NOT_WAIVABLE": return message || "This penalty can't be waived now — the instalment was paid or is waiting for your finance check, or the plan isn't running.";
     case "OWN_PURCHASE": return "You can't decide on your own purchase — another finance officer or director must.";
     default: return message || fallback;
   }

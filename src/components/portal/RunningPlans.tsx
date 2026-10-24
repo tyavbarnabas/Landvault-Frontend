@@ -2,8 +2,9 @@
 // Figma proposal. Running plans: every plan that's running, worked out for
 // today by the backend, most urgent first, filterable by standing.
 // Restructures: buyers' requests to answer, and proposals awaiting the buyer.
-// Read-only lists; each row opens the plan page, where restructuring and —
-// for the Executive Director — revocation happen.
+// Read-only lists; each row opens the plan page, where waiving a penalty,
+// restructuring and — for the Executive Director — revocation happen. A row
+// with a penalty owed also links straight to waiving it.
 
 import { useState } from "react";
 import { useFetch } from "../../lib/useFetch";
@@ -81,7 +82,12 @@ function PlanRow({ plan: p }: { plan: RunningPlan }) {
       </dl>
       {p.arrears && p.status === "overdue" && <p className="text-xs text-[var(--muted-foreground)]">Goes into arrears after {formatDay(p.arrears.graceEnds)}.</p>}
       {rv?.notice && <p className="text-xs text-[var(--muted-foreground)]">Notice given {formatDay(rv.notice.givenAt)}: “{rv.notice.reason}”</p>}
-      <LinkButton to={`/portal/finance/plans/${p.transactionId}`} variant="secondary">Open plan</LinkButton>
+      <div className="flex flex-wrap gap-3">
+        <LinkButton to={`/portal/finance/plans/${p.transactionId}`} variant="secondary">Open plan</LinkButton>
+        {p.arrears && p.arrears.penaltyAmount > 0 && (
+          <LinkButton to={`/portal/finance/plans/${p.transactionId}?section=penalties`} variant="secondary">Waive penalty</LinkButton>
+        )}
+      </div>
     </ListCard>
   );
 }

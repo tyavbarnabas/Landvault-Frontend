@@ -4,7 +4,9 @@
 // (preview on every change, then propose, reject, or withdraw a proposal),
 // and — for the Executive Director (portal.plans.revoke) — revocation: what
 // revoking would mean, giving notice, withdrawing it, confirming after the
-// deadline. Every figure is the backend's.
+// deadline. Late-payment penalties can be waived in part or in full, with a
+// reason the buyer is emailed (Figma "Penalty waivers"). Every figure is the
+// backend's.
 
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
@@ -12,11 +14,13 @@ import { useApp } from "../../../contexts/AppContext";
 import { useFetch } from "../../../lib/useFetch";
 import { formatMoney } from "../../../lib/formatCurrency";
 import { formatDay } from "../../../lib/formatDate";
+import { ApiError } from "../../../lib/apiClient";
 import { PLANS_REVOKE_PERMISSION } from "../../../services/authService";
 import {
-  PLAN_STATUS_BADGE, cancelNotice, confirmRevocation, fetchPlanRestructures, fetchRevocation, fetchRunningPlans, giveNotice,
-  planErrorCode, planErrorMessage, previewRestructure, proposeRestructure, rejectRestructure, withdrawProposal,
-  type PlanRestructures, type PlanRevocation, type Proposal, type ProposalTerms,
+  PLAN_STATUS_BADGE, WAIVER_REASON_MAX, cancelNotice, checkWaiver, confirmRevocation, fetchPenaltyWaivers, fetchPlanRestructures,
+  fetchRevocation, fetchRunningPlans, giveNotice, planErrorCode, planErrorMessage, previewRestructure, proposeRestructure,
+  rejectRestructure, waivePenalty, withdrawProposal,
+  type PenaltyWaivers, type PlanRestructures, type PlanRevocation, type Proposal, type ProposalTerms, type WaivablePenalty,
 } from "../../../services/planService";
 import Page, { Loading } from "../../../components/ui/Page";
 import Card, { InfoBox } from "../../../components/ui/Card";
@@ -24,6 +28,7 @@ import Alert from "../../../components/ui/Alert";
 import Badge from "../../../components/ui/Badge";
 import Button from "../../../components/ui/Button";
 import Dialog, { DialogActions } from "../../../components/ui/Dialog";
+import DisclosureTable, { TableRow } from "../../../components/ui/DisclosureTable";
 import { ErrorText, Field, Input, Select, Textarea } from "../../../components/ui/Field";
 import LoadError from "../../../components/LoadError";
 
@@ -63,10 +68,179 @@ export default function PortalPlan() {
             )}
           </div>
         )}
+        <PenaltiesSection id={id!} onChanged={plans.refetch} />
         <RestructureSection id={id!} focus={params.get("section") === "restructure"} />
         {mayRevoke && <RevocationSection id={id!} onChanged={plans.refetch} />}
       </div>
     </Page>
+  );
+}
+
+// ─── Late-payment penalties: waiving ────────────────────────────────────────
+
+const PENALTY_GRID = "lg:grid-cols-[minmax(0,1fr)_5.25rem_6rem_4.75rem_4.5rem_5.5rem_5rem]";
+
+const INSTALMENT_STATUS: Record<string, { label: string; variant: "warning" | "info" | "neutral" }> = {
+  overdue: { label: "Overdue", variant: "warning" },
+  in_arrears: { label: "In arrears", variant: "warning" },
+  due_today: { label: "Due today", variant: "info" },
+  upcoming: { label: "Upcoming", variant: "neutral" },
+};
+
+// The waiver errors carry the backend's own words; show them.
+function waiverError(err: unknown): string {
+  return err instanceof Error && err.message ? err.message : planErrorMessage(err);
+}
+
+// First on the page, so Running plans' "Waive penalty" (?section=penalties) lands on it.
+function PenaltiesSection({ id, onChanged }: { id: string; onChanged: () => void }) {
+  const loaded = useFetch(() => fetchPenaltyWaivers(id), [id]);
+  const [over, setOver] = useState<PenaltyWaivers | null>(null);
+  const [openSeq, setOpenSeq] = useState<number | null>(null);
+  const [done, setDone] = useState("");
+  const [stale, setStale] = useState("");
+
+  if (loaded.loading && !loaded.data) return <Card><Loading label="Loading penalties…" /></Card>;
+  if (loaded.error || !loaded.data) {
+    if (planErrorCode(loaded.errorValue) === "NOT_IN_DEMO") {
+      return <Card as="section" className="space-y-2"><h2 className="font-semibold text-[var(--foreground)]">Late-payment penalties</h2><Alert tone="info">{planErrorMessage(loaded.errorValue)}</Alert></Card>;
+    }
+    return <LoadError error={loaded.errorValue} what="penalties" onRetry={loaded.refetch} />;
+  }
+  const w = over ?? loaded.data;
+  const money = (n: number) => formatMoney(n, w.currency);
+  const running = w.planStatus === "on_plan";
+  const waived = (next: PenaltyWaivers, message: string) => { setOver(next); setOpenSeq(null); setStale(""); setDone(message); onChanged(); };
+  const refresh = (message: string) => { setOpenSeq(null); setStale(message); setOver(null); loaded.refetch(); };
+
+  return (
+    <section aria-labelledby="penalties-heading" className="space-y-4">
+      <div>
+        <h2 id="penalties-heading" className="font-semibold text-[var(--foreground)]">Late-payment penalties</h2>
+        <p className="text-sm text-[var(--muted-foreground)]">
+          {running ? "Penalties not yet paid, worked out today. You can waive some or all of one — the buyer is emailed your reason." : "This plan has ended, so penalties can no longer be waived. Past waivers are shown below."}
+        </p>
+      </div>
+      {done && <Alert tone="success" role="status">{done}</Alert>}
+      {stale && <Alert tone="warning" role="status">{stale}</Alert>}
+      {running && (w.penalties.length === 0 ? (
+        <Card><p className="text-sm text-[var(--muted-foreground)]">No penalties to waive on this plan.</p></Card>
+      ) : (
+        <DisclosureTable columns={["Instalment", "Due", "Status", "Reached", "Waived", "Outstanding"]} grid={PENALTY_GRID} label="Penalties">
+          {w.penalties.map((p) => {
+            const st = INSTALMENT_STATUS[p.instalmentStatus] ?? { label: p.instalmentStatus, variant: "neutral" as const };
+            const carried = p.instalmentStatus === "upcoming" || p.instalmentStatus === "due_today";
+            return (
+              <TableRow key={p.instalmentSequence} grid={PENALTY_GRID}
+                cells={[
+                  <div className="text-sm text-[var(--foreground)]">Instalment {p.instalmentSequence}{carried && <div className="text-xs text-[var(--muted-foreground)]">Penalty carried from before the restructure</div>}</div>,
+                  <div className="text-sm text-[var(--muted-foreground)]"><span className="lg:hidden">Due </span>{formatDay(p.dueDate)}</div>,
+                  <Badge label={st.label} variant={st.variant} />,
+                  <Figure label="Reached" value={money(p.reached)} />,
+                  <Figure label="Waived" value={money(p.waived)} />,
+                  <Figure label="Outstanding" value={money(p.outstanding)} strong />,
+                ]}
+                action={openSeq === p.instalmentSequence ? null : <Button variant="secondary" onClick={() => { setOpenSeq(p.instalmentSequence); setDone(""); setStale(""); }}>Waive</Button>}
+                below={openSeq === p.instalmentSequence ? (
+                  <WaiveForm id={id} penalty={p} money={money} onCancel={() => setOpenSeq(null)} onWaived={waived} onStale={refresh} />
+                ) : undefined}
+              />
+            );
+          })}
+        </DisclosureTable>
+      ))}
+      <Card as="section" aria-labelledby="waivers-heading" className="space-y-3">
+        <h3 id="waivers-heading" className="font-semibold text-[var(--foreground)]">Waivers on this plan</h3>
+        {w.waivers.length === 0 ? <p className="text-sm text-[var(--muted-foreground)]">None yet.</p> : (
+          <ul className="divide-y divide-[var(--border)]">
+            {w.waivers.map((v) => (
+              <li key={v.id} className="py-2.5 first:pt-0 last:pb-0">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-sm font-medium text-[var(--foreground)]">Instalment {v.instalmentSequence} · {formatDay(v.waivedAt)}{v.scheduleVersion > 1 ? ` · schedule version ${v.scheduleVersion}` : ""}</span>
+                  <span className="font-mono-data text-sm text-[var(--foreground)]">{money(v.amount)}</span>
+                </div>
+                <p className="text-sm text-[var(--muted-foreground)]">“{v.reason}”</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </section>
+  );
+}
+
+function Figure({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="flex justify-between gap-3 text-sm">
+      <span className="lg:hidden text-[var(--muted-foreground)]">{label}</span>
+      <span className={`font-mono-data text-[var(--foreground)] ${strong ? "font-medium" : ""}`}>{value}</span>
+    </div>
+  );
+}
+
+function WaiveForm({ id, penalty: p, money, onCancel, onWaived, onStale }: {
+  id: string; penalty: WaivablePenalty; money: (n: number) => string;
+  onCancel: () => void; onWaived: (w: PenaltyWaivers, message: string) => void; onStale: (message: string) => void;
+}) {
+  // Prefilled with all of it, written as people read money ("28,125").
+  const [amountText, setAmountText] = useState(p.outstanding.toLocaleString("en-NG", { maximumFractionDigits: 2 }));
+  const [reason, setReason] = useState("");
+  const [errors, setErrors] = useState<{ amount?: string; reason?: string }>({});
+  const [error, setError] = useState("");
+  const [confirming, setConfirming] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const fid = `waive-${p.instalmentSequence}`;
+  const checked = checkWaiver(amountText, reason, p.outstanding);
+
+  const ask = () => {
+    if (checked.errors) { setErrors(checked.errors); return; }
+    setErrors({});
+    setError("");
+    setConfirming(checked.amount);
+  };
+  const go = async () => {
+    if (confirming == null) return;
+    setBusy(true);
+    try {
+      const next = await waivePenalty(id, { instalmentSequence: p.instalmentSequence, amount: confirming, reason });
+      onWaived(next, `Waived ${money(confirming)} on instalment ${p.instalmentSequence}. The buyer has been emailed your reason.`);
+    } catch (err) {
+      setConfirming(null);
+      const code = planErrorCode(err);
+      if (code === "PENALTY_NOT_WAIVABLE") { onStale(waiverError(err)); return; }
+      if (code === "WAIVER_TOO_LARGE") setErrors({ amount: waiverError(err) });
+      else if (code === "VALIDATION_ERROR" && err instanceof ApiError && err.body?.fieldErrors) {
+        const fe = err.body.fieldErrors;
+        setErrors({ amount: fe.amount, reason: fe.reason });
+        if (!fe.amount && !fe.reason) setError(waiverError(err));
+      } else setError(waiverError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg bg-[var(--muted)] p-4 space-y-3">
+      <h4 className="text-sm font-semibold text-[var(--foreground)]">Waive the penalty on instalment {p.instalmentSequence}</h4>
+      <Field id={`${fid}-amount`} label="Amount to waive" hint={`Up to ${money(p.outstanding)}, what is still owed on this penalty. Prefilled with all of it.`} error={errors.amount}>
+        <Input id={`${fid}-amount`} inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} className="font-mono-data" aria-invalid={!!errors.amount} />
+      </Field>
+      <Field id={`${fid}-reason`} label="Reason" hint={`The buyer is emailed this reason. Up to ${WAIVER_REASON_MAX} characters.`} error={errors.reason}>
+        <Textarea id={`${fid}-reason`} rows={2} maxLength={WAIVER_REASON_MAX} value={reason} onChange={(e) => setReason(e.target.value)} aria-invalid={!!errors.reason} />
+      </Field>
+      <p className="text-xs text-[var(--muted-foreground)]">A waiver is a fixed amount. If the instalment stays unpaid and reaches a higher penalty step, the difference is owed.</p>
+      {error && <ErrorText>{error}</ErrorText>}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <Button onClick={ask}>{checked.amount != null ? `Waive ${money(checked.amount)}…` : "Waive…"}</Button>
+        <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+      </div>
+      {confirming != null && (
+        <Dialog title={`Waive ${money(confirming)} of the penalty on instalment ${p.instalmentSequence}?`} onClose={busy ? () => {} : () => setConfirming(null)}>
+          <p className="text-sm text-[var(--muted-foreground)] mb-3">The buyer will be emailed your reason. If the instalment stays unpaid and reaches a higher penalty step, the difference is owed.</p>
+          <DialogActions onCancel={() => setConfirming(null)} onConfirm={go} confirmLabel={`Waive ${money(confirming)}`} busy={busy} />
+        </Dialog>
+      )}
+    </div>
   );
 }
 

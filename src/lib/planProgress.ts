@@ -26,6 +26,8 @@ export interface ScheduleRow {
   // carried from before a restructure.
   daysLate?: number;
   penalty?: Penalty | null;
+  // Waived by the developer; `penalty` is already net of it.
+  penaltyWaived?: number | null;
 }
 
 const isInstalment = (p: Payment) => p.type === "instalment" || p.type === "installment";
@@ -70,6 +72,7 @@ export function scheduleRows(schedule: PlanSchedule, owned: OwnedPlot | null | u
       r.dueDate = st.dueDate;
       r.daysLate = st.daysLate;
       r.penalty = st.penalty;
+      r.penaltyWaived = st.penaltyWaived ?? null;
     }
   }
   return rows;
