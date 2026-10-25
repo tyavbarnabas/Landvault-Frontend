@@ -2,6 +2,8 @@
 // inventory forms (PortalEstateInventory.tsx) — no new tokens.
 
 export const inputClass = "w-full px-3 py-2 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm focus:outline-none focus:border-[var(--accent)]";
+// The same box sized by its caller — for a number inside a sentence ("after [30] days' notice").
+export const inlineInputClass = "px-3 py-2 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm focus:outline-none focus:border-[var(--accent)]";
 
 export function FieldError({ message }: { message?: string }) {
   if (!message) return null;

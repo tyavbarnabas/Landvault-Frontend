@@ -145,6 +145,18 @@ describe("reading a plan's standing", () => {
     expect(isCarriedPenalty({ monthsLate: 1, penaltyPct: 5, amount: 48_125 })).toBe(false);
   });
 
+  it("the purchase title's chip says where a running plan stands today (Figma)", async () => {
+    const { purchaseBadge } = await import("../lib/purchaseStatus");
+    const p = (st: { status: string; revocation?: unknown }) => ({ id: "x", reference: "LV-1", estateId: "e", plotId: "p", reservationId: "r", basePrice: 1, cornerPremiumPct: null,
+      totalPrice: 1, currency: "NGN", intent: "development" as const, plan: "installment" as const, installmentMonths: 12, status: "on_plan" as const, createdAt: "2026-10-22T10:00:00Z",
+      payment: null, buyerAddress: null, offer: null, schedule: SCHEDULE, standing: { ...standing, ...st } as never });
+    expect(purchaseBadge(p({ status: "in_arrears" }))).toMatchObject({ label: "In arrears", tone: "warning" });
+    expect(purchaseBadge(p({ status: "overdue" })).label).toBe("Overdue");
+    expect(purchaseBadge(p({ status: "on_track" })).label).toBe("On instalment plan");
+    const notice = { afterMonthsUnpaid: 3, noticeDays: 30, revocableFrom: null, revocableNow: true, notice: { reason: "x", givenAt: "2027-04-21T10:00:00Z", deadline: "2027-05-21", instalmentSequence: 2 } };
+    expect(purchaseBadge(p({ status: "in_arrears", revocation: notice })).label).toBe("Notice of revocation");
+  });
+
   it("a withdrawn or revoked plan is over, never 'yours', and its refunds come back in parts", async () => {
     const { describePurchase, purchaseBadge } = await import("../lib/purchaseStatus");
     const p = (status: "withdrawn" | "revoked") => ({ id: "x", reference: "LV-1", estateId: "e", plotId: "p", reservationId: "r", basePrice: 1, cornerPremiumPct: null,

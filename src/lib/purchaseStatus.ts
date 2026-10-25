@@ -163,7 +163,15 @@ export function purchaseBadge(p: Purchase): { label: string; tone: PurchaseTone 
     case "pay": return { label: "Awaiting payment", tone: "warning", note: describePurchase(p).payNote };
     case "payment_failed": return { label: "Payment failed", tone: "error", note: "Nothing was taken. You can try again." };
     case "verifying": return { label: p.schedule ? "Deposit being verified" : "Being verified", tone: "info", note: p.payment?.receiptNumber ? `Receipt ${p.payment.receiptNumber}` : null };
-    case "on_plan": return { label: "On instalment plan", tone: "info", note: p.schedule?.planName ?? null };
+    case "on_plan": {
+      // Where the plan stands today (phase 4–5), as the Figma title chip shows it.
+      const st = p.standing;
+      if (st?.revocation?.notice) return { label: "Notice of revocation", tone: "warning", note: p.schedule?.planName ?? null };
+      if (st?.status === "in_arrears") return { label: "In arrears", tone: "warning", note: p.schedule?.planName ?? null };
+      if (st?.status === "overdue") return { label: "Overdue", tone: "warning", note: p.schedule?.planName ?? null };
+      if (st?.status === "due_today") return { label: "Due today", tone: "info", note: p.schedule?.planName ?? null };
+      return { label: "On instalment plan", tone: "info", note: p.schedule?.planName ?? null };
+    }
     case "under_review": return { label: "Under review", tone: "info", note: "Your payment arrived after the reservation ended." };
     case "refund": return { label: p.payment?.refundStatus === "needs-attention" ? "Refund needs your details" : "Refund on its way", tone: "warning", note: refund };
   }

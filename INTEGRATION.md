@@ -199,6 +199,19 @@ Built from the Figma "Penalty waivers" page (developer plan page, Running plans,
 - **Not checked live**: the backend running on 8080 predates changeset 109 (its waiver code was still uncommitted on `feature/penalty-waivers`), so the GET answered 404. The screens were checked against the Figma frames with the two GETs answered from fixtures in the browser; nothing was posted. The "Done means" walkthrough (backdated instalment, waive part then the rest, buyer email) is still to do once the backend is restarted on that branch.
 - No demo data (by design): in demo mode the section says it needs the live service.
 
+### K. Phases 4–5 screens aligned with the Figma frames — 2026-10-25
+
+An audit against the approved Figma frames found the buyer, portal and terms screens had drifted. Fixed, all from data already sent:
+purchase title chip from `standing` (In arrears / Overdue / Notice of revocation, plus Restructure requested/proposed); no "held for
+you" panel while late; Your plan card without a second chip; calm warning tone instead of red on the portfolio and plot page; the
+restructure page's intro, history (the open request and its proposal), folded new-instalment list, late row and "Plan restructured on…"
+after accepting; the plan page title's restructure badge; inline revocation inputs and units on default terms; "· Buyer withdrew" and
+the house date format on the finance queue; plot, estate and plan on the withdraw page.
+
+**Waiting on the backend** (asked in `~/Documents/hometrue-backend-figma-alignment-fields-prompt.md`): per-instalment standing on a
+portal plan ("Current schedule" card), the refund on a withdrawn portfolio entry, `instalmentAmount` on queue items, `confirmableFrom`
+on running-plan notices, `planName` and `planStartedAt`/`endedAt` on portfolio entries. Those spots keep their current wording until then.
+
 ### Also worth a look, lower priority
 
 - **`POST /api/auth/login`'s OpenAPI description says to "check for a `challengeId` field".** `TwoFactorChallengeResponse` has no such field — it is `challengeToken`. The frontend discriminates on `twoFactorRequired`, which is unambiguous, but the description is misleading and worth correcting.

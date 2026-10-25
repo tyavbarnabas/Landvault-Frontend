@@ -11,7 +11,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useApp } from "../../../contexts/AppContext";
-import { useFetch } from "../../../lib/useFetch";
+import { useFetch, type UseFetchResult } from "../../../lib/useFetch";
 import { formatMoney } from "../../../lib/formatCurrency";
 import { formatDay } from "../../../lib/formatDate";
 import { ApiError } from "../../../lib/apiClient";
@@ -39,6 +39,10 @@ export default function PortalPlan() {
   const mayRevoke = !!user?.permissions?.includes(PLANS_REVOKE_PERMISSION);
   const plans = useFetch(() => fetchRunningPlans(), []);
   const plan = plans.data?.find((p) => p.transactionId === id) ?? null;
+  // Fetched here so the title can say a restructure is open (Figma).
+  const restructures = useFetch(() => fetchPlanRestructures(id!), [id]);
+  const [rsOver, setRsOver] = useState<PlanRestructures | null>(null);
+  const openRs = (rsOver ?? restructures.data)?.open ?? null;
   const back = { to: "/portal/finance?tab=plans", label: "Running plans" };
 
   if (plans.loading && !plans.data) return <Page title="Plan" back={back}><Loading /></Page>;
@@ -48,7 +52,7 @@ export default function PortalPlan() {
 
   return (
     <Page width="lg" back={back} eyebrow={plan?.transactionReference}
-      title={<span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">{plan?.plotLabel ?? "Plan"}<span className="font-[family-name:var(--font-body)] inline-flex gap-1.5">{chip && <Badge label={chip.label} variant={chip.tone} />}</span></span>}
+      title={<span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">{plan?.plotLabel ?? "Plan"}<span className="font-[family-name:var(--font-body)] inline-flex gap-1.5">{chip && <Badge label={chip.label} variant={chip.tone} />}{openRs?.status === "requested" && <Badge label="Restructure requested" variant="info" />}{openRs?.status === "proposed" && <Badge label="Restructure proposed" variant="neutral" />}</span></span>}
       description={plan ? [plan.estateName, plan.buyerEmail, plan.planName].filter(Boolean).join(" · ") : "This plan isn't running — it may be paid off, withdrawn or revoked."}>
       <div className="space-y-6">
         {plan && (
@@ -69,7 +73,7 @@ export default function PortalPlan() {
           </div>
         )}
         <PenaltiesSection id={id!} onChanged={plans.refetch} />
-        <RestructureSection id={id!} focus={params.get("section") === "restructure"} />
+        <RestructureSection id={id!} focus={params.get("section") === "restructure"} loaded={restructures} over={rsOver} setOver={setRsOver} />
         {mayRevoke && <RevocationSection id={id!} onChanged={plans.refetch} />}
       </div>
     </Page>
@@ -246,9 +250,10 @@ function WaiveForm({ id, penalty: p, money, onCancel, onWaived, onStale }: {
 
 // ─── Restructure ────────────────────────────────────────────────────────────
 
-function RestructureSection({ id, focus }: { id: string; focus: boolean }) {
-  const loaded = useFetch(() => fetchPlanRestructures(id), [id]);
-  const [over, setOver] = useState<PlanRestructures | null>(null);
+function RestructureSection({ id, focus, loaded, over, setOver }: {
+  id: string; focus: boolean; loaded: UseFetchResult<PlanRestructures>;
+  over: PlanRestructures | null; setOver: (r: PlanRestructures | null) => void;
+}) {
   if (loaded.loading && !loaded.data) return <Card><Loading label="Loading restructure requests…" /></Card>;
   if (loaded.error || !loaded.data) return <LoadError error={loaded.errorValue} what="restructure requests" onRetry={loaded.refetch} />;
   const r = over ?? loaded.data;

@@ -101,7 +101,7 @@ export default function DisclosurePreview({ computed, fees, refund, defaults }: 
               <div className="divide-y divide-[var(--border)]">
                 {defaults.penaltyTiers.map((t) => (
                   <div key={t.monthsLate} className="flex items-center justify-between gap-3 py-2 text-sm">
-                    <span className="text-[var(--muted-foreground)]">{t.monthsLate} months late</span>
+                    <span className="text-[var(--muted-foreground)]">{t.monthsLate} month{t.monthsLate === 1 ? "" : "s"} late</span>
                     <span className="font-mono-data text-[var(--foreground)]">{t.penaltyPct}% <span className="text-[var(--muted-foreground)]">· naira figure not yet computed</span></span>
                   </div>
                 ))}

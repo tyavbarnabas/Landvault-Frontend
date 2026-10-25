@@ -3,9 +3,15 @@
 // financial strain — copy is factual, respectful, and solution-oriented,
 // never punitive or pressuring. The restructuring action is surfaced at
 // least as prominently as the warning, not as an afterthought link.
+// Colours are the warning tone, never red (Figma phases 4–5 Notes: calm and
+// factual, warning-tinted panels).
 
 import { formatAmount } from "../../data/mockData";
 import type { ArrearsInfo, Currency } from "../../data/mockData";
+import { formatDay } from "../../lib/formatDate";
+import { TONE_SURFACE } from "../ui/tones";
+import Button from "../ui/Button";
+import { AlertIcon } from "../icons";
 
 interface ArrearsBannerProps {
   arrears: ArrearsInfo;
@@ -26,43 +32,39 @@ export default function ArrearsBanner({ arrears, currency, restructureStatus = "
   const graceActive = new Date() < new Date(arrears.graceEndsDate);
 
   return (
-    <div className="rounded-xl border border-red-200 bg-red-50 p-4" role="status">
+    <div className={`rounded-xl border p-4 ${TONE_SURFACE.warning}`} role="status">
       <div className="flex items-start gap-2.5 mb-3">
-        <span aria-hidden="true" className="text-lg mt-0.5">⚠️</span>
+        <span aria-hidden="true" className="mt-0.5"><AlertIcon size={16} /></span>
         <div>
-          <div className="text-sm font-semibold text-red-900">Payment overdue</div>
-          <p className="text-xs text-red-800 mt-0.5 leading-relaxed">
-            {formatAmount(arrears.amountOwed, currency)} has been overdue since {arrears.overdueSinceDate} ({overdue} day{overdue === 1 ? "" : "s"}).
+          <div className="text-sm font-semibold">Payment overdue</div>
+          <p className="text-xs mt-0.5 leading-relaxed">
+            {formatAmount(arrears.amountOwed, currency)} has been overdue since {formatDay(arrears.overdueSinceDate)} ({overdue} day{overdue === 1 ? "" : "s"}).
             {arrears.penaltyAmount ? ` A ${formatAmount(arrears.penaltyAmount, currency)} penalty has been applied.` : ""}
           </p>
-          {arrears.penaltyReason && <p className="text-xs text-red-700 mt-1">{arrears.penaltyReason}</p>}
+          {arrears.penaltyReason && <p className="text-xs mt-1">{arrears.penaltyReason}</p>}
         </div>
       </div>
 
-      <div className="text-xs text-red-800 bg-white/60 rounded-lg p-3 mb-3 leading-relaxed">
+      <div className="text-xs text-[var(--foreground)] bg-[var(--card)] rounded-lg p-3 mb-3 leading-relaxed">
         <span className="font-medium">What happens next: </span>
         {graceActive
-          ? `You're within the ${arrears.gracePeriodDays}-day grace period, which ends ${arrears.graceEndsDate}. Pay before then to avoid further penalties.`
+          ? `You're within the ${arrears.gracePeriodDays}-day grace period, which ends ${formatDay(arrears.graceEndsDate)}. Pay before then to avoid further penalties.`
           : "The grace period has passed. Continued non-payment may lead to reclamation under the estate's terms — reach out any time to talk through your options."}
       </div>
 
       {restructureStatus === "pending" ? (
-        <div className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 inline-block">
+        <div className={`text-xs font-medium border rounded-md px-3 py-2 inline-block ${TONE_SURFACE.info}`}>
           Restructuring request submitted — awaiting a response from the seller.
         </div>
       ) : restructureStatus === "approved" ? (
-        <div className="text-xs font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 inline-block">
+        <div className={`text-xs font-medium border rounded-md px-3 py-2 inline-block ${TONE_SURFACE.success}`}>
           Your restructuring request was approved. Updated terms will appear here shortly.
         </div>
       ) : (
         onRequestRestructure && (
-          <button
-            onClick={onRequestRestructure}
-            disabled={requesting}
-            className="text-sm font-semibold px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md hover:opacity-90 transition-opacity disabled:opacity-60"
-          >
+          <Button onClick={onRequestRestructure} disabled={requesting}>
             {requesting ? "Submitting…" : "Request restructuring"}
-          </button>
+          </Button>
         )
       )}
     </div>

@@ -13,7 +13,7 @@ import {
   buildDefaultRequest, declareDefaultTerms, defaultDraftFrom,
   type DefaultDraft, type DefaultTerms, type FieldErrors,
 } from "../../services/estateDisclosureService";
-import { Choice, Field, FieldError, SubmitButton, VersionNote, YES_NO, inputClass, serverMessage } from "./formParts";
+import { Choice, Field, FieldError, SubmitButton, VersionNote, YES_NO, inlineInputClass, inputClass, serverMessage } from "./formParts";
 
 export const DEADLINE_NOT_TRACKED = "Stored and shown to buyers, but not tracked: nothing on the platform watches this deadline or warns as it approaches.";
 export const CONSENT_NOT_ENFORCED = "Shown to buyers, but not enforced: the platform has no resale flow yet, so nothing checks for your consent.";
@@ -65,12 +65,19 @@ export default function DefaultTermsForm({ estateId, current, onDeclared }: {
             <div key={i} className="flex items-start gap-2">
               <div className="flex-1">
                 <label htmlFor={`tier-${i}-months`} className="sr-only">Months late</label>
-                <input id={`tier-${i}-months`} type="number" min={1} step="1" placeholder="Months late" value={tier.monthsLate} onChange={(e) => setTier(i, { monthsLate: e.target.value })} className={inputClass} />
+                {/* The unit sits in the box (Figma): "1 months late", "5 %". */}
+                <div className="relative">
+                  <input id={`tier-${i}-months`} type="number" min={1} step="1" value={tier.monthsLate} onChange={(e) => setTier(i, { monthsLate: e.target.value })} className={`${inputClass} pr-24`} />
+                  <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--muted-foreground)]">{tier.monthsLate === "1" ? "month late" : "months late"}</span>
+                </div>
                 <FieldError message={errors[`penaltyTiers.${i}.monthsLate`]} />
               </div>
               <div className="flex-1">
                 <label htmlFor={`tier-${i}-pct`} className="sr-only">Penalty %</label>
-                <input id={`tier-${i}-pct`} type="number" min={0} max={100} step="0.01" placeholder="Penalty %" value={tier.penaltyPct} onChange={(e) => setTier(i, { penaltyPct: e.target.value })} className={inputClass} />
+                <div className="relative">
+                  <input id={`tier-${i}-pct`} type="number" min={0} max={100} step="0.01" value={tier.penaltyPct} onChange={(e) => setTier(i, { penaltyPct: e.target.value })} className={`${inputClass} pr-8 font-mono-data`} />
+                  <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--muted-foreground)]">%</span>
+                </div>
                 <FieldError message={errors[`penaltyTiers.${i}.penaltyPct`]} />
               </div>
               <button type="button" onClick={() => set({ penaltyTiers: draft.penaltyTiers.filter((_, j) => j !== i) })} className="text-xs text-[var(--muted-foreground)] hover:underline py-2">
@@ -104,12 +111,12 @@ export default function DefaultTermsForm({ estateId, current, onDeclared }: {
           <span>A plan can be revoked once an instalment is</span>
           <label htmlFor="revocationAfterMonths" className="sr-only">Months unpaid before a plan can be revoked</label>
           <input id="revocationAfterMonths" type="number" min={3} max={120} step="1" value={draft.revocationAfterMonths}
-            onChange={(e) => set({ revocationAfterMonths: e.target.value })} className={`${inputClass} w-20 font-mono-data`}
+            onChange={(e) => set({ revocationAfterMonths: e.target.value })} className={`${inlineInputClass} w-16 font-mono-data`}
             aria-invalid={!!errors.revocationAfterMonths} aria-describedby="revocation-hint" />
           <span>months unpaid, after</span>
           <label htmlFor="revocationNoticeDays" className="sr-only">Days of written notice</label>
           <input id="revocationNoticeDays" type="number" min={14} step="1" value={draft.revocationNoticeDays} placeholder="14"
-            onChange={(e) => set({ revocationNoticeDays: e.target.value })} className={`${inputClass} w-20 font-mono-data`}
+            onChange={(e) => set({ revocationNoticeDays: e.target.value })} className={`${inlineInputClass} w-16 font-mono-data`}
             aria-invalid={!!errors.revocationNoticeDays} aria-describedby="revocation-hint" />
           <span>days' written notice.</span>
         </div>

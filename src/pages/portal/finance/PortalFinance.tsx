@@ -16,6 +16,7 @@ import { RestructureQueue, RunningPlans } from "../../../components/portal/Runni
 import { useApp } from "../../../contexts/AppContext";
 import { DOCUMENTS_VIEW_PERMISSION } from "../../../services/authService";
 import { formatMoney } from "../../../lib/formatCurrency";
+import { formatDay, formatDayTime } from "../../../lib/formatDate";
 import { ApiError, ApiTransportError } from "../../../lib/apiClient";
 import { useFetch, type UseFetchResult } from "../../../lib/useFetch";
 import { AlertIcon, CheckIcon } from "../../../components/icons";
@@ -44,7 +45,8 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 const money = (amount: number, currency: string) => formatMoney(amount, currency);
-const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : null);
+// The house date format ("20 Jan 2027, 16:02"), as everywhere else.
+const when = (iso: string | null) => (iso ? formatDayTime(iso) : null);
 
 export default function PortalFinance() {
   const [params, setParams] = useSearchParams();
@@ -105,7 +107,7 @@ function Figures({ queue, late, payouts }: { queue: FinanceQueueItem[] | null; l
 }
 
 const IN_FLIGHT: string[] = ["awaiting_otp", "pending", "sending"];
-const dayOf = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+const dayOf = (iso: string) => formatDay(iso);
 
 // ─── Awaiting verification ───────────────────────────────────────────────────
 
@@ -143,7 +145,7 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
     <ListCard className="space-y-4" alert={!paymentOk}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          {kind !== "full_price" && <div className="text-xs font-semibold uppercase tracking-wide text-[var(--accent)]">{paymentForLabel(item)}</div>}
+          {kind !== "full_price" && <div className="text-xs font-semibold uppercase tracking-wide text-[var(--accent)]">{paymentForLabel(item)}{item.planWithdrawn ? " · Buyer withdrew" : item.planRevoked ? " · Plan revoked" : ""}</div>}
           <div className="font-semibold text-[var(--foreground)]">{item.estateName} — {item.plotLabel}</div>
           <div className="text-xs text-[var(--muted-foreground)]">
             {item.buyerEmail ?? "Buyer email not shown"} · <span className="font-mono-data">{item.transactionReference}</span> · waiting since {when(item.awaitingSince)}

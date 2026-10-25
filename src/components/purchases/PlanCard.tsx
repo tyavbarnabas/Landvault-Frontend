@@ -19,8 +19,7 @@ import Button from "../ui/Button";
 import Dialog, { DialogActions } from "../ui/Dialog";
 import { ErrorText } from "../ui/Field";
 import { CalendarIcon } from "../icons";
-import Badge from "../ui/Badge";
-import { PLAN_STATUS_BADGE, isCarriedPenalty, type InstalmentStanding } from "../../services/planService";
+import { isCarriedPenalty, type InstalmentStanding } from "../../services/planService";
 import PayButton, { goToPaystack, paymentErrorMessage } from "./PayButton";
 import { useNavigate } from "react-router-dom";
 
@@ -50,22 +49,14 @@ export default function PlanCard({ purchase, owned, onChanged }: { purchase: Pur
   const penalty = nextStanding?.penalty ?? null;
   const late = nextStanding?.status === "overdue" || nextStanding?.status === "in_arrears";
   const [payingLate, setPayingLate] = useState(false);
-  const chip = standing ? PLAN_STATUS_BADGE[standing.status] : null;
 
   return (
     <Card as="section" aria-labelledby="plan-heading" className="space-y-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h2 id="plan-heading" className="font-semibold text-[var(--foreground)] whitespace-nowrap">Your plan</h2>
-        <span className="text-sm text-[var(--muted-foreground)]">{schedule.planName} · {paid} of {count} instalment{count === 1 ? "" : "s"} paid</span>
+        {/* Where the plan stands is the page title's chip; the schedule says when it was restructured. */}
+        <span className="text-sm text-[var(--muted-foreground)]">{paid} of {count} instalment{count === 1 ? "" : "s"} paid</span>
       </div>
-      {(chip || standing?.restructureStatus === "requested" || standing?.restructureStatus === "proposed" || (schedule.version ?? 1) > 1) && (
-        <div className="flex flex-wrap gap-1.5 -mt-2">
-          {chip && purchase.status === "on_plan" && <Badge label={chip.label} variant={chip.tone} />}
-          {standing?.restructureStatus === "requested" && <Badge label="Restructure requested" variant="neutral" />}
-          {standing?.restructureStatus === "proposed" && <Badge label="Restructure proposed" variant="info" />}
-          {(schedule.version ?? 1) > 1 && <Badge label={`Restructured · schedule version ${schedule.version}`} variant="neutral" />}
-        </div>
-      )}
 
       {purchase.status === "pending_payment" || purchase.status === "awaiting_finance" ? (
         <dl className="space-y-1.5 text-sm">
@@ -106,11 +97,12 @@ export default function PlanCard({ purchase, owned, onChanged }: { purchase: Pur
 
       {purchase.status === "on_plan" && (
         <>
-          {waiting && <Alert tone="info" role="status">Your last payment is waiting for the developer's finance team to verify it. You can pay the next one after that.</Alert>}
+          {waiting && next && <Alert tone="info" role="status">Instalment {next.sequence} is received and waiting for the developer's finance team. It isn't late while it waits, and no penalty is added.</Alert>}
           <div className="flex flex-col sm:flex-row gap-3">
             {next && !waiting && penalty && (
               <Button size="lg" className="sm:flex-1" onClick={() => setPayingLate(true)}>
-                Pay instalment {next.sequence} — {money(nextStanding?.amount ?? next.amount)} + {money(penalty.amount)} penalty
+                <span className="sm:hidden">Pay instalment {next.sequence} + penalty</span>
+                <span className="max-sm:hidden">Pay instalment {next.sequence} — {money(nextStanding?.amount ?? next.amount)} + {money(penalty.amount)} penalty</span>
               </Button>
             )}
             {next && !waitingBalance && !(penalty && !waiting) && (waiting ? after : true) && (
@@ -124,7 +116,7 @@ export default function PlanCard({ purchase, owned, onChanged }: { purchase: Pur
             <Button variant="secondary" size="lg" disabled={waiting} onClick={() => setPayingOff(true)}>Pay off the balance</Button>
           </div>
           <p className="text-xs text-[var(--muted-foreground)]">
-            You pay on Paystack's secure page. A payment counts once the developer's finance team has verified it arrived — Paystack confirming it isn't enough.
+            A payment counts once the developer's finance team has verified it. One awaiting verification is never late.
           </p>
         </>
       )}
@@ -188,7 +180,7 @@ function PayOffDialog({ purchase, onClose, onRefused }: { purchase: Purchase; on
 // "5% penalty, 1 month late" — or a penalty carried over by a restructure.
 function penaltyWords(p: { monthsLate: number; penaltyPct: number }): string {
   if (isCarriedPenalty({ ...p, amount: 1 })) return "penalty carried from before the restructure";
-  return `${p.penaltyPct}% late-payment penalty (${p.monthsLate} month${p.monthsLate === 1 ? "" : "s"} late)`;
+  return `${p.penaltyPct}% late-payment penalty`;
 }
 
 // A late (or penalty-carrying) instalment: the instalment and its penalty side

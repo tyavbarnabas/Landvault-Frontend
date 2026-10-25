@@ -19,7 +19,7 @@ import Badge from "../../components/ui/Badge";
 import Button, { LinkButton } from "../../components/ui/Button";
 import TextLink from "../../components/ui/TextLink";
 import EmptyState from "../../components/ui/EmptyState";
-import { AlertIcon, BuildingIcon, ChevronRightIcon } from "../../components/icons";
+import { BuildingIcon, ChevronRightIcon } from "../../components/icons";
 
 // Re-exported so Dashboard.tsx (and anything else ranking a buyer's plots by
 // urgency) uses the exact same logic — it now actually lives in
@@ -112,7 +112,6 @@ export default function Portfolio() {
   // Already sorted server-side (fetchOwnedPlots' sort: "urgency"), so
   // grouping keeps that order: an estate sits where its most urgent plot does.
   const groups = groupByEstate(ownedPlots);
-  const inArrears = ownedPlots.filter((p) => p.status === "in_arrears" && p.arrears);
 
   return (
     <Page title="My portfolio" description="Every plot you own or are paying for, grouped by estate." actions={actions}>
@@ -127,21 +126,7 @@ export default function Portfolio() {
           </p>
         )}
 
-        {inArrears.map((plot) => (
-          <div key={plot.id} role="alert" className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-[var(--error-border)] bg-[var(--error-surface)] text-[var(--error-text)] px-4 py-3.5">
-            <div className="flex gap-3 flex-1 min-w-0">
-              <span className="w-9 h-9 shrink-0 rounded-lg bg-[var(--card)] flex items-center justify-center"><AlertIcon size={18} /></span>
-              <div>
-                <div className="text-sm font-semibold">{plot.plotLabel} at {plot.estate} is in arrears</div>
-                <p className="text-sm">
-                  {formatAmount(plot.arrears!.amountOwed, plot.currency)} has been overdue since {formatDay(plot.arrears!.overdueSinceDate)}.
-                  {plot.arrears!.penaltyAmount ? ` A ${formatAmount(plot.arrears!.penaltyAmount, plot.currency)} penalty has been applied.` : ""}
-                </p>
-              </div>
-            </div>
-            <LinkButton to={`/portfolio/${plot.id}`} variant="secondary" className="shrink-0 bg-[var(--card)] max-sm:w-full">View options</LinkButton>
-          </div>
-        ))}
+        {/* A late plan shows in its row ("In arrears", what's due now), most urgent first — no alarm banner (Figma phases 4–5). */}
 
         <div className="flex items-center justify-between text-sm text-[var(--muted-foreground)]">
           <span className="font-medium">{groups.length} estate{groups.length === 1 ? "" : "s"} · {ownedPlots.length}{hasMore ? "+" : ""} plot{ownedPlots.length === 1 ? "" : "s"}</span>

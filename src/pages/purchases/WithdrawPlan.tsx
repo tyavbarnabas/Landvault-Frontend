@@ -13,6 +13,9 @@ import { formatMoney } from "../../lib/formatCurrency";
 import { formatDay } from "../../lib/formatDate";
 import { fetchWithdrawal, planErrorCode, planErrorMessage, withdraw } from "../../services/planService";
 import { lineLabel } from "../../components/purchases/PlanStanding";
+import { fetchPurchase } from "../../services/paymentsService";
+import { fetchListingById } from "../../services/marketplaceService";
+import { fetchPlotById, plotLabel } from "../../services/marketplacePlotsService";
 import Page, { Loading } from "../../components/ui/Page";
 import Card, { InfoBox } from "../../components/ui/Card";
 import Alert from "../../components/ui/Alert";
@@ -25,6 +28,14 @@ export default function WithdrawPlan() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const loaded = useFetch(() => fetchWithdrawal(id!), [id]);
+  // Names for the description only (Figma: "Block A, Plot 13 · Lugbe Demo
+  // Gardens · 12-month plan"); the page works without them.
+  const names = useFetch(async () => {
+    const p = await fetchPurchase(id!);
+    if (!p) return null;
+    const [listing, plot] = await Promise.all([fetchListingById(p.estateId).catch(() => undefined), fetchPlotById(p.estateId, p.plotId).catch(() => undefined)]);
+    return [plot ? plotLabel(plot) : null, listing?.name ?? null, p.schedule?.planName ?? null].filter(Boolean).join(" · ");
+  }, [id]);
   const [reason, setReason] = useState("");
   const [sure, setSure] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -65,7 +76,7 @@ export default function WithdrawPlan() {
 
   return (
     <Page width="lg" back={back} title={quote ? "Withdraw from your plan" : w.status === "revoked" ? "Your plan was revoked" : "You withdrew from your plan"}
-      description={quote ? "These are today's figures. Nothing happens until you confirm below." : w.withdrawnAt ? `Settled on ${formatDay(w.withdrawnAt)}. Each payment's part comes back on its own.` : "Each payment's part comes back on its own."}>
+      description={quote ? `${names.data ? `${names.data}. ` : ""}These are today's figures; nothing happens until you confirm below.` : w.withdrawnAt ? `Settled on ${formatDay(w.withdrawnAt)}. Each payment's part comes back on its own.` : "Each payment's part comes back on its own."}>
       <div className="space-y-6">
         {changed && <Alert tone="warning" role="alert">The figures changed since you opened this page — here are today's. Nothing has happened; check them and confirm again.</Alert>}
 

@@ -76,16 +76,20 @@ export default function PurchaseDetail() {
   const badge = purchaseBadge(purchase);
   const steps = purchaseTimeline(purchase);
   const plan = schedule ? `${schedule.planName} · ${frequencyWord(schedule.frequency)}` : purchase.plan === "outright" ? "Pay in full" : "Instalments";
+  // While a plan is late (or under notice) its standing panel says what to do;
+  // "held for you on the plan" would only compete with it.
+  const late = purchase.status === "on_plan" && (!!purchase.standing?.arrears || !!purchase.standing?.revocation?.notice);
+  const restructure = purchase.status === "on_plan" ? purchase.standing?.restructureStatus : null;
   return (
     <Page width="xl" back={{ to: "/purchases", label: "My purchases" }} eyebrow={purchase.reference}
-      title={<span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">{plot ? plotLabel(plot) : estateName ?? "Your purchase"}<span className="font-[family-name:var(--font-body)] inline-flex"><Badge label={badge.label} variant={badge.tone} /></span></span>}
+      title={<span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">{plot ? plotLabel(plot) : estateName ?? "Your purchase"}<span className="font-[family-name:var(--font-body)] inline-flex flex-wrap gap-1.5"><Badge label={badge.label} variant={badge.tone} />{restructure === "requested" && <Badge label="Restructure requested" variant="neutral" />}{restructure === "proposed" && <Badge label="Restructure proposed" variant="info" />}</span></span>}
       description={[plot ? estateName : null, plot?.sizeSqm ? `${plot.sizeSqm} sqm` : null, `reserved ${formatDay(purchase.createdAt)}`].filter(Boolean).join(" · ")}
       actions={inPortfolio ? <LinkButton to={`/portfolio/${purchase.id}`} variant="secondary">View in portfolio</LinkButton> : undefined}>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
         <div className="space-y-6 min-w-0">
           {/* A notice of revocation or arrears comes first: what's owed and what to do. */}
           <StandingPanel purchase={purchase} onPay={() => document.getElementById("plan-heading")?.scrollIntoView({ behavior: "smooth", block: "start" })} />
-          <PurchaseStatusPanel purchase={purchase} refundShown={showRefund} />
+          {!late && <PurchaseStatusPanel purchase={purchase} refundShown={showRefund} />}
           <PlanSettlementCard purchase={purchase} />
           {showRefund && p && <RefundPanel paymentReference={p.reference} />}
           {schedule && !["rejected", "abandoned", "withdrawn", "revoked"].includes(purchase.status) && (

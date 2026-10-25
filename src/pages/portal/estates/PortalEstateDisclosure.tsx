@@ -178,7 +178,7 @@ export default function PortalEstateDisclosure() {
                     <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 divide-y divide-[var(--border)]">
                       {defaults.penaltyTiers.map((t) => (
                         <div key={t.monthsLate} className="flex justify-between py-2 text-sm first:pt-0 last:pb-0">
-                          <span className="text-[var(--muted-foreground)]">{t.monthsLate} months late</span>
+                          <span className="text-[var(--muted-foreground)]">{t.monthsLate} month{t.monthsLate === 1 ? "" : "s"} late</span>
                           <span className="font-mono-data text-[var(--foreground)]">{t.penaltyPct}%</span>
                         </div>
                       ))}
