@@ -225,6 +225,15 @@ export interface OwnedPlot {
   payments: Payment[];
   installmentMonths?: number;
   installmentsPaid?: number;
+  // The declared plan's name ("12-month plan"); instalment plans only.
+  planName?: string;
+  // When finance verified the deposit (the plan's start), and when the plan
+  // was withdrawn or revoked. Lagos dates.
+  planStartedAt?: string;
+  endedAt?: string;
+  // Withdrawn / revoked only: what comes back to the buyer. `amount` can grow
+  // (a payment finance rejects after the plan ended comes back too).
+  refund?: PlanRefund;
   // Populated only while status is "in_arrears" — see ArrearsBanner.
   arrears?: ArrearsInfo;
   // Populated once a "Request restructuring" action has been submitted —
@@ -234,6 +243,18 @@ export interface OwnedPlot {
   // it replaces (status "superseded" there), same append-only-chain idiom as
   // Document.supersedes. See upgradeService.ts's executeReallocation.
   supersedes?: string;
+}
+
+export interface PlanRefund {
+  amount: number;
+  // What Paystack reports as back with the buyer.
+  refunded: number;
+  currency: Currency;
+  // none: the developer's share covered everything. "On its way" is pending
+  // or partly_refunded; refunded means all of `amount` is back.
+  status: "none" | "pending" | "partly_refunded" | "refunded";
+  // A bank-transfer payment can't come back until the buyer gives an account.
+  needsYourAccount: boolean;
 }
 
 export interface Document {

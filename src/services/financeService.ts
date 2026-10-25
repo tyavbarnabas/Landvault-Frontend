@@ -55,6 +55,9 @@ export interface FinanceQueueItem {
   // Phase 4: late-payment penalties already inside expectedAmount, one line
   // per late instalment. Shown as their own line; nothing is added here.
   penaltyAmount?: number | null;
+  // The instalment's own scheduled amount, before penalties (instalments
+  // only): expectedAmount = instalmentAmount + penaltyAmount.
+  instalmentAmount?: number | null;
   penalties?: { instalmentSequence: number; monthsLate: number; penaltyPct: number; amount: number }[];
   // 5a / 5b: the plan ended while this payment waited. Verifying releases
   // only the developer's share; rejecting returns it to the buyer too.

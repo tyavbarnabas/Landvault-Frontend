@@ -108,6 +108,46 @@ describe("live", () => {
   });
 });
 
+describe("the six Figma fields (live)", () => {
+  beforeEach(() => {
+    const store = new Map([["auth_token", "access-1"]]);
+    vi.stubEnv("VITE_API_BASE_URL", "http://api.test");
+    vi.stubGlobal("localStorage", { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) });
+  });
+
+  const ROW = { transactionId: "x1", transactionReference: "LV-1", planName: "12-month plan", status: "in_arrears", currency: "NGN",
+    deposit: { amount: 4_950_000, verifiedAt: "2026-10-22" },
+    instalments: [
+      { sequence: 1, dueDate: "2026-11-22", amount: 962_500, status: "paid", daysLate: 0, penalty: null, penaltyWaived: null },
+      { sequence: 2, dueDate: "2026-12-22", amount: 962_500, status: "in_arrears", daysLate: 40, penalty: null, penaltyWaived: null },
+      ...[3, 4, 5].map((n) => ({ sequence: n, dueDate: `2027-0${n}-22`, amount: 962_500, status: "upcoming", daysLate: 0, penalty: null, penaltyWaived: null })),
+    ] };
+
+  it("one running plan comes from its own route; a plan that isn't running is null, not an error", async () => {
+    respond({ "GET /api/portal/finance/plans/x1": { status: 200, body: ROW },
+      "GET /api/portal/finance/plans/x2": { status: 404, body: { code: "TRANSACTION_NOT_FOUND", message: "Not running" } } });
+    const { fetchRunningPlan, scheduleLines } = await import("./planService");
+    const plan = await fetchRunningPlan("x1");
+    expect(plan?.deposit).toEqual({ amount: 4_950_000, verifiedAt: "2026-10-22" });
+    expect(await fetchRunningPlan("x2")).toBeNull();
+    // Paid and still-to-come runs fold; a late instalment stands alone with its days.
+    expect(scheduleLines(plan!.instalments!)).toEqual([
+      { label: "Instalment 1", status: "paid", daysLate: 0 },
+      { label: "Instalment 2", status: "in_arrears", daysLate: 40 },
+      { label: "Instalments 3–5", status: "upcoming", daysLate: 0 },
+    ]);
+  });
+
+  it("a withdrawn portfolio entry carries its plan name, dates and refund as sent", async () => {
+    const refund = { amount: 5_843_750, refunded: 0, currency: "NGN", status: "pending", needsYourAccount: true };
+    respond({ "GET /api/portfolio/plots/w1": { status: 200, body: { id: "w1", plotLabel: "Block C, Plot 7", plan: "installment", status: "withdrawn",
+      planName: "12-month plan", planStartedAt: "2026-10-22", endedAt: "2027-02-03", refund, payments: [], totalPrice: 16_500_000, paidAmount: 6_875_000, currency: "NGN" } } });
+    const { fetchOwnedPlotById } = await import("./portfolioService");
+    const plot = await fetchOwnedPlotById("w1");
+    expect(plot).toMatchObject({ planName: "12-month plan", planStartedAt: "2026-10-22", endedAt: "2027-02-03", refund });
+  });
+});
+
 describe("demo mode", () => {
   beforeEach(() => vi.stubEnv("VITE_API_BASE_URL", ""));
 

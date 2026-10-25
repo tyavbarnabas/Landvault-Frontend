@@ -72,6 +72,8 @@ export interface StandingNotice {
   givenAt: string;
   deadline: string;
   instalmentSequence: number;
+  // The day after the deadline: when the developer may confirm revoking.
+  confirmableFrom?: string | null;
 }
 
 export interface StandingRevocation {
@@ -246,12 +248,49 @@ export interface RunningPlan {
   status: PlanStatus;
   arrears: Arrears | null;
   revocation: StandingRevocation | null;
+  // Every instalment as it stands today, exactly the buyer's standing.instalments.
+  instalments?: InstalmentStanding[];
+  // The deposit, verified when the plan started.
+  deposit?: { amount: number; verifiedAt: string } | null;
 }
 
 // Most urgent first.
 export async function fetchRunningPlans(status?: RunningPlanFilter): Promise<RunningPlan[]> {
   if (isMock("finance")) return [];
   return apiClient.get<RunningPlan[]>(`/api/portal/finance/plans${status ? `?status=${status}` : ""}`);
+}
+
+// One running plan, or null when it isn't running (not started, paid off,
+// withdrawn or revoked: the backend's 404 TRANSACTION_NOT_FOUND).
+export async function fetchRunningPlan(transactionId: string): Promise<RunningPlan | null> {
+  if (isMock("finance")) return null;
+  try {
+    return await apiClient.get<RunningPlan>(`/api/portal/finance/plans/${encodeURIComponent(transactionId)}`);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+// A schedule's rows for the developer, with runs of instalments that stand
+// the same way (paid, or still to come) folded into one "Instalments 4–12".
+export interface ScheduleLine {
+  label: string;
+  status: InstalmentStatus;
+  daysLate: number;
+}
+
+export function scheduleLines(instalments: InstalmentStanding[]): ScheduleLine[] {
+  const lines: (ScheduleLine & { from: number; to: number })[] = [];
+  for (const i of [...instalments].sort((a, b) => a.sequence - b.sequence)) {
+    const last = lines[lines.length - 1];
+    const folds = i.status === "paid" || i.status === "upcoming";
+    if (last && folds && last.status === i.status && last.to === i.sequence - 1) { last.to = i.sequence; continue; }
+    lines.push({ label: "", status: i.status, daysLate: i.daysLate, from: i.sequence, to: i.sequence });
+  }
+  return lines.map(({ from, to, status, daysLate }) => ({
+    label: from === to ? `Instalment ${from}` : `Instalments ${from}–${to}`, status, daysLate,
+  }));
 }
 
 // ─── Developer portal: restructuring (5c) ───────────────────────────────────

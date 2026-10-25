@@ -18,9 +18,9 @@ import { ApiError } from "../../../lib/apiClient";
 import { PLANS_REVOKE_PERMISSION } from "../../../services/authService";
 import {
   PLAN_STATUS_BADGE, WAIVER_REASON_MAX, cancelNotice, checkWaiver, confirmRevocation, fetchPenaltyWaivers, fetchPlanRestructures,
-  fetchRevocation, fetchRunningPlans, giveNotice, planErrorCode, planErrorMessage, previewRestructure, proposeRestructure,
-  rejectRestructure, waivePenalty, withdrawProposal,
-  type PenaltyWaivers, type PlanRestructures, type PlanRevocation, type Proposal, type ProposalTerms, type WaivablePenalty,
+  fetchRevocation, fetchRunningPlan, giveNotice, planErrorCode, planErrorMessage, previewRestructure, proposeRestructure,
+  rejectRestructure, scheduleLines, waivePenalty, withdrawProposal,
+  type PenaltyWaivers, type RunningPlan, type PlanRestructures, type PlanRevocation, type Proposal, type ProposalTerms, type WaivablePenalty,
 } from "../../../services/planService";
 import Page, { Loading } from "../../../components/ui/Page";
 import Card, { InfoBox } from "../../../components/ui/Card";
@@ -37,8 +37,8 @@ export default function PortalPlan() {
   const [params] = useSearchParams();
   const { user } = useApp();
   const mayRevoke = !!user?.permissions?.includes(PLANS_REVOKE_PERMISSION);
-  const plans = useFetch(() => fetchRunningPlans(), []);
-  const plan = plans.data?.find((p) => p.transactionId === id) ?? null;
+  const plans = useFetch(() => fetchRunningPlan(id!), [id]);
+  const plan = plans.data ?? null;
   // Fetched here so the title can say a restructure is open (Figma).
   const restructures = useFetch(() => fetchPlanRestructures(id!), [id]);
   const [rsOver, setRsOver] = useState<PlanRestructures | null>(null);
@@ -51,7 +51,7 @@ export default function PortalPlan() {
   const chip = plan ? PLAN_STATUS_BADGE[plan.status] : null;
 
   return (
-    <Page width="lg" back={back} eyebrow={plan?.transactionReference}
+    <Page width="xl" back={back} eyebrow={plan?.transactionReference}
       title={<span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">{plan?.plotLabel ?? "Plan"}<span className="font-[family-name:var(--font-body)] inline-flex gap-1.5">{chip && <Badge label={chip.label} variant={chip.tone} />}{openRs?.status === "requested" && <Badge label="Restructure requested" variant="info" />}{openRs?.status === "proposed" && <Badge label="Restructure proposed" variant="neutral" />}</span></span>}
       description={plan ? [plan.estateName, plan.buyerEmail, plan.planName].filter(Boolean).join(" · ") : "This plan isn't running — it may be paid off, withdrawn or revoked."}>
       <div className="space-y-6">
@@ -73,10 +73,50 @@ export default function PortalPlan() {
           </div>
         )}
         <PenaltiesSection id={id!} onChanged={plans.refetch} />
-        <RestructureSection id={id!} focus={params.get("section") === "restructure"} loaded={restructures} over={rsOver} setOver={setRsOver} />
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
+          <RestructureSection id={id!} focus={params.get("section") === "restructure"} loaded={restructures} over={rsOver} setOver={setRsOver} />
+          {plan?.instalments && <CurrentSchedule plan={plan} />}
+        </div>
         {mayRevoke && <RevocationSection id={id!} onChanged={plans.refetch} />}
       </div>
     </Page>
+  );
+}
+
+// ─── Where each instalment stands today (Figma "Current schedule") ───────────
+
+function scheduleBadge(status: string, daysLate: number): { label: string; variant: "success" | "warning" | "info" | "neutral" } {
+  if (status === "paid") return { label: "Paid", variant: "success" };
+  if (status === "in_arrears") return { label: `In arrears · ${daysLate} day${daysLate === 1 ? "" : "s"}`, variant: "warning" };
+  if (status === "overdue") return { label: `Overdue · ${daysLate} day${daysLate === 1 ? "" : "s"}`, variant: "warning" };
+  if (status === "due_today") return { label: "Due today", variant: "info" };
+  if (status === "awaiting_verification") return { label: "Awaiting verification", variant: "info" };
+  return { label: "Upcoming", variant: "neutral" };
+}
+
+function CurrentSchedule({ plan }: { plan: RunningPlan }) {
+  const lines = scheduleLines(plan.instalments ?? []);
+  return (
+    <Card as="section" aria-labelledby="schedule-heading" className="space-y-3">
+      <h2 id="schedule-heading" className="font-semibold text-[var(--foreground)]">Current schedule</h2>
+      <ul className="space-y-2.5 text-sm">
+        {plan.deposit && (
+          <li className="flex items-center justify-between gap-3">
+            <span className="text-[var(--foreground)]">Deposit</span>
+            <Badge label="Paid" variant="success" />
+          </li>
+        )}
+        {lines.map((l) => {
+          const b = scheduleBadge(l.status, l.daysLate);
+          return (
+            <li key={l.label} className="flex items-center justify-between gap-3">
+              <span className="text-[var(--foreground)]">{l.label}</span>
+              <Badge label={b.label} variant={b.variant} />
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
   );
 }
 

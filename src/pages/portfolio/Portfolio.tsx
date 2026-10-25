@@ -222,7 +222,30 @@ function EstateGroup({ plots }: { plots: OwnedPlot[] }) {
 function planText(plot: OwnedPlot): string {
   const intent = plot.intent === "investment" ? "Investment" : "Development";
   if (plot.plan === "outright") return `Outright · ${intent}`;
-  return `Instalment plan · ${intent}`;
+  return `${plot.planName ?? "Instalment plan"} · ${intent}`;
+}
+
+// Under the plot: when it became the buyer's, or when the plan started or ended.
+function dateText(plot: OwnedPlot): string {
+  if (plot.status === "withdrawn" && plot.endedAt) return `Withdrew ${formatDay(plot.endedAt)}`;
+  if (plot.status === "revoked" && plot.endedAt) return `Revoked ${formatDay(plot.endedAt)}`;
+  if (plot.plan === "installment" && plot.status !== "completed" && plot.planStartedAt) return `On plan since ${formatDay(plot.planStartedAt)}`;
+  return plot.acquiredDate ? `Acquired ${formatDay(plot.acquiredDate)}` : "Not acquired until finance verifies";
+}
+
+// A withdrawn or revoked plan's refund, in the backend's words.
+function RefundText({ plot }: { plot: OwnedPlot }) {
+  const r = plot.refund!;
+  const money = (n: number) => <span className="font-mono-data">{formatAmount(n, r.currency)}</span>;
+  return (
+    <div className="text-sm text-[var(--foreground)]">
+      {r.status === "none" ? <span className="text-[var(--muted-foreground)]">Nothing to refund</span>
+        : r.status === "refunded" ? <>Refunded {money(r.amount)}</>
+          : <>Refund of {money(r.amount)} on its way</>}
+      {r.status === "partly_refunded" && <div className="text-xs text-[var(--muted-foreground)]">{money(r.refunded)} back so far</div>}
+      {r.needsYourAccount && <div className="text-xs font-medium text-[var(--warning-text)]">Needs your bank account</div>}
+    </div>
+  );
 }
 
 // What's due next, worded and coloured by how pressing it is.
@@ -237,7 +260,7 @@ function NextPayment({ plot }: { plot: OwnedPlot }) {
       </div>
     );
   }
-  if (plot.status === "withdrawn" || plot.status === "revoked") return <span className="text-sm text-[var(--muted-foreground)]">Refund in parts</span>;
+  if (plot.status === "withdrawn" || plot.status === "revoked") return <span className="text-sm text-[var(--muted-foreground)]">{plot.refund ? "—" : "Refund in parts"}</span>;
   if (plot.status === "pending_verification") return <span className="text-sm text-[var(--muted-foreground)]">Awaiting verification</span>;
   if (plot.nextDueDate && plot.nextDueAmount !== undefined) {
     const days = Math.round((new Date(plot.nextDueDate).getTime() - Date.now()) / 86_400_000);
@@ -273,7 +296,7 @@ function PlotRow({ plot }: { plot: OwnedPlot }) {
             <div className="text-sm font-semibold text-[var(--foreground)] group-hover:underline">{plot.plotLabel}</div>
             <div className="text-xs text-[var(--muted-foreground)]">
               <span className="lg:hidden">{[size, planText(plot)].filter(Boolean).join(" · ")} · </span>
-              {plot.acquiredDate ? `Acquired ${formatDay(plot.acquiredDate)}` : "Not acquired until finance verifies"}
+              {dateText(plot)}
             </div>
           </div>
           <span className="lg:hidden shrink-0 flex flex-col items-end gap-1"><PlotStatusBadge status={plot.status} /><RestructureBadge plot={plot} /></span>
@@ -281,7 +304,7 @@ function PlotRow({ plot }: { plot: OwnedPlot }) {
         <div className="hidden lg:block text-sm font-mono-data text-[var(--foreground)]">{size ?? "—"}</div>
         <div className="hidden lg:block text-sm text-[var(--foreground)]">{planText(plot)}</div>
         <div className="mt-2.5 lg:mt-0 min-w-0">
-          {pending ? (
+          {(plot.status === "withdrawn" || plot.status === "revoked") && plot.refund ? <RefundText plot={plot} /> : pending ? (
             // Equity is 0 until finance verifies: a bar at 0% would read as "nothing paid".
             plot.plan === "installment"
               ? <p className="text-xs text-[var(--muted-foreground)]">Deposit received; your equity shows once finance verifies it.</p>

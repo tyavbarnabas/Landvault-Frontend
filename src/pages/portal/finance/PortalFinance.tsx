@@ -169,7 +169,7 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
       {(item.penalties ?? []).length > 0 && (
         <div className="rounded-lg bg-[var(--muted)] px-3 py-2 text-sm space-y-0.5">
           {item.penalties!.map((pl) => (
-            <div key={pl.instalmentSequence}>Instalment {pl.instalmentSequence} + {pl.penaltyPct}% penalty ({pl.monthsLate} month{pl.monthsLate === 1 ? "" : "s"} late) <span className="font-mono-data">{money(pl.amount, item.currency)}</span></div>
+            <div key={pl.instalmentSequence}>Instalment {pl.instalmentSequence}{pl.instalmentSequence === item.instalmentSequence && item.instalmentAmount != null && <> <span className="font-mono-data">{money(item.instalmentAmount, item.currency)}</span></>} + {pl.penaltyPct}% penalty ({pl.monthsLate} month{pl.monthsLate === 1 ? "" : "s"} late) <span className="font-mono-data">{money(pl.amount, item.currency)}</span></div>
           ))}
           <div className="text-xs text-[var(--muted-foreground)]">Penalties are inside the amount above.</div>
         </div>

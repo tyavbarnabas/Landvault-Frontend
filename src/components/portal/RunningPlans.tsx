@@ -81,7 +81,7 @@ function PlanRow({ plan: p }: { plan: RunningPlan }) {
         )}
       </dl>
       {p.arrears && p.status === "overdue" && <p className="text-xs text-[var(--muted-foreground)]">Goes into arrears after {formatDay(p.arrears.graceEnds)}.</p>}
-      {rv?.notice && <p className="text-xs text-[var(--muted-foreground)]">Notice given {formatDay(rv.notice.givenAt)}: “{rv.notice.reason}”</p>}
+      {rv?.notice && <p className="text-xs text-[var(--muted-foreground)]">Notice given {formatDay(rv.notice.givenAt)}: “{rv.notice.reason}”{rv.notice.confirmableFrom ? ` Confirmable from ${formatDay(rv.notice.confirmableFrom)}.` : ""}</p>}
       <div className="flex flex-wrap gap-3">
         <LinkButton to={`/portal/finance/plans/${p.transactionId}`} variant="secondary">Open plan</LinkButton>
         {p.arrears && p.arrears.penaltyAmount > 0 && (

@@ -208,9 +208,16 @@ restructure page's intro, history (the open request and its proposal), folded ne
 after accepting; the plan page title's restructure badge; inline revocation inputs and units on default terms; "· Buyer withdrew" and
 the house date format on the finance queue; plot, estate and plan on the withdraw page.
 
-**Waiting on the backend** (asked in `~/Documents/hometrue-backend-figma-alignment-fields-prompt.md`): per-instalment standing on a
-portal plan ("Current schedule" card), the refund on a withdrawn portfolio entry, `instalmentAmount` on queue items, `confirmableFrom`
-on running-plan notices, `planName` and `planStartedAt`/`endedAt` on portfolio entries. Those spots keep their current wording until then.
+**The six backend fields** (asked in `~/Documents/hometrue-backend-figma-alignment-fields-prompt.md`, answered in
+`~/Documents/hometrue-frontend-figma-alignment-fields-reply.md`), now wired:
+- The plan page reads `GET /api/portal/finance/plans/{transactionId}` (`fetchRunningPlan`); its 404 means the plan isn't running and
+  the page says so. Its `instalments` and `deposit` draw the "Current schedule" card, folding runs of paid or upcoming instalments.
+- Running plans: "Confirmable from …" after the notice, from `revocation.notice.confirmableFrom`.
+- Finance queue: the instalment's own amount (`instalmentAmount`) on its penalty line; nothing is subtracted.
+- Portfolio: `planName` in the Plan column; "On plan since" / "Withdrew" / "Revoked" from `planStartedAt` / `endedAt`; a withdrawn or
+  revoked entry's `refund` in the Paid column ("Refund of ₦… on its way" for pending / partly_refunded, "Refunded ₦…", "Nothing to
+  refund" for none). `needsYourAccount` shows "Needs your bank account" on the row and, on the plot page, a link to the purchase page,
+  where `POST /api/payments/{reference}/refund-account` already lives (RefundPanel).
 
 ### Also worth a look, lower priority
 

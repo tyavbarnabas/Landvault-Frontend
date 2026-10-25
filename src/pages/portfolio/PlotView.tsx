@@ -20,6 +20,7 @@ import { CAPABILITIES } from "../../lib/capabilities";
 import { useApp } from "../../contexts/AppContext";
 import { DOCUMENT_TYPE_LABELS, DocTypeChip, DocumentActions } from "../../components/documents/DocumentCard";
 import Badge from "../../components/ui/Badge";
+import Alert from "../../components/ui/Alert";
 import Button, { LinkButton } from "../../components/ui/Button";
 import { formatDay } from "../../lib/formatDate";
 import { AlertIcon, BuildingIcon, CheckIcon, ChevronRightIcon, FileCheckIcon, MapPinIcon, MessageIcon, WalletIcon } from "../../components/icons";
@@ -229,6 +230,16 @@ export default function PlotView() {
             finalStageDetail="Your equity and acquired date show here once finance confirms."
           />
         </div>
+      )}
+
+      {plot.refund?.needsYourAccount && plot.transactionId && (
+        // A bank-transfer payment comes back only once the buyer gives an account (on the purchase page).
+        <Alert className="mb-6" role="status">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>Part of your refund needs your bank account before it can be sent.</span>
+            <LinkButton to={`/purchases/${plot.transactionId}`} variant="secondary">Add your bank account</LinkButton>
+          </div>
+        </Alert>
       )}
 
       {plot.status === "in_arrears" && plot.arrears && (
