@@ -366,11 +366,17 @@ export interface ListingDto {
 // listing) is read from what's already loaded instead of fetching per card.
 const listingDtoCache = new Map<string, ListingDto>();
 
+// Flexible ("Pay as you can") plans have no fixed instalments and no screens
+// here yet, so a tier lists only the fixed-instalment plans.
+function isSupportedPlan(p: TierPlan): boolean {
+  return (p.kind ?? "installment") === "installment";
+}
+
 function fromListingDto(dto: ListingDto): Listing {
   listingDtoCache.set(dto.id, dto);
   const priceTiers: PriceTier[] = dto.priceTiers.map((t) => ({
     id: t.id, sizeSqm: t.sizeSqm ?? 0, actualAreaSqm: t.actualAreaSqm ?? t.sizeSqm ?? 0, price: t.price,
-    availability: t.availability, plotsRemaining: t.plotsRemaining, currency: t.currency, paymentPlans: t.paymentPlans ?? [],
+    availability: t.availability, plotsRemaining: t.plotsRemaining, currency: t.currency, paymentPlans: (t.paymentPlans ?? []).filter(isSupportedPlan),
   }));
   return {
     id: dto.id,

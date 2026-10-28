@@ -286,7 +286,7 @@ function History({ items, openId }: { items: Restructure[]; openId: string | nul
         text: `The developer proposed ${h.proposal.instalmentCount} ${h.proposal.frequency === "quarterly" ? "quarterly" : "monthly"} instalments from ${formatDay(h.proposal.firstDueDate)}.` });
     } else if (h.status !== "requested" && h.status !== "proposed") {
       lines.push({ at: h.closedAt ?? h.acceptedAt ?? h.requestedAt, key: h.id,
-        text: `${STATUS_WORDS[h.status] ?? h.status}${h.status === "accepted" ? " — your plan was restructured" : ""}${h.closeNote ? ` — “${h.closeNote}”` : ""}` });
+        text: `${STATUS_WORDS[h.status] ?? h.status}${h.status === "accepted" ? " — your plan was restructured" : ""}${h.closeNote && h.status !== "declined" ? ` — “${h.closeNote}”` : ""}` });
     }
   }
   if (lines.length === 0) return null;

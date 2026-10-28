@@ -37,6 +37,8 @@ export interface TierPlan {
   // How much more than paying in full.
   premium: number;
   ifAnInstalmentIsLate: LateStep[];
+  // "installment", or "flexible" (no fixed instalments; not shown here yet).
+  kind?: string;
 }
 
 // The plan at one open tier's price, for a plot that isn't a corner plot.
@@ -62,6 +64,8 @@ export interface DeclaredPlan {
   instalmentCount: number;
   frequency: PlanFrequency;
   premiumPct: number;
+  // "installment", or "flexible" (no fixed instalments; not editable here yet).
+  kind?: string;
   // A tier is left out when a fixed deposit leaves nothing to pay in
   // instalments there — say so, never hide it silently.
   quotes: PlanQuote[];

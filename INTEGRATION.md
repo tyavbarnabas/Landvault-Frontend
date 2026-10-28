@@ -235,8 +235,24 @@ Fixed on the way: the schedule fold hid overdue instalments; "Show N more" split
 waived penalty still offered Waive; the revocation intro said "You can give notice now" while a notice ran; the notice panel
 and arrears panel said "Ask to restructure" while a request or proposal was open.
 
-Not run: paying a late instalment (Paystack), withdrawing a notice, confirming a revocation, withdrawal, rejecting or declining
-a restructure. Flexible plans (backend changesets 110–114) aren't in the frontend at all.
+Second run, same day. LV-FZWRH9R4's schedule v2 was moved back 4 months (SQL). Then: a notice given and withdrawn with a
+note; a restructure rejected (reason required) and a proposal declined; a notice moved 31 days back (SQL) and the revocation
+confirmed: buyer refund "Being arranged", portfolio "Revoked", the letter's code verifies as `revoked`, the plot back on
+sale. Withdrawal on a fresh purchase, LV-2RQGMGR6 (Block B, Plot 10): reserve → offer → Paystack test deposit by bank transfer
+→ director verified → buyer withdrew (₦2,700,000 back, letter withdrawn). MailDev got every buyer and developer email.
+
+Fixed in the second run: a flexible plan on the listing crashed the live estate page (`formatMoney(null)`), so listings keep
+only `kind: "installment"` plans; the portal's Payment plans panel lists flexible plans in a notice and turns off editing
+(saving replaces the whole set); after a revocation the plan page reloads every section; an ended plan's restructure
+section and title; the letter card shows Withdrawn / Revoked; "Cleared" no longer claims a payment; a declined restructure
+doesn't quote the backend's note back.
+
+Not run: paying a late instalment, and sending the withdrawal / revocation refunds. Withdrawal only flags each payment's
+refund; a Super Admin sends it, and only then is a bank-transfer buyer asked for an account (needs the admin's 2FA login).
+
+Backend notes: a notice ended by an accepted restructure closes as `cleared` with "The buyer caught up."; the portfolio
+summary counts 12 plots while the list shows 13 (the revoked one). Flexible plans (changesets 110–114) aren't in the
+frontend beyond being hidden.
 
 ### Also worth a look, lower priority
 

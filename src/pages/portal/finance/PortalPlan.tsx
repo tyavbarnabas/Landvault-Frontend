@@ -43,6 +43,9 @@ export default function PortalPlan() {
   const restructures = useFetch(() => fetchPlanRestructures(id!), [id]);
   const [rsOver, setRsOver] = useState<PlanRestructures | null>(null);
   const openRs = (rsOver ?? restructures.data)?.open ?? null;
+  // A revocation ends the plan: every section reloads, so none offers what the plan no longer allows.
+  const [revision, setRevision] = useState(0);
+  const revocationChanged = () => { plans.refetch(); setRsOver(null); restructures.refetch(); setRevision((n) => n + 1); };
   const back = { to: "/portal/finance?tab=plans", label: "Running plans" };
 
   if (plans.loading && !plans.data) return <Page title="Plan" back={back}><Loading /></Page>;
@@ -51,7 +54,7 @@ export default function PortalPlan() {
   const chip = plan ? PLAN_STATUS_BADGE[plan.status] : null;
 
   return (
-    <Page width="xl" back={back} eyebrow={plan?.transactionReference}
+    <Page width="xl" back={back} eyebrow={plan?.transactionReference ?? restructures.data?.transactionReference}
       title={<span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">{plan?.plotLabel ?? "Plan"}<span className="font-[family-name:var(--font-body)] inline-flex gap-1.5">{chip && <Badge label={chip.label} variant={chip.tone} />}{openRs?.status === "requested" && <Badge label="Restructure requested" variant="info" />}{openRs?.status === "proposed" && <Badge label="Restructure proposed" variant="neutral" />}</span></span>}
       description={plan ? [plan.estateName, plan.buyerEmail, plan.planName].filter(Boolean).join(" · ") : "This plan isn't running — it may be paid off, withdrawn or revoked."}>
       <div className="space-y-6">
@@ -72,12 +75,12 @@ export default function PortalPlan() {
             )}
           </div>
         )}
-        <PenaltiesSection id={id!} onChanged={plans.refetch} />
+        <PenaltiesSection key={revision} id={id!} onChanged={plans.refetch} />
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
           <RestructureSection id={id!} focus={params.get("section") === "restructure"} loaded={restructures} over={rsOver} setOver={setRsOver} />
           {plan?.instalments && <CurrentSchedule plan={plan} />}
         </div>
-        {mayRevoke && <RevocationSection id={id!} onChanged={plans.refetch} />}
+        {mayRevoke && <RevocationSection id={id!} onChanged={revocationChanged} />}
       </div>
     </Page>
   );
@@ -302,7 +305,7 @@ function RestructureSection({ id, focus, loaded, over, setOver }: {
   return (
     <Card as="section" aria-labelledby="restructure-heading" className={`space-y-4 ${focus ? "ring-2 ring-[var(--ring)]" : ""}`}>
       <h2 id="restructure-heading" className="font-semibold text-[var(--foreground)]">Restructuring</h2>
-      {!open && <p className="text-sm text-[var(--muted-foreground)]">No restructure request is open. A buyer asks from their purchase page; you answer here.</p>}
+      {!open && <p className="text-sm text-[var(--muted-foreground)]">{r.planStatus === "on_plan" ? "No restructure request is open. A buyer asks from their purchase page; you answer here." : "This plan has ended, so it can't be restructured."}</p>}
       {open?.status === "requested" && (
         <>
           <div className="rounded-lg bg-[var(--muted)] p-3.5 text-sm space-y-1">
@@ -534,7 +537,7 @@ function RevocationSection({ id, onChanged }: { id: string; onChanged: () => voi
 }
 
 const NOTICE_WORDS: Record<string, string> = {
-  notice: "Notice running", cancelled: "Withdrawn by you", cleared: "Cleared — finance verified a catch-up payment",
+  notice: "Notice running", cancelled: "Withdrawn by you", cleared: "Cleared — the buyer is no longer behind",
   withdrawn: "Ended — the buyer withdrew", revoked: "Revoked",
 };
 

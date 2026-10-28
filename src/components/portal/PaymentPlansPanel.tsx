@@ -94,6 +94,10 @@ export default function PaymentPlansPanel({ estateId, scope, canManage }: { esta
   if (loaded.loading && !loaded.data) return <Loading label="Loading payment plans…" />;
   if (loaded.error || !loaded.data) return <LoadError error={loaded.errorValue} what="the payment plans" onRetry={loaded.refetch} />;
   const { plans, tiers } = loaded.data;
+  // Saving replaces the whole set, and this form only knows fixed-instalment
+  // plans, so an estate with a flexible plan can't be changed here yet.
+  const fixed = plans.plans.filter((p) => (p.kind ?? "installment") === "installment");
+  const others = plans.plans.filter((p) => !fixed.includes(p));
 
   const done = () => {
     setEditing(false);
@@ -123,10 +127,15 @@ export default function PaymentPlansPanel({ estateId, scope, canManage }: { esta
             <EmptyState title="Outright only" description="Buyers pay in full. Add a plan to let them pay a deposit and then instalments." />
           ) : (
             <ul className="space-y-4">
-              {plans.plans.map((p) => <PlanQuotes key={p.id} plan={p} tiers={tiers} />)}
+              {fixed.map((p) => <PlanQuotes key={p.id} plan={p} tiers={tiers} />)}
             </ul>
           )}
-          {canManage && (
+          {others.length > 0 && (
+            <Alert tone="info">
+              This estate also offers {others.map((p) => `“${p.name}”`).join(", ")}, a flexible plan this screen can't show or change yet. So that saving here can't remove it, changing the plans is turned off for now.
+            </Alert>
+          )}
+          {canManage && others.length === 0 && (
             <Button variant={plans.plans.length ? "secondary" : "primary"} onClick={() => { setSaved(false); setEditing(true); }}>
               {plans.plans.length ? "Change the plans" : "Add a plan"}
             </Button>
