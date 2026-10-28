@@ -53,8 +53,19 @@ export default function PortalPlan() {
   const flexibles = useFetch(() => fetchFlexiblePlans(), [id]);
   const flexRow = flexibles.data?.find((r) => r.transactionId === id) ?? null;
 
+  // A flexible plan that has ended is in neither list; its notices say what it was.
+  const ended = useFetch(() => (mayRevoke ? fetchRevocation(id!).catch(() => null) : Promise.resolve(null)), [id, revision, flexibles.data?.length]);
+
   if ((plans.loading && !plans.data) || (flexibles.loading && !flexibles.data)) return <Page title="Plan" back={back}><Loading /></Page>;
   if (!plans.data && flexRow) return <FlexiblePlanView row={flexRow} mayRevoke={mayRevoke} onChanged={flexibles.refetch} />;
+  if (!plans.data && ended.data && isFlexibleRevocation(ended.data)) {
+    return (
+      <Page width="xl" back={{ to: "/portal/finance?tab=flexible", label: "Flexible plans" }} eyebrow={ended.data.transactionReference} title="Plan"
+        description={ended.data.status === "withdrawn" ? "This flexible plan has ended — the buyer left it." : "This flexible plan has ended."}>
+        <RevocationSection id={id!} onChanged={revocationChanged} />
+      </Page>
+    );
+  }
   if (plans.error) return <LoadError error={plans.errorValue} what="this plan" onRetry={plans.refetch} />;
   const money = (n: number) => formatMoney(n, plan?.currency ?? "NGN");
   const chip = plan ? PLAN_STATUS_BADGE[plan.status] : null;
@@ -503,10 +514,12 @@ function RevocationSection({ id, onChanged }: { id: string; onChanged: () => voi
   // A flexible plan: nothing is ever overdue; notice is for a quiet plan or one
   // past its finish date, and ending it returns exactly what leaving does.
   const fx = rv.flexible ?? null;
+  // Once a flexible plan ends its standing is gone; its notices still say what they were for.
+  const isFlex = !!fx || isFlexibleRevocation(rv);
   const fxFinish = notice?.trigger === "finish_by" || (!notice && fx?.noticeReason === "finish_by");
   // The backend keeps noticeReason set while a notice runs: offer notice only without one.
-  const canGive = rv.status === "on_plan" && !rv.notice && (fx ? !!fx.noticeReason : rv.revocableNow);
-  const words = fx ? FLEXIBLE_NOTICE_WORDS : NOTICE_WORDS;
+  const canGive = rv.status === "on_plan" && !rv.notice && (fx ? !!fx.noticeReason : !isFlex && rv.revocableNow);
+  const words = isFlex ? FLEXIBLE_NOTICE_WORDS : NOTICE_WORDS;
 
   const give = async () => {
     if (!reason.trim()) { setError("Give a reason — the buyer reads it."); return; }
@@ -523,8 +536,13 @@ function RevocationSection({ id, onChanged }: { id: string; onChanged: () => voi
 
   return (
     <Card as="section" aria-labelledby="revocation-heading" className="space-y-4">
-      <h2 id="revocation-heading" className="font-semibold text-[var(--foreground)]">{fx ? "Ending the plan" : "Revocation"}</h2>
-      {fx ? (
+      <h2 id="revocation-heading" className="font-semibold text-[var(--foreground)]">{isFlex ? "Ending the plan" : "Revocation"}</h2>
+      {!fx && isFlex ? (
+        <p className="text-sm text-[var(--foreground)]">
+          Under the terms on this purchase you may give {rv.noticeDays} days' written notice when nothing has been paid for {rv.afterMonthsUnpaid} months, or the plan isn't finished by its date.
+          {rv.status === "revoked" ? " This plan was ended." : rv.status === "withdrawn" ? " The buyer left the plan." : ""}
+        </p>
+      ) : fx ? (
         <p className="text-sm text-[var(--foreground)]">
           Under the terms on this purchase you may give {rv.noticeDays} days' written notice when nothing has been paid for {rv.afterMonthsUnpaid} months{fx.finishBy ? `, or the plan isn't finished by ${formatDay(fx.finishBy)}` : ""}.
           {rv.status === "revoked" ? " This plan was ended." : rv.notice ? "" : fx.noticeReason === "finish_by" ? " This plan passed its finish date, so you can give notice now. Only finishing the plan ends this notice."
@@ -539,11 +557,11 @@ function RevocationSection({ id, onChanged }: { id: string; onChanged: () => voi
       )}
       {s && (
         <dl className="rounded-lg bg-[var(--muted)] p-3.5 text-sm space-y-1.5">
-          <div className="font-semibold text-[var(--foreground)] mb-1">{rv.status === "revoked" ? "What was settled" : fx ? "What ending it now would mean" : "What revoking now would mean"}</div>
+          <div className="font-semibold text-[var(--foreground)] mb-1">{rv.status === "revoked" || rv.status === "withdrawn" ? "What was settled" : isFlex ? "What ending it now would mean" : "What revoking now would mean"}</div>
           <Row label="The buyer has paid" value={money(s.paid)} />
           <Row label="Refunded to the buyer" value={money(s.refund)} />
           <Row label="You keep" value={money(s.developerKeeps)} />
-          <p className="text-xs text-[var(--muted-foreground)]">{fx
+          <p className="text-xs text-[var(--muted-foreground)]">{isFlex
             ? "Exactly what leaving returns. The plot goes back on sale; if HomeTrue sells it for more than the buyer's price, they get their share of the difference from your payout."
             : "Exactly what withdrawing returns. The plot goes back on sale."}</p>
         </dl>
@@ -599,6 +617,12 @@ function RevocationSection({ id, onChanged }: { id: string; onChanged: () => voi
       )}
     </Card>
   );
+}
+
+// A flexible plan's revocation: its standing while it runs, or — once ended —
+// notices given because nothing was paid or the plan ran past its date.
+function isFlexibleRevocation(rv: PlanRevocation): boolean {
+  return !!rv.flexible || [rv.notice, ...rv.history].some((n) => n?.trigger === "inactivity" || n?.trigger === "finish_by");
 }
 
 const FLEXIBLE_NOTICE_WORDS: Record<string, string> = {

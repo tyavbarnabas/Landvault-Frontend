@@ -80,10 +80,18 @@ export function describePurchase(purchase: Purchase): PurchaseState {
 
     // A plan that ended: refunds come back in parts, one per payment.
     case "withdrawn":
+      if (flex) {
+        return { ...base, tone: "neutral", title: "You left this plan",
+          body: "The plot is back on sale. What you paid comes back to you from escrow, less the developer's share, in parts, one per payment. If HomeTrue later sells the plot for more than your price, you get your share of the difference." };
+      }
       return { ...base, tone: "neutral", title: "You withdrew from this plan",
         body: "The plot is back on sale. What comes back to you is returned in parts, one per payment, under your offer's terms — see each payment below." };
 
     case "revoked":
+      if (flex) {
+        return { ...base, tone: "neutral", title: "Your plan was ended",
+          body: "The developer ended the plan after the notice ran out. You're refunded exactly what leaving returns, in parts, one per payment. The plot is back on sale; if HomeTrue later sells it for more than your price, you get your share of the difference." };
+      }
       return { ...base, tone: "neutral", title: "This plan was revoked",
         body: "The developer ended the plan after the notice ran out. You're refunded exactly what withdrawing returns, in parts, one per payment. The plot is back on sale." };
 
@@ -190,8 +198,8 @@ export function purchaseBadge(p: Purchase): { label: string; tone: PurchaseTone 
     case "under_review": return { label: "Under review", tone: "info", note: "Your payment arrived after the reservation ended." };
     case "refund": return { label: p.payment?.refundStatus === "needs-attention" ? "Refund needs your details" : "Refund on its way", tone: "warning", note: refund };
   }
-  if (p.status === "withdrawn") return { label: "Withdrawn", tone: "neutral", note: "Refunds come back in parts" };
-  if (p.status === "revoked") return { label: "Plan revoked", tone: "neutral", note: "Refunded as on withdrawal" };
+  if (p.status === "withdrawn") return { label: p.flexible ? "Left the plan" : "Withdrawn", tone: "neutral", note: "Refunds come back in parts" };
+  if (p.status === "revoked") return { label: p.flexible ? "Plan ended" : "Plan revoked", tone: "neutral", note: p.flexible ? "Refunded as on leaving" : "Refunded as on withdrawal" };
   if (p.status === "verified") return { label: p.schedule || p.flexible ? "Paid in full" : "Plot allocated", tone: "success", note: p.payment?.receiptNumber ? `Receipt ${p.payment.receiptNumber}` : null };
   if (p.payment?.refundStatus === "processed") {
     return { label: "Refunded", tone: "neutral", note: p.status === "rejected" ? "The developer didn't accept the payment; refund paid" : "Your refund has been paid" };
@@ -265,6 +273,13 @@ export function purchaseTimeline(p: Purchase): TimelineStep[] {
     steps.push({ key: "allocated", label: "Paid in full — the plot is yours", at: null,
       note: p.status === "verified" ? "Your allocation letter is in your vault." : "When the payment that reaches the plan total is verified.",
       state: p.status === "verified" ? "done" : p.status === "on_plan" ? "current" : "upcoming" });
+    return steps;
+  }
+  if (p.flexible && (p.status === "withdrawn" || p.status === "revoked")) {
+    steps[1] = { ...steps[1], label: "First payment made", at: null, note: null };
+    steps.push({ key: "verified", label: "Held for you on the plan", at: null, note: null, state: "done" });
+    steps.push({ key: "ended", label: p.status === "withdrawn" ? "You left the plan" : "Ended by the developer", at: (p.status === "withdrawn" ? p.withdrawnAt : p.revokedAt) ?? null,
+      note: "Refunded in parts, as on leaving.", state: "failed" });
     return steps;
   }
   if (p.schedule && (p.status === "withdrawn" || p.status === "revoked")) {
