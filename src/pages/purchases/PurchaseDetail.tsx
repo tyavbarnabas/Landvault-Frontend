@@ -75,7 +75,8 @@ export default function PurchaseDetail() {
   const letter = documents.find((d) => d.type === "allocation_letter") ?? documents.find((d) => d.type === "provisional_allocation_letter");
   const badge = purchaseBadge(purchase);
   const steps = purchaseTimeline(purchase);
-  const plan = schedule ? `${schedule.planName} · ${frequencyWord(schedule.frequency)}` : purchase.plan === "outright" ? "Pay in full" : "Instalments";
+  const plan = schedule ? `${schedule.planName} · ${frequencyWord(schedule.frequency)}` : purchase.flexible ? `${purchase.flexible.planName} · flexible`
+    : purchase.plan === "outright" ? "Pay in full" : "Instalments";
   // While a plan is late (or under notice) its standing panel says what to do;
   // "held for you on the plan" would only compete with it.
   const late = purchase.status === "on_plan" && (!!purchase.standing?.arrears || !!purchase.standing?.revocation?.notice);
@@ -112,6 +113,7 @@ export default function PurchaseDetail() {
               {plot && <Row label="Plot" value={`${plotLabel(plot)}${plot.sizeSqm ? ` · ${plot.sizeSqm} sqm` : ""}`} />}
               <Row label="Agreed price" value={formatInCurrency(purchase.totalPrice, purchase.currency)} mono />
               {schedule && <Row label="Plan total" value={formatMoney(schedule.planTotal, purchase.currency)} mono />}
+              {purchase.flexible && <Row label="Plan total" value={formatMoney(purchase.flexible.planTotal, purchase.currency)} mono />}
               {purchase.cornerPremiumPct !== null && <Row label="Includes corner premium" value={`${purchase.cornerPremiumPct}%`} />}
               <Row label="Payment plan" value={plan} />
               <Row label="Use" value={purchase.intent === "investment" ? "To hold as an investment" : "To build on it (development)"} />
