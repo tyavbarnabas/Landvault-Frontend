@@ -40,7 +40,10 @@ export function FlexiblePlanCard({ purchase, onChanged }: { purchase: Purchase; 
   const rule = min && min < st.remaining
     ? `At least ${money(min)}, or exactly what's left. Never more than ${money(st.remaining)}.`
     : `Up to ${money(st.remaining)}, what's left on the plan.`;
-  const error = text.trim() === "" ? undefined : !Number.isFinite(amount) ? "Enter an amount in naira, like 500,000." : !allowed ? rule : undefined;
+  const error = text.trim() === "" || allowed ? undefined
+    : !Number.isFinite(amount) || amount <= 0 ? "Enter an amount in naira, like 500,000."
+    : amount > st.remaining ? `That's more than what's left (${money(st.remaining)}).`
+    : `That's below ${money(min ?? 0)}, the smallest payment on this plan — unless it's exactly what's left.`;
 
   return (
     <Card as="section" aria-labelledby="plan-heading" className="space-y-4">
