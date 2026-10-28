@@ -196,3 +196,31 @@ describe("the developer's side of a flexible plan", () => {
     expect(calls).toEqual(["/api/portal/finance/flexible-plans"]);
   });
 });
+
+describe("leaving a flexible plan, and the gain share", () => {
+  const share = (over: Record<string, unknown>) => ({ id: "g1", purchaseId: "x1", status: "open", agreedPrice: 15_000_000, currency: "NGN", yourSharePct: 40,
+    openedAt: "2026-10-28T13:23:25Z", salePrice: null, gain: null, amount: null, settledAt: null, paid: 0, accountNeeded: false, account: null, ...over });
+
+  it("words each state from the status and what's been paid — never from `gain` alone", async () => {
+    const { gainShareState } = await import("./gainShareService");
+    const s = (o: Record<string, unknown>) => gainShareState(share(o) as Parameters<typeof gainShareState>[0]);
+    const account = { bankName: "GTBank", accountLast4: "6789", accountName: "ADA OKAFOR" };
+    expect(s({})).toBe("waiting");
+    expect(s({ status: "owed", amount: 1_000_000, accountNeeded: true })).toBe("account_needed");
+    expect(s({ status: "owed", amount: 1_000_000, account })).toBe("on_its_way");
+    // There's no "paid" status: an owed share paid in full.
+    expect(s({ status: "owed", amount: 1_000_000, paid: 1_000_000, account })).toBe("paid");
+    // no_gain with a positive gain is still nothing to share.
+    expect(s({ status: "no_gain", gain: 500_000 })).toBe("nothing");
+  });
+
+  it("gives the account for an owed share; the bank supplies the name", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit = {}) => {
+      calls.push(`${init.method ?? "GET"} ${url.replace("http://api.test", "")} ${init.body ?? ""}`);
+      return new Response(JSON.stringify(share({ status: "owed" })), { status: 200 });
+    }));
+    const { saveGainShareAccount } = await import("./gainShareService");
+    await saveGainShareAccount("g1", { bankCode: "058", accountNumber: "0123456789" });
+    expect(calls).toEqual(['PUT /api/gain-shares/g1/account {"bankCode":"058","accountNumber":"0123456789"}']);
+  });
+});

@@ -30,6 +30,8 @@ import { fetchDocumentsByPlotId } from "../../services/documentsService";
 import PlanCard from "../../components/purchases/PlanCard";
 import { PlanPaymentsCard, PlanScheduleCard } from "../../components/purchases/PlanScheduleCard";
 import LetterCard from "../../components/purchases/LetterCard";
+import GainShareCard from "../../components/purchases/GainShareCard";
+import { fetchGainShares } from "../../services/gainShareService";
 import { FlexibleNoticePanel, FlexiblePlanCard } from "../../components/purchases/FlexiblePlanCard";
 import { PlanOptionsCard, PlanSettlementCard, StandingPanel } from "../../components/purchases/PlanStanding";
 import { formatMoney } from "../../lib/formatCurrency";
@@ -39,24 +41,28 @@ export default function PurchaseDetail() {
   const { id } = useParams<{ id: string }>();
   const loaded = useFetch(async () => {
     const purchase = id ? await fetchPurchase(id) : null;
-    if (!purchase) return { purchase: null, estateName: null, plot: null, owned: null, documents: [] };
+    if (!purchase) return { purchase: null, estateName: null, plot: null, owned: null, documents: [], gainShare: null };
     // Paid purchases are in the portfolio (by their transaction id) with a
     // plan's progress and payments, and have their documents.
     const paid = isAvailable("portfolio") && ["awaiting_finance", "on_plan", "verified", "withdrawn", "revoked"].includes(purchase.status);
     // Names for display only. An estate taken off the market still has its
     // purchase; it just shows without them.
-    const [listing, plot, owned, documents] = await Promise.all([
+    // A flexible plan that ended: the buyer's share of the plot's next sale.
+    const ended = !!purchase.flexible && (purchase.status === "withdrawn" || purchase.status === "revoked");
+    const [listing, plot, owned, documents, gainShares] = await Promise.all([
       fetchListingById(purchase.estateId).catch(() => undefined),
       fetchPlotById(purchase.estateId, purchase.plotId).catch(() => undefined),
       paid && (purchase.schedule || purchase.flexible) ? fetchOwnedPlotById(purchase.id).catch(() => undefined) : undefined,
       paid ? fetchDocumentsByPlotId(purchase.id).catch(() => []) : [],
+      ended ? fetchGainShares().catch(() => []) : [],
     ]);
-    return { purchase, estateName: listing?.name ?? null, plot: plot ?? null, owned: owned ?? null, documents };
+    const gainShare = gainShares.find((g) => g.purchaseId === purchase.id) ?? null;
+    return { purchase, estateName: listing?.name ?? null, plot: plot ?? null, owned: owned ?? null, documents, gainShare };
   }, [id]);
 
   if (loaded.loading && !loaded.data) return <Page title="Your purchase" back={{ to: "/purchases", label: "My purchases" }}><Loading label="Loading your purchase…" /></Page>;
   if (loaded.error) return <LoadError error={loaded.errorValue} what="this purchase" onRetry={loaded.refetch} />;
-  const { purchase, estateName, plot, owned, documents } = loaded.data!;
+  const { purchase, estateName, plot, owned, documents, gainShare } = loaded.data!;
   if (!purchase) {
     return (
       <Page title="Purchase not found" back={{ to: "/purchases", label: "My purchases" }}>
@@ -96,6 +102,7 @@ export default function PurchaseDetail() {
           {!late && <PurchaseStatusPanel purchase={purchase} refundShown={showRefund} />}
           <PlanSettlementCard purchase={purchase} />
           {showRefund && p && <RefundPanel paymentReference={p.reference} />}
+          {gainShare && <GainShareCard share={gainShare} plot={plot ? plotLabel(plot) : "The plot"} />}
           {schedule && !["rejected", "abandoned", "withdrawn", "revoked"].includes(purchase.status) && (
             <>
               <PlanCard purchase={purchase} owned={owned} onChanged={loaded.refetch} />
@@ -148,8 +155,16 @@ export default function PurchaseDetail() {
         <div className="space-y-6">
           {letter && <LetterCard letter={letter} />}
           <PlanOptionsCard purchase={purchase} />
+          {flexibleRunning && purchase.status === "on_plan" && (
+            <Card as="section" aria-labelledby="leave-heading" className="space-y-2">
+              <h2 id="leave-heading" className="font-semibold text-[var(--foreground)]">Leave the plan</h2>
+              <p className="text-sm text-[var(--muted-foreground)]">You can leave any time. See what you'd get back today under your offer's terms — nothing happens until you confirm.</p>
+              <TextLink to={`/purchases/${purchase.id}/withdraw`} className="text-sm font-medium">See what leaving returns →</TextLink>
+            </Card>
+          )}
           {/* A plan's payments are in its history; this is a single payment's card. */}
-          {p && !schedule && !flexibleRunning && (
+          {/* A flexible plan that has run lists every payment (history or refunds); this card holds only the latest. */}
+          {p && !schedule && !(purchase.flexible && ["on_plan", "verified", "withdrawn", "revoked"].includes(purchase.status)) && (
             <Card as="section" aria-labelledby="payment-heading">
               <h2 id="payment-heading" className="font-semibold text-[var(--foreground)] mb-3">Payment</h2>
               <dl className="space-y-2.5 text-sm">

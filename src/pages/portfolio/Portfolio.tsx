@@ -5,7 +5,8 @@
 
 import StatusBadge from "../../components/StatusBadge";
 import { formatMoney } from "../../lib/formatCurrency";
-import { useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect } from "react";
+import { fetchGainShares, gainShareState, type GainShare } from "../../services/gainShareService";
 import { Link } from "react-router-dom";
 import { formatAmount, type Currency, type OwnedPlot } from "../../data/mockData";
 import { fetchOwnedPlots, fetchPortfolioSummary, sizeText, urgencyRank, type PortfolioSummary } from "../../services/portfolioService";
@@ -51,6 +52,9 @@ export default function Portfolio() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  // A left flexible plan's share of the plot's next sale, by purchase id.
+  const [gainShares, setGainShares] = useState<GainShare[]>([]);
+  useEffect(() => { fetchGainShares().then(setGainShares).catch(() => setGainShares([])); }, []);
 
   const load = () => {
     setLoading(true);
@@ -114,6 +118,7 @@ export default function Portfolio() {
   const groups = groupByEstate(ownedPlots);
 
   return (
+    <GainShares.Provider value={gainShares}>
     <Page title="My portfolio" description="Every plot you own or are paying for, grouped by estate." actions={actions}>
       <div className="space-y-6">
         {byCurrency.map((g) => <SummaryCard key={g.currency} {...g} labelled={byCurrency.length > 1} />)}
@@ -142,6 +147,7 @@ export default function Portfolio() {
         )}
       </div>
     </Page>
+    </GainShares.Provider>
   );
 }
 
@@ -219,6 +225,13 @@ function EstateGroup({ plots }: { plots: OwnedPlot[] }) {
   );
 }
 
+const GainShares = createContext<GainShare[]>([]);
+
+const GAIN_WORDS: Record<ReturnType<typeof gainShareState>, [string, string]> = {
+  waiting: ["Gain share", "waits for the next sale"], account_needed: ["Gain share owed", "needs your bank account"],
+  on_its_way: ["Gain share", "on its way"], paid: ["Gain share", "paid"], nothing: ["Gain share", "nothing to share"],
+};
+
 function planText(plot: OwnedPlot): string {
   const intent = plot.intent === "investment" ? "Investment" : "Development";
   if (plot.plan === "outright") return `Outright · ${intent}`;
@@ -227,8 +240,8 @@ function planText(plot: OwnedPlot): string {
 
 // Under the plot: when it became the buyer's, or when the plan started or ended.
 function dateText(plot: OwnedPlot): string {
-  if (plot.status === "withdrawn" && plot.endedAt) return `Withdrew ${formatDay(plot.endedAt)}`;
-  if (plot.status === "revoked" && plot.endedAt) return `Revoked ${formatDay(plot.endedAt)}`;
+  if (plot.status === "withdrawn" && plot.endedAt) return `${plot.plan === "flexible" ? "Left the plan" : "Withdrew"} ${formatDay(plot.endedAt)}`;
+  if (plot.status === "revoked" && plot.endedAt) return `${plot.plan === "flexible" ? "Plan ended" : "Revoked"} ${formatDay(plot.endedAt)}`;
   if ((plot.plan === "installment" || plot.plan === "flexible") && plot.status !== "completed" && plot.planStartedAt) return `On plan since ${formatDay(plot.planStartedAt)}`;
   return plot.acquiredDate ? `Acquired ${formatDay(plot.acquiredDate)}` : "Not acquired until finance verifies";
 }
@@ -250,6 +263,7 @@ function RefundText({ plot }: { plot: OwnedPlot }) {
 
 // What's due next, worded and coloured by how pressing it is.
 function NextPayment({ plot }: { plot: OwnedPlot }) {
+  const share = useContext(GainShares).find((g) => g.purchaseId === (plot.transactionId ?? plot.id)) ?? null;
   if (plot.arrears && (plot.status === "in_arrears" || plot.status === "installment_active")) {
     // The backend's figures as given: what's due now, and the penalty inside it.
     const a = plot.arrears;
@@ -259,6 +273,10 @@ function NextPayment({ plot }: { plot: OwnedPlot }) {
         {a.penaltyAmount ? <div className="text-xs">incl. {formatMoney(a.penaltyAmount, plot.currency)} penalty</div> : <div className="text-xs">since {formatDay(a.overdueSinceDate)}</div>}
       </div>
     );
+  }
+  if ((plot.status === "withdrawn" || plot.status === "revoked") && share) {
+    const [head, line] = GAIN_WORDS[gainShareState(share)];
+    return <div className={`text-sm ${share.accountNeeded && !share.account ? "text-[var(--warning-text)]" : "text-[var(--muted-foreground)]"}`}><div>{head}</div><div className="text-xs">{line}</div></div>;
   }
   if (plot.status === "withdrawn" || plot.status === "revoked") return <span className="text-sm text-[var(--muted-foreground)]">{plot.refund ? "—" : "Refund in parts"}</span>;
   if (plot.status === "pending_verification") return <span className="text-sm text-[var(--muted-foreground)]">Awaiting verification</span>;

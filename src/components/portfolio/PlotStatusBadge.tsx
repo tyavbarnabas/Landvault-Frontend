@@ -26,6 +26,9 @@ const STATUS_INFO: Record<PlotAccountStatus, { label: string; variant: BadgeVari
 
 // A flexible plan is never "on an instalment plan".
 export default function PlotStatusBadge({ status, plan }: { status: string; plan?: string }) {
-  const info = plan === "flexible" && status === "installment_active" ? { label: "On flexible plan", variant: "info" as BadgeVariant } : STATUS_INFO[status as PlotAccountStatus];
+  const flexible: Partial<Record<string, string>> = { installment_active: "On flexible plan", withdrawn: "Left the plan", revoked: "Plan ended" };
+  const info = plan === "flexible" && flexible[status]
+    ? { label: flexible[status]!, variant: (status === "installment_active" ? "info" : "neutral") as BadgeVariant }
+    : STATUS_INFO[status as PlotAccountStatus];
   return <StatusBadge label={info?.label ?? status} variant={info?.variant ?? "neutral"} />;
 }

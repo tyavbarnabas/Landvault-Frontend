@@ -13,6 +13,7 @@ import { formatMoney } from "../../lib/formatCurrency";
 import { formatDay } from "../../lib/formatDate";
 import { fetchWithdrawal, planErrorCode, planErrorMessage, withdraw } from "../../services/planService";
 import { lineLabel } from "../../components/purchases/PlanStanding";
+import { planInSentence } from "../../services/paymentPlansService";
 import { fetchPurchase } from "../../services/paymentsService";
 import { fetchListingById } from "../../services/marketplaceService";
 import { fetchPlotById, plotLabel } from "../../services/marketplacePlotsService";
@@ -34,8 +35,12 @@ export default function WithdrawPlan() {
     const p = await fetchPurchase(id!);
     if (!p) return null;
     const [listing, plot] = await Promise.all([fetchListingById(p.estateId).catch(() => undefined), fetchPlotById(p.estateId, p.plotId).catch(() => undefined)]);
-    return [plot ? plotLabel(plot) : null, listing?.name ?? null, p.schedule?.planName ?? null].filter(Boolean).join(" · ");
+    const planName = p.schedule?.planName ?? (p.flexible ? planInSentence(p.flexible.planName) : null);
+    return { text: [plot ? plotLabel(plot) : null, listing?.name ?? null, planName].filter(Boolean).join(" · "), purchase: p };
   }, [id]);
+  // A flexible plan: you leave it (no instalments, no penalties), and a later
+  // sale for more than your price may bring you a share of the difference.
+  const flex = names.data?.purchase.flexible ?? null;
   const [reason, setReason] = useState("");
   const [sure, setSure] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -43,11 +48,11 @@ export default function WithdrawPlan() {
   const [changed, setChanged] = useState(false);
   const back = { to: `/purchases/${id}`, label: "Your purchase" };
 
-  if (loaded.loading && !loaded.data) return <Page title="Withdraw from your plan" back={back} width="lg"><Loading label="Working out today's figures…" /></Page>;
+  if (loaded.loading && !loaded.data) return <Page title={flex ? "Leave the plan" : "Withdraw from your plan"} back={back} width="lg"><Loading label="Working out today's figures…" /></Page>;
   if (loaded.error || !loaded.data) {
     const code = planErrorCode(loaded.errorValue);
     if (code === "PLAN_NOT_WITHDRAWABLE" || code === "NOT_IN_DEMO") {
-      return <Page title="Withdraw from your plan" back={back} width="lg"><Alert tone="info">{planErrorMessage(loaded.errorValue)}</Alert></Page>;
+      return <Page title={flex ? "Leave the plan" : "Withdraw from your plan"} back={back} width="lg"><Alert tone="info">{planErrorMessage(loaded.errorValue)}</Alert></Page>;
     }
     return <LoadError error={loaded.errorValue} what="the withdrawal figures" onRetry={loaded.refetch} />;
   }
@@ -75,13 +80,15 @@ export default function WithdrawPlan() {
   };
 
   return (
-    <Page width="lg" back={back} title={quote ? "Withdraw from your plan" : w.status === "revoked" ? "Your plan was revoked" : "You withdrew from your plan"}
-      description={quote ? `${names.data ? `${names.data}. ` : ""}These are today's figures; nothing happens until you confirm below.` : w.withdrawnAt ? `Settled on ${formatDay(w.withdrawnAt)}. Each payment's part comes back on its own.` : "Each payment's part comes back on its own."}>
+    <Page width="lg" back={back} title={flex
+      ? (quote ? "Leave the plan" : w.status === "revoked" ? "Your plan was ended" : "You left the plan")
+      : (quote ? "Withdraw from your plan" : w.status === "revoked" ? "Your plan was revoked" : "You withdrew from your plan")}
+      description={quote ? `${names.data?.text ? `${names.data.text}. ` : ""}These are today's figures; nothing happens until you confirm below.` : w.withdrawnAt ? `Settled on ${formatDay(w.withdrawnAt)}. Each payment's part comes back on its own.` : "Each payment's part comes back on its own."}>
       <div className="space-y-6">
         {changed && <Alert tone="warning" role="alert">The figures changed since you opened this page — here are today's. Nothing has happened; check them and confirm again.</Alert>}
 
         <Card as="section" aria-labelledby="quote-heading" className="space-y-4">
-          <h2 id="quote-heading" className="font-semibold text-[var(--foreground)]">{quote ? "If you withdraw today" : "What was settled"}</h2>
+          <h2 id="quote-heading" className="font-semibold text-[var(--foreground)]">{quote ? (flex ? "If you leave today" : "If you withdraw today") : "What was settled"}</h2>
           <div className="grid gap-3 sm:grid-cols-3">
             <InfoBox label="You've paid"><div className="font-mono-data text-lg">{money(w.paid)}</div></InfoBox>
             <InfoBox label="Comes back to you" tone="success"><div className="font-mono-data text-lg">{money(w.refund)}</div></InfoBox>
@@ -90,7 +97,7 @@ export default function WithdrawPlan() {
           {w.terms && (
             <p className="text-sm text-[var(--muted-foreground)]">
               Under the terms in your offer letter, the developer keeps {w.terms.deductionPct}% {w.terms.appliesTo === "total_price" ? "of the price" : "of each payment"}.
-              {" "}Late-payment penalties are {w.terms.penaltiesRefundable ? "refunded" : "not refunded"}.
+              {flex ? " The rest is held in escrow, so it comes straight back to you." : ` Late-payment penalties are ${w.terms.penaltiesRefundable ? "refunded" : "not refunded"}.`}
             </p>
           )}
           <table className="w-full text-sm">
@@ -123,28 +130,32 @@ export default function WithdrawPlan() {
         {quote ? (
           <>
             <Card as="section" aria-labelledby="next-heading" className="space-y-2">
-              <h2 id="next-heading" className="font-semibold text-[var(--foreground)]">What happens if you withdraw</h2>
+              <h2 id="next-heading" className="font-semibold text-[var(--foreground)]">{flex ? "What happens if you leave" : "What happens if you withdraw"}</h2>
               <ul className="list-disc pl-5 text-sm text-[var(--foreground)] space-y-1.5">
                 <li>Your plan ends today and the plot goes back on sale. This can't be undone.</li>
                 <li>Each payment's part comes back on its own: a card payment back to the card; for a bank transfer we'll ask for an account in your name.</li>
                 <li>Your provisional allocation letter is marked withdrawn.</li>
-                <li>The developer is told. Nobody needs to approve it.</li>
+                {flex
+                  ? <li>If HomeTrue later sells this plot for more than your {formatMoney(names.data!.purchase.totalPrice, w.currency)} price, you get {100 - flex.developerGainSharePct}% of the difference. We'll ask for a bank account then.</li>
+                  : <li>The developer is told. Nobody needs to approve it.</li>}
               </ul>
             </Card>
             <Card as="section" aria-label="Confirm" className="space-y-4">
-              <Field id="withdraw-reason" label="Why are you withdrawing? (optional)" hint="The developer sees this.">
+              <Field id="withdraw-reason" label={flex ? "Why are you leaving? (optional)" : "Why are you withdrawing? (optional)"} hint="The developer sees this.">
                 <Textarea id="withdraw-reason" rows={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
               </Field>
               <label className="flex items-start gap-2.5 cursor-pointer text-sm font-medium text-[var(--foreground)]">
                 <input type="checkbox" checked={sure} onChange={(e) => setSure(e.target.checked)} className="mt-0.5 w-4 h-4 shrink-0 accent-[var(--primary)]" />
-                I understand withdrawing ends my plan and can't be undone.
+                {flex ? "I understand leaving ends my plan and can't be undone." : "I understand withdrawing ends my plan and can't be undone."}
               </label>
               {error && <ErrorText>{error}</ErrorText>}
               <div className="flex flex-col sm:flex-row gap-3">
-                <Button size="lg" onClick={confirm} disabled={!sure || busy}>{busy ? "Withdrawing…" : `Withdraw and get ${money(w.refund)} back`}</Button>
+                <Button size="lg" onClick={confirm} disabled={!sure || busy}>{busy ? (flex ? "Leaving…" : "Withdrawing…") : `${flex ? "Leave" : "Withdraw"} and get ${money(w.refund)} back`}</Button>
                 <LinkButton to={back.to} variant="secondary" size="lg">Keep my plan</LinkButton>
               </div>
-              <p className="text-xs text-[var(--muted-foreground)]">Behind on payments? You don't have to withdraw — you can ask the developer to restructure what you owe.</p>
+              <p className="text-xs text-[var(--muted-foreground)]">{flex
+                ? `Can't pay for a while? Nothing is ever due on this plan, so you don't have to leave. If nothing is paid for ${flex.inactivityMonths} months the developer may give you ${flex.noticeDays} days' notice.`
+                : "Behind on payments? You don't have to withdraw — you can ask the developer to restructure what you owe."}</p>
             </Card>
           </>
         ) : (
