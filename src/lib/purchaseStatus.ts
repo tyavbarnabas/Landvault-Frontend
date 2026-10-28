@@ -228,7 +228,8 @@ export function purchaseTimeline(p: Purchase): TimelineStep[] {
   const pay = p.payment;
   const paid = pay?.paidAt != null || pay?.amountPaid != null || ["payment_received", "awaiting_finance", "on_plan", "verified", "withdrawn", "revoked"].includes(p.status);
   const paidNote = pay?.amountPaid != null ? `${formatInCurrency(pay.amountPaid, p.currency)} confirmed by Paystack` : null;
-  const steps: TimelineStep[] = [{ key: "reserved", label: "Reserved", at: p.createdAt, note: "Held for you while you pay", state: "done" }];
+  // "Held for you while you pay" only while it is: on a running plan it would read like a hold today.
+  const steps: TimelineStep[] = [{ key: "reserved", label: "Reserved", at: p.createdAt, note: p.status === "pending_payment" ? "Held for you while you pay" : null, state: "done" }];
 
   if (p.status === "abandoned" && !paid) {
     steps.push({ key: "ended", label: "Reservation ended", at: null, note: "It ended before payment arrived. Nothing was charged.", state: "failed" });

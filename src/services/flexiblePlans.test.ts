@@ -224,3 +224,24 @@ describe("leaving a flexible plan, and the gain share", () => {
     expect(calls).toEqual(['PUT /api/gain-shares/g1/account {"bankCode":"058","accountNumber":"0123456789"}']);
   });
 });
+
+describe("the backend's flexible follow-ups", () => {
+  it("names the first payment from contributionSequence, and falls back without it", async () => {
+    const { paymentForLabel, verifyLabel } = await import("../pages/portal/finance/PortalFinance");
+    const row = (o: Record<string, unknown>) => ({ paymentFor: "contribution", planName: "Pay as you can", remainingAfter: 14_000_000, ...o }) as unknown as Parameters<typeof verifyLabel>[0];
+    expect([paymentForLabel(row({ contributionSequence: 1 })), verifyLabel(row({ contributionSequence: 1 }))]).toEqual(["First payment — Pay as you can", "Verify — hold plot on plan"]);
+    expect([paymentForLabel(row({ contributionSequence: 2 })), verifyLabel(row({ contributionSequence: 2 }))]).toEqual(["Payment — Pay as you can", "Verify payment"]);
+    expect([paymentForLabel(row({})), verifyLabel(row({}))]).toEqual(["Payment — Pay as you can", "Verify payment"]);
+    expect([paymentForLabel(row({ contributionSequence: 3, remainingAfter: 0 })), verifyLabel(row({ contributionSequence: 3, remainingAfter: 0 }))])
+      .toEqual(["Last payment — Pay as you can", "Verify — sell plot & issue allocation letter"]);
+  });
+
+  it("reads `kind` when the backend sends it, and guesses from the notices when it doesn't", async () => {
+    const { isFlexibleRevocation } = await import("../pages/portal/finance/PortalPlan");
+    const rv = (o: Record<string, unknown>) => ({ flexible: null, notice: null, history: [], ...o }) as unknown as Parameters<typeof isFlexibleRevocation>[0];
+    expect(isFlexibleRevocation(rv({ kind: "flexible", status: "withdrawn" }))).toBe(true);
+    expect(isFlexibleRevocation(rv({ kind: "installment", history: [{ trigger: "inactivity" }] }))).toBe(false);
+    expect(isFlexibleRevocation(rv({ history: [{ trigger: "finish_by" }] }))).toBe(true);
+    expect(isFlexibleRevocation(rv({}))).toBe(false);
+  });
+});

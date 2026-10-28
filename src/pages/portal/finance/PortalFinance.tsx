@@ -223,13 +223,18 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
       )}
 
       {dialog === "verify" && (
-        <ConfirmDialog title={kind === "deposit" ? "Verify this deposit?" : kind === "instalment" && !sells ? "Verify this instalment?" : kind === "contribution" && !sells ? "Verify this payment?" : kind === "full_price" ? "Verify this payment?" : "Verify and sell the plot?"}
+        <ConfirmDialog title={kind === "deposit" ? "Verify this deposit?" : kind === "contribution" && item.contributionSequence === 1 ? "Verify the first payment?" : kind === "instalment" && !sells ? "Verify this instalment?" : kind === "contribution" && !sells ? "Verify this payment?" : kind === "full_price" ? "Verify this payment?" : "Verify and sell the plot?"}
           confirmLabel={kind === "full_price" ? "Verify and sell the plot" : verifyLabel(item)} onClose={() => setDialog(null)}
           action={() => verifyPurchase(item.transactionId)}
           onDone={(decision) => onDone(verifiedMessage(item, decision, buyer))}>
           {kind === "deposit" ? (
             <><strong>{item.plotLabel}</strong> at {item.estateName} is held for <strong>{buyer}</strong> on the {item.planName ?? "plan"}, and they get a provisional allocation letter. The plot isn't sold until the plan is paid in full.</>
+          ) : kind === "contribution" && !sells && item.contributionSequence === 1 ? (
+            <><strong>{item.plotLabel}</strong> at {item.estateName} is held for <strong>{buyer}</strong> on {item.planName ? planInSentence(item.planName) : "the plan"}, and they get a provisional allocation letter. The plot isn't sold until the plan total is verified.</>
+          ) : kind === "contribution" && !sells && item.contributionSequence ? (
+            <>This records {item.expectedAmount !== null ? money(item.expectedAmount, item.currency) : "this payment"} as paid on {buyer}'s {item.planName ? planInSentence(item.planName).replace(/^the /, "") : "plan"}. The plan carries on; the plot isn't sold until the plan total is verified.</>
           ) : kind === "contribution" && !sells ? (
+            // A backend without contributionSequence can't say which payment this is.
             <>This records {item.expectedAmount !== null ? money(item.expectedAmount, item.currency) : "this payment"} as paid on {buyer}'s {item.planName ? planInSentence(item.planName).replace(/^the /, "") : "plan"}. If it's their first payment, <strong>{item.plotLabel}</strong> is then held for them on the plan and they get a provisional allocation letter. The plot isn't sold until the plan total is verified.</>
           ) : !sells ? (
             <>This records {item.expectedAmount !== null ? money(item.expectedAmount, item.currency) : "this payment"} as paid on {buyer}'s {item.planName ?? "plan"}. The plan carries on; the plot isn't sold yet.</>
@@ -242,15 +247,23 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
       )}
       {dialog === "reject" && (
         <ReasonDialog title="Reject this payment?"
-          confirmLabel={kind === "instalment" || kind === "balance" || kind === "contribution" ? "Reject and refund this payment" : "Reject and refund the buyer"} reasonLabel="Why are you rejecting it?"
+          confirmLabel={kind === "instalment" || kind === "balance" || (kind === "contribution" && item.contributionSequence !== 1) ? "Reject and refund this payment" : "Reject and refund the buyer"} reasonLabel="Why are you rejecting it?"
           reasonHint="Recorded with the decision." onClose={() => setDialog(null)}
           action={(reason) => rejectPurchase(item.transactionId, reason)}
-          onDone={() => onDone(kind === "contribution"
+          onDone={() => onDone(kind === "contribution" && item.contributionSequence === 1
+            ? `Rejected — ${item.plotLabel} is back on sale and HomeTrue is refunding ${buyer} in full.`
+            : kind === "contribution" && item.contributionSequence
+            ? `Rejected — HomeTrue is refunding this payment to ${buyer}. The plan carries on.`
+            : kind === "contribution"
             ? `Rejected — HomeTrue is refunding this payment to ${buyer}.`
             : kind === "instalment" || kind === "balance"
             ? `Rejected — HomeTrue is refunding this payment to ${buyer}. The plan carries on.`
             : `Rejected — ${item.plotLabel} is back on sale and HomeTrue is refunding ${buyer} in full.`)}>
-          {kind === "contribution"
+          {kind === "contribution" && item.contributionSequence === 1
+            ? <>The plot goes back on sale, and HomeTrue returns the buyer's {p ? money(p.amountPaid, p.currency) : "payment"} in full.</>
+            : kind === "contribution" && item.contributionSequence
+            ? <>HomeTrue refunds only this payment ({p ? money(p.amountPaid, p.currency) : "the payment"}). The plan carries on with what's already verified.</>
+            : kind === "contribution"
             ? <>HomeTrue refunds this payment ({p ? money(p.amountPaid, p.currency) : "the payment"}). What's already verified on the plan stays; if this was the buyer's first payment, the plot goes back on sale.</>
             : kind === "instalment" || kind === "balance"
             ? <>HomeTrue refunds only this payment ({p ? money(p.amountPaid, p.currency) : "the payment"}). The plan carries on: the buyer keeps their schedule and what's already verified.</>
@@ -272,7 +285,7 @@ export function paymentForLabel(item: FinanceQueueItem): string {
       return `Instalment${of}${item.dueDate ? ` (due ${new Date(item.dueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })})` : ""}${plan}`;
     }
     case "balance": return `Balance paid off${plan}`;
-    case "contribution": return `${item.remainingAfter === 0 ? "Last payment" : "Payment"}${plan}`;
+    case "contribution": return `${item.remainingAfter === 0 ? "Last payment" : item.contributionSequence === 1 ? "First payment" : "Payment"}${plan}`;
     default: return "Full price";
   }
 }
@@ -284,7 +297,7 @@ export function verifyLabel(item: FinanceQueueItem): string {
   if (item.planWithdrawn || item.planRevoked) return "Verify — release your share";
   if (kind === "full_price") return "Verify and sell";
   if (kind === "deposit") return "Verify deposit — hold plot on plan";
-  if (kind === "contribution" && !verifySells(item)) return "Verify payment";
+  if (kind === "contribution" && !verifySells(item)) return item.contributionSequence === 1 ? "Verify — hold plot on plan" : "Verify payment";
   return verifySells(item) ? "Verify — sell plot & issue allocation letter" : "Verify instalment";
 }
 

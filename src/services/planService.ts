@@ -452,8 +452,12 @@ export interface PlanRevocation {
   // What revoking now would return (exactly a withdrawal), or what was settled.
   settlement: { paid: number; refund: number; developerKeeps: number; currency: string } | null;
   history: RevocationNotice[];
-  // A flexible plan's standing; null on an instalment plan.
+  // A flexible plan's standing while it runs; null on an instalment plan and
+  // once a flexible plan has ended.
   flexible?: FlexibleStanding | null;
+  // What kind of plan this is, whatever its status (absent from a backend
+  // before the flexible follow-ups).
+  kind?: "installment" | "flexible";
 }
 
 // Finance › Flexible plans (changeset 113): every running flexible plan,

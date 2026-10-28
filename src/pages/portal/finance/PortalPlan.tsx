@@ -621,7 +621,9 @@ function RevocationSection({ id, onChanged }: { id: string; onChanged: () => voi
 
 // A flexible plan's revocation: its standing while it runs, or — once ended —
 // notices given because nothing was paid or the plan ran past its date.
-function isFlexibleRevocation(rv: PlanRevocation): boolean {
+export function isFlexibleRevocation(rv: PlanRevocation): boolean {
+  if (rv.kind) return rv.kind === "flexible";
+  // A backend without `kind`: a running plan's standing, or notices that only a flexible plan has.
   return !!rv.flexible || [rv.notice, ...rv.history].some((n) => n?.trigger === "inactivity" || n?.trigger === "finish_by");
 }
 
