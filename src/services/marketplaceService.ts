@@ -36,7 +36,7 @@ import { mockListingPhotos } from "../data/mockEstatePhotos";
 import { mockListingTitle } from "../data/mockEstateTitles";
 import { tiersFromPlots, type PriceTier, type TierAvailability } from "./estatesService";
 import { fetchTenantByIdSync, tenantDisplayName } from "./tenantsService";
-import { mockTierPlans, type TierPlan } from "./paymentPlansService";
+import { mockTierPlans, type FlexiblePlanQuote, type FlexibleTierPlan, type TierPlan } from "./paymentPlansService";
 
 // PriceTier/TierAvailability are defined once, in estatesService.ts (the
 // function that actually derives tiers from real plot data) — re-exported
@@ -319,6 +319,13 @@ function publishedListings(): Listing[] {
 // MarketplaceListingDto, mapped onto this app's Listing. Field by field — a
 // cast would compile and read `undefined` for anything the two don't share.
 
+// One plan on a tier as the listing sends it: an instalment plan, or a
+// flexible one whose instalment fields are null and whose figures are in `flexible`.
+type ListingPlanDto = TierPlan | (Omit<TierPlan, "frequency" | "instalmentCount" | "instalment" | "lastInstalment"> & {
+  kind: "flexible";
+  flexible: FlexiblePlanQuote | null;
+});
+
 interface ListingTierDto {
   id: string;
   sizeSqm: number | null;
@@ -331,7 +338,7 @@ interface ListingTierDto {
   plotsRemaining: number;
   commitment: unknown;
   // Empty for an outright-only estate.
-  paymentPlans?: TierPlan[] | null;
+  paymentPlans?: ListingPlanDto[] | null;
 }
 
 export interface ListingDto {
@@ -366,17 +373,23 @@ export interface ListingDto {
 // listing) is read from what's already loaded instead of fetching per card.
 const listingDtoCache = new Map<string, ListingDto>();
 
-// Flexible ("Pay as you can") plans have no fixed instalments and no screens
-// here yet, so a tier lists only the fixed-instalment plans.
-function isSupportedPlan(p: TierPlan): boolean {
+// A tier's plans arrive in one list; check `kind` before reading instalment
+// fields. Instalment plans stay in paymentPlans, flexible ones (no schedule,
+// their figures in `flexible`) go to flexiblePlans.
+function isInstalmentPlan(p: ListingPlanDto): p is TierPlan {
   return (p.kind ?? "installment") === "installment";
+}
+
+function flexiblePlansOf(plans: ListingPlanDto[]): FlexibleTierPlan[] {
+  return plans.flatMap((p) => (!isInstalmentPlan(p) && p.flexible ? [{ planId: p.planId, name: p.name, flexible: p.flexible }] : []));
 }
 
 function fromListingDto(dto: ListingDto): Listing {
   listingDtoCache.set(dto.id, dto);
   const priceTiers: PriceTier[] = dto.priceTiers.map((t) => ({
     id: t.id, sizeSqm: t.sizeSqm ?? 0, actualAreaSqm: t.actualAreaSqm ?? t.sizeSqm ?? 0, price: t.price,
-    availability: t.availability, plotsRemaining: t.plotsRemaining, currency: t.currency, paymentPlans: (t.paymentPlans ?? []).filter(isSupportedPlan),
+    availability: t.availability, plotsRemaining: t.plotsRemaining, currency: t.currency, paymentPlans: (t.paymentPlans ?? []).filter(isInstalmentPlan),
+    flexiblePlans: flexiblePlansOf(t.paymentPlans ?? []),
   }));
   return {
     id: dto.id,

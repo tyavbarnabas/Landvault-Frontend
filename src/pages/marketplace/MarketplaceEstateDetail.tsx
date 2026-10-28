@@ -6,7 +6,8 @@
 // nothing is estimated.
 
 import { formatMoney } from "../../lib/formatCurrency";
-import { frequencyWord } from "../../services/paymentPlansService";
+import { frequencyWord, planInSentence } from "../../services/paymentPlansService";
+import FlexiblePlanTerms from "../../components/marketplace/FlexiblePlanTerms";
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { isLive } from "../../lib/backends";
@@ -110,6 +111,11 @@ export default function MarketplaceEstateDetail() {
           <About listing={listing} />
           <Pricing listing={listing} currency={currency} shownSize={shownTier?.sizeSqm ?? null} onSelectSize={setSelectedSizeSqm} />
           <Costs disclosure={disclosure} commitment={commitment} />
+          {shownTier && (shownTier.flexiblePlans ?? []).map((p) => (
+            <Section key={p.planId} id={flexibleAnchor(p.planId)} title={`The ${planInSentence(p.name).replace(/^the /, "")}`} action={<Badge label="Flexible" variant="info" />}>
+              <FlexiblePlanTerms plan={p} sizeSqm={shownTier.sizeSqm} currency={shownTier.currency ?? "NGN"} />
+            </Section>
+          ))}
           {disclosure?.exitCosts && !isGrandfathered(disclosure) && (
             <Section title="Refund & exit terms">
               <ExitCostsPanel exitCosts={disclosure.exitCosts} layout="rows" />
@@ -214,9 +220,9 @@ function TitleRow({ listing }: { listing: Listing }) {
 
 // ─── Left column ─────────────────────────────────────────────────────────────
 
-function Section({ title, subtitle, action, children }: { title: string; subtitle?: string; action?: React.ReactNode; children: React.ReactNode }) {
+function Section({ id, title, subtitle, action, children }: { id?: string; title: string; subtitle?: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 sm:p-6">
+    <section id={id} className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 sm:p-6 scroll-mt-6">
       <div className="flex items-start justify-between gap-3 mb-4">
         <div>
           <h2 className="text-lg font-semibold text-[var(--foreground)]">{title}</h2>
@@ -454,6 +460,11 @@ function BookingCard({ listing, shownTier, commitment, currency, onSelectSize, p
             <WayToPay key={p.planId} name={p.name} total={formatMoney(p.planTotal, shownTier.currency ?? "NGN")}
               line={`${formatMoney(p.deposit, shownTier.currency ?? "NGN")} deposit, then ${p.instalmentCount} ${frequencyWord(p.frequency)} × ${formatMoney(p.instalment, shownTier.currency ?? "NGN")}`} />
           ))}
+          {(shownTier.flexiblePlans ?? []).map((p) => (
+            <WayToPay key={p.planId} name={p.name} badge="Flexible" total={formatMoney(p.flexible.planTotal, shownTier.currency ?? "NGN")}
+              line={`${formatMoney(p.flexible.minimumToStart, shownTier.currency ?? "NGN")} to start, then any amount, any time — no due dates.`}
+              more={{ href: `#${flexibleAnchor(p.planId)}`, label: "How it works ↓" }} />
+          ))}
         </div>
       )}
 
@@ -485,17 +496,21 @@ function BookingCard({ listing, shownTier, commitment, currency, onSelectSize, p
   );
 }
 
-function WayToPay({ name, total, line }: { name: string; total: string; line?: string }) {
+function WayToPay({ name, total, line, badge, more }: { name: string; total: string; line?: string; badge?: string; more?: { href: string; label: string } }) {
   return (
     <div className="rounded-lg border border-[var(--border)] px-3 py-2.5">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-semibold text-[var(--foreground)]">{name}</span>
+        <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--foreground)]">{name}{badge && <Badge label={badge} variant="info" />}</span>
         <span className="font-mono-data text-sm font-medium text-[var(--foreground)]">{total}</span>
       </div>
       {line && <div className="text-xs text-[var(--muted-foreground)] mt-0.5">{line}</div>}
+      {more && <a href={more.href} className="inline-block mt-1 text-xs font-medium text-[var(--accent)] hover:underline">{more.label}</a>}
     </div>
   );
 }
+
+// The estate page section a flexible plan's "How it works" link scrolls to.
+const flexibleAnchor = (planId: string) => `plan-${planId}`;
 
 function DeveloperCard({ listing }: { listing: Listing }) {
   const s = listing.seller;

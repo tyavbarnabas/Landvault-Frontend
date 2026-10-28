@@ -37,8 +37,45 @@ export interface TierPlan {
   // How much more than paying in full.
   premium: number;
   ifAnInstalmentIsLate: LateStep[];
-  // "installment", or "flexible" (no fixed instalments; not shown here yet).
+  // "installment", or "flexible" (no fixed instalments: see FlexibleTierPlan).
   kind?: string;
+}
+
+// A flexible ("pay as you can") plan's figures at one tier's price
+// (FlexiblePlanQuote), every one HomeTrue's. The gain-share figures are an
+// example for a sale above the price, never a forecast.
+export interface FlexiblePlanQuote {
+  price: number;
+  planTotal: number;
+  premium: number;
+  minimumToStart: number;
+  // Null when any later amount will do.
+  minimumContribution: number | null;
+  // Two worked examples: after the minimum to start, and after half the total.
+  ifYouStopAfterPaying: { paid: number; youGetBack: number; developerKeeps: number }[];
+  ifSoldForMore: {
+    developerSharePct: number;
+    buyerSharePct: number;
+    // What the buyer gets for every 1,000,000 the next sale is above the price.
+    perMillionAbove: number;
+    example: { risePct: number; soldFor: number; difference: number; youGet: number };
+  };
+  inactivityMonths: number;
+  noticeDays: number;
+  maxMonths: number | null;
+}
+
+// A flexible plan as a tier offers it: a minimum to start, then any amount at
+// any time until the plan total is paid. No schedule, due dates or penalties.
+export interface FlexibleTierPlan {
+  planId: string;
+  name: string;
+  flexible: FlexiblePlanQuote;
+}
+
+// A plan's name in a sentence: "the 12-month plan", but the "Pay as you can" plan.
+export function planInSentence(name: string): string {
+  return /\bplan$/i.test(name.trim()) ? `the ${name.trim()}` : `the “${name.trim()}” plan`;
 }
 
 // The plan at one open tier's price, for a plot that isn't a corner plot.

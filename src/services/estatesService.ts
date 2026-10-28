@@ -6,7 +6,7 @@
 import { ESTATES, type Estate, type Plot } from "../data/mockData";
 import { apiClient } from "../lib/apiClient";
 import { isMock } from "../lib/backends";
-import type { TierPlan } from "./paymentPlansService";
+import type { FlexibleTierPlan, TierPlan } from "./paymentPlansService";
 
 export async function fetchEstates(): Promise<Estate[]> {
   if (isMock("estates")) return ESTATES;
@@ -48,6 +48,8 @@ export interface PriceTier {
   // The developer's instalment plans at this tier, every figure HomeTrue's.
   // Empty (or absent) means outright only.
   paymentPlans?: TierPlan[];
+  // The developer's flexible ("pay as you can") plans at this tier.
+  flexiblePlans?: FlexibleTierPlan[];
 }
 
 // Exported so marketplaceService.ts's projectListing() can reuse this exact
