@@ -517,8 +517,8 @@ function RevocationSection({ id, onChanged }: { id: string; onChanged: () => voi
   // Once a flexible plan ends its standing is gone; its notices still say what they were for.
   const isFlex = !!fx || isFlexibleRevocation(rv);
   const fxFinish = notice?.trigger === "finish_by" || (!notice && fx?.noticeReason === "finish_by");
-  // The backend keeps noticeReason set while a notice runs: offer notice only without one.
-  const canGive = rv.status === "on_plan" && !rv.notice && (fx ? !!fx.noticeReason : !isFlex && rv.revocableNow);
+  // noticeReason and revocableNow are cleared while a notice runs.
+  const canGive = rv.status === "on_plan" && (fx ? !!fx.noticeReason : !isFlex && rv.revocableNow);
   const words = isFlex ? FLEXIBLE_NOTICE_WORDS : NOTICE_WORDS;
 
   const give = async () => {
@@ -622,9 +622,7 @@ function RevocationSection({ id, onChanged }: { id: string; onChanged: () => voi
 // A flexible plan's revocation: its standing while it runs, or — once ended —
 // notices given because nothing was paid or the plan ran past its date.
 export function isFlexibleRevocation(rv: PlanRevocation): boolean {
-  if (rv.kind) return rv.kind === "flexible";
-  // A backend without `kind`: a running plan's standing, or notices that only a flexible plan has.
-  return !!rv.flexible || [rv.notice, ...rv.history].some((n) => n?.trigger === "inactivity" || n?.trigger === "finish_by");
+  return rv.kind === "flexible";
 }
 
 const FLEXIBLE_NOTICE_WORDS: Record<string, string> = {

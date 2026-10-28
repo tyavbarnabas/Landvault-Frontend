@@ -69,8 +69,7 @@ export interface FinanceQueueItem {
   // `expectedAmount` is null too and verify is never offered.
   remainingAfter?: number | null;
   // Which payment on a flexible plan this is: 1 = the first (verifying it holds
-  // the plot and issues the provisional letter), 2, 3… after. Null otherwise,
-  // and absent from a backend before the flexible follow-ups.
+  // the plot and issues the provisional letter), 2, 3… after. Null on every other plan.
   contributionSequence?: number | null;
 }
 

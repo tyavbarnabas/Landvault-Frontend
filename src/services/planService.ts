@@ -455,9 +455,8 @@ export interface PlanRevocation {
   // A flexible plan's standing while it runs; null on an instalment plan and
   // once a flexible plan has ended.
   flexible?: FlexibleStanding | null;
-  // What kind of plan this is, whatever its status (absent from a backend
-  // before the flexible follow-ups).
-  kind?: "installment" | "flexible";
+  // What kind of plan this is, whatever its status.
+  kind: "installment" | "flexible";
 }
 
 // Finance › Flexible plans (changeset 113): every running flexible plan,
