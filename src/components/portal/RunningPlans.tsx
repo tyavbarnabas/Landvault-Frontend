@@ -11,8 +11,9 @@ import { useFetch } from "../../lib/useFetch";
 import { formatMoney } from "../../lib/formatCurrency";
 import { formatDay } from "../../lib/formatDate";
 import {
-  PLAN_STATUS_BADGE, fetchRestructureQueue, fetchRunningPlans, type RunningPlan, type RunningPlanFilter,
+  PLAN_STATUS_BADGE, fetchFlexiblePlans, fetchRestructureQueue, fetchRunningPlans, type FlexiblePlanRow, type RunningPlan, type RunningPlanFilter,
 } from "../../services/planService";
+import { planInSentence } from "../../services/paymentPlansService";
 import { ListCard } from "../ui/Card";
 import Badge from "../ui/Badge";
 import { LinkButton } from "../ui/Button";
@@ -117,5 +118,95 @@ export function RestructureQueue() {
         ))}
       </ul>
     </div>
+  );
+}
+
+// Finance › Flexible plans (changeset 113), from the Figma "Flexible plans"
+// finance frame: every running flexible plan, worked out for today — what's
+// paid, what's left and when the buyer last paid — plans the developer may
+// give notice on first. Nothing is ever due on these plans; only a quiet plan
+// or one past its finish date can be ended. Each row opens the plan page.
+type FlexibleFilter = "all" | "can_notify" | "notice" | "paying";
+
+// The backend keeps `noticeReason` set while a notice runs, so a running
+// notice is checked first.
+function flexibleStage(s: FlexiblePlanRow["standing"]): Exclude<FlexibleFilter, "all"> {
+  if (s.notice) return "notice";
+  return s.noticeReason ? "can_notify" : "paying";
+}
+
+export function FlexiblePlans() {
+  const [filter, setFilter] = useState<FlexibleFilter>("all");
+  const list = useFetch(() => fetchFlexiblePlans(), []);
+  const rows = list.data ?? [];
+  const counts = { all: rows.length, can_notify: 0, notice: 0, paying: 0 };
+  for (const r of rows) counts[flexibleStage(r.standing)]++;
+  const shown = filter === "all" ? rows : rows.filter((r) => flexibleStage(r.standing) === filter);
+  const filters: { id: FlexibleFilter; label: string }[] = [
+    { id: "all", label: "All" }, { id: "can_notify", label: "Can give notice" }, { id: "notice", label: "Notice running" }, { id: "paying", label: "Paying" },
+  ];
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-[var(--muted-foreground)]">
+        Every flexible plan, worked out for today: what's paid, what's left and when the buyer last paid. Plans you may give notice on come first. Nothing is ever due on these plans — only a quiet plan or one past its finish date can be ended.
+      </p>
+      {rows.length > 0 && (
+        <div role="group" aria-label="Filter flexible plans" className="flex gap-2 overflow-x-auto pb-1">
+          {filters.map((f) => (
+            <button key={f.id} type="button" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}
+              className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium border ${filter === f.id ? "bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)]" : "bg-[var(--card)] text-[var(--foreground)] border-[var(--border)]"}`}>
+              {f.label} {counts[f.id]}
+            </button>
+          ))}
+        </div>
+      )}
+      {list.loading && !list.data ? <Loading /> : list.error ? <LoadError error={list.errorValue} what="flexible plans" onRetry={list.refetch} /> : shown.length === 0 ? (
+        <EmptyState title={filter === "all" ? "No flexible plans running" : "Nothing here"} description={filter === "all" ? "Flexible plans appear here once a buyer's first payment is verified." : "No flexible plan stands this way today."} />
+      ) : (
+        <ul className="space-y-3">{shown.map((p) => <FlexibleRow key={p.transactionId} plan={p} />)}</ul>
+      )}
+    </div>
+  );
+}
+
+function FlexibleRow({ plan: p }: { plan: FlexiblePlanRow }) {
+  const s = p.standing;
+  const money = (n: number) => formatMoney(n, p.currency);
+  const stage = flexibleStage(s);
+  const pastFinish = s.noticeReason === "finish_by" || s.notice?.trigger === "finish_by";
+  return (
+    <ListCard className="space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-semibold text-[var(--foreground)]">{p.estateName} — {p.plotLabel}</div>
+          <div className="text-xs text-[var(--muted-foreground)]">{p.buyerEmail ?? "Buyer email not shown"} · <span className="font-mono-data">{p.transactionReference}</span> · {planInSentence(p.planName).replace(/^the /, "")}</div>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {stage === "paying" ? <Badge label="Paying" variant="success" /> : (
+            <>
+              <Badge label={pastFinish ? "Past its finish date" : "Quiet"} variant="warning" />
+              <Badge label={stage === "notice" ? "Notice running" : "Can give notice"} variant="neutral" />
+            </>
+          )}
+        </div>
+      </div>
+      <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+        <div><dt className="text-xs text-[var(--muted-foreground)]">Paid</dt><dd className="font-mono-data">{money(s.paid)}</dd></div>
+        <div><dt className="text-xs text-[var(--muted-foreground)]">Left to pay</dt><dd className="font-mono-data">{money(s.remaining)}</dd></div>
+        <div><dt className="text-xs text-[var(--muted-foreground)]">Last payment</dt><dd>{s.lastPaymentOn ? formatDay(s.lastPaymentOn) : "None yet"}</dd></div>
+        {stage !== "paying" && !pastFinish && s.quietFrom
+          ? <div><dt className="text-xs text-[var(--muted-foreground)]">Quiet since</dt><dd>{formatDay(s.quietFrom)}</dd></div>
+          : s.finishBy ? <div><dt className="text-xs text-[var(--muted-foreground)]">Finish by</dt><dd>{formatDay(s.finishBy)}{pastFinish ? " · passed" : ""}</dd></div> : null}
+      </dl>
+      {s.awaitingFinance !== null && <p className="text-xs text-[var(--muted-foreground)]"><span className="font-mono-data">{money(s.awaitingFinance)}</span> is waiting for your verification.</p>}
+      {s.notice ? (
+        <p className="text-xs text-[var(--muted-foreground)]">Notice given {formatDay(s.notice.givenAt)}: “{s.notice.reason}” · Deadline {formatDay(s.notice.deadline)} · you can end the plan from {formatDay(s.notice.confirmableFrom)}.</p>
+      ) : stage === "can_notify" ? (
+        <p className="text-xs text-[var(--muted-foreground)]">{pastFinish ? `You may give notice: the plan passed its finish date${s.finishBy ? `, ${formatDay(s.finishBy)}` : ""}.` : `You may give notice: nothing has been paid since ${s.lastPaymentOn ? formatDay(s.lastPaymentOn) : "the plan started"}.`}</p>
+      ) : s.quietFrom ? (
+        <p className="text-xs text-[var(--muted-foreground)]">Goes quiet if nothing is paid by {formatDay(s.quietFrom)}.</p>
+      ) : null}
+      <LinkButton to={`/portal/finance/plans/${p.transactionId}`} variant="secondary">Open plan</LinkButton>
+    </ListCard>
   );
 }

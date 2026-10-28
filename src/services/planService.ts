@@ -12,6 +12,7 @@
 
 import { apiClient, ApiError } from "../lib/apiClient";
 import { isMock } from "../lib/backends";
+import type { FlexibleStanding } from "./paymentPlansService";
 
 // ─── Where a plan stands (TransactionDto.standing) ──────────────────────────
 
@@ -430,9 +431,12 @@ export interface RevocationNotice {
   givenAt: string;
   deadline: string;
   confirmableFrom: string;
-  instalmentSequence: number;
+  instalmentSequence: number | null;
   closedAt: string | null;
   closeNote: string | null;
+  // What the notice was for: "arrears" (an instalment plan), or on a flexible
+  // plan "inactivity" (nothing paid for a while) or "finish_by" (past its date).
+  trigger?: "arrears" | "inactivity" | "finish_by";
 }
 
 export interface PlanRevocation {
@@ -448,6 +452,29 @@ export interface PlanRevocation {
   // What revoking now would return (exactly a withdrawal), or what was settled.
   settlement: { paid: number; refund: number; developerKeeps: number; currency: string } | null;
   history: RevocationNotice[];
+  // A flexible plan's standing; null on an instalment plan.
+  flexible?: FlexibleStanding | null;
+}
+
+// Finance › Flexible plans (changeset 113): every running flexible plan,
+// plans the developer may give notice on first.
+export interface FlexiblePlanRow {
+  transactionId: string;
+  transactionReference: string;
+  estateId: string;
+  estateName: string;
+  plotId: string;
+  plotLabel: string;
+  buyerEmail: string | null;
+  planName: string;
+  currency: string;
+  planTotal: number;
+  standing: FlexibleStanding;
+}
+
+export async function fetchFlexiblePlans(): Promise<FlexiblePlanRow[]> {
+  if (isMock("finance")) return [];
+  return apiClient.get<FlexiblePlanRow[]>("/api/portal/finance/flexible-plans");
 }
 
 const revBase = (id: string) => `/api/portal/plans/${id}/revocation`;

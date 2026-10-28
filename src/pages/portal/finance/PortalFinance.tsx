@@ -12,9 +12,10 @@
 
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { RestructureQueue, RunningPlans } from "../../../components/portal/RunningPlans";
+import { FlexiblePlans, RestructureQueue, RunningPlans } from "../../../components/portal/RunningPlans";
 import { useApp } from "../../../contexts/AppContext";
 import { DOCUMENTS_VIEW_PERMISSION } from "../../../services/authService";
+import { planInSentence } from "../../../services/paymentPlansService";
 import { formatMoney } from "../../../lib/formatCurrency";
 import { formatDay, formatDayTime } from "../../../lib/formatDate";
 import { ApiError, ApiTransportError } from "../../../lib/apiClient";
@@ -35,10 +36,11 @@ import {
   refundLatePayment, rejectPurchase, verifyPurchase, verifySells, type FinanceDecision, type FinanceQueueItem, type LatePayment, type Payout,
 } from "../../../services/financeService";
 
-type Tab = "verify" | "plans" | "restructures" | "late" | "payouts";
+type Tab = "verify" | "plans" | "flexible" | "restructures" | "late" | "payouts";
 const TABS: { id: Tab; label: string }[] = [
   { id: "verify", label: "Awaiting verification" },
   { id: "plans", label: "Running plans" },
+  { id: "flexible", label: "Flexible plans" },
   { id: "restructures", label: "Restructures" },
   { id: "late", label: "Late payments" },
   { id: "payouts", label: "Payouts" },
@@ -58,6 +60,7 @@ export default function PortalFinance() {
   const count: Record<Tab, string | null> = {
     verify: queue.data ? String(queue.data.length) : null,
     plans: null,
+    flexible: null,
     restructures: null,
     late: late.data ? String(late.data.length) : null,
     payouts: payouts.data ? `${saleGroups(payouts.data).length} sale${saleGroups(payouts.data).length === 1 ? "" : "s"}` : null,
@@ -70,6 +73,7 @@ export default function PortalFinance() {
       <div id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
         {tab === "verify" && <VerificationQueue list={queue} />}
         {tab === "plans" && <RunningPlans />}
+        {tab === "flexible" && <FlexiblePlans />}
         {tab === "restructures" && <RestructureQueue />}
         {tab === "late" && <LatePayments list={late} />}
         {tab === "payouts" && <Payouts list={payouts} />}
@@ -119,7 +123,7 @@ function VerificationQueue({ list }: { list: UseFetchResult<FinanceQueueItem[]> 
   if (items.length === 0) return <EmptyState title="Nothing waiting for verification" description="Paid purchases appear here for you to check against Paystack's record." />;
   return (
     <div className="space-y-4">
-      <p className="text-sm text-[var(--muted-foreground)]">Check each payment against Paystack's record. A full-price payment, or a plan's last payment, sells the plot; a deposit or an instalment doesn't.</p>
+      <p className="text-sm text-[var(--muted-foreground)]">Check each payment against Paystack's record. A full-price payment, or a plan's last payment, sells the plot; a deposit, an instalment or any other plan payment doesn't.</p>
     <ul className="space-y-3">
       {items.map((item) => (
         <QueueCard key={item.transactionId} item={item} outcome={done[item.transactionId]}
@@ -156,8 +160,8 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
       </div>
 
       <div className="grid sm:grid-cols-[1fr_auto_1fr] gap-3 items-center">
-        <InfoBox label={kind === "deposit" ? "This deposit should be" : kind === "instalment" ? "This instalment should be" : kind === "balance" ? "The balance should be" : "Agreed price"}>
-          <div className="font-mono-data text-lg">{money(item.expectedAmount, item.currency)}</div>
+        <InfoBox label={kind === "deposit" ? "This deposit should be" : kind === "instalment" ? "This instalment should be" : kind === "balance" ? "The balance should be" : kind === "contribution" ? "The buyer chose to pay" : "Agreed price"}>
+          <div className="font-mono-data text-lg">{item.expectedAmount !== null ? money(item.expectedAmount, item.currency) : "Outside the plan's limits"}</div>
         </InfoBox>
         <span aria-hidden="true" className={`hidden sm:flex w-8 h-8 rounded-full items-center justify-center ${paymentOk ? "bg-[var(--success-surface)] text-[var(--success-text)]" : "bg-[var(--error-surface)] text-[var(--error-text)]"}`}>
           {paymentOk ? <CheckIcon size={16} /> : <AlertIcon size={16} />}
@@ -166,6 +170,14 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
           <div className="font-mono-data text-lg">{p ? money(p.amountPaid, p.currency) : "Nothing confirmed"}</div>
         </InfoBox>
       </div>
+      {/* A flexible plan: what's left once this is verified — the backend's figure. */}
+      {kind === "contribution" && item.remainingAfter != null && (
+        <p className="text-sm text-[var(--foreground)]">
+          {item.remainingAfter === 0
+            ? "Leaves nothing — this payment finishes the plan. Verifying sells the plot and issues the allocation letter."
+            : <>Leaves <span className="font-mono-data">{money(item.remainingAfter, item.currency)}</span> to pay. Nothing is due on this plan — the buyer pays what they like, when they like.</>}
+        </p>
+      )}
       {(item.penalties ?? []).length > 0 && (
         <div className="rounded-lg bg-[var(--muted)] px-3 py-2 text-sm space-y-0.5">
           {item.penalties!.map((pl) => (
@@ -211,16 +223,18 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
       )}
 
       {dialog === "verify" && (
-        <ConfirmDialog title={kind === "deposit" ? "Verify this deposit?" : kind === "instalment" && !sells ? "Verify this instalment?" : kind === "full_price" ? "Verify this payment?" : "Verify and sell the plot?"}
+        <ConfirmDialog title={kind === "deposit" ? "Verify this deposit?" : kind === "instalment" && !sells ? "Verify this instalment?" : kind === "contribution" && !sells ? "Verify this payment?" : kind === "full_price" ? "Verify this payment?" : "Verify and sell the plot?"}
           confirmLabel={kind === "full_price" ? "Verify and sell the plot" : verifyLabel(item)} onClose={() => setDialog(null)}
           action={() => verifyPurchase(item.transactionId)}
           onDone={(decision) => onDone(verifiedMessage(item, decision, buyer))}>
           {kind === "deposit" ? (
             <><strong>{item.plotLabel}</strong> at {item.estateName} is held for <strong>{buyer}</strong> on the {item.planName ?? "plan"}, and they get a provisional allocation letter. The plot isn't sold until the plan is paid in full.</>
+          ) : kind === "contribution" && !sells ? (
+            <>This records {item.expectedAmount !== null ? money(item.expectedAmount, item.currency) : "this payment"} as paid on {buyer}'s {item.planName ? planInSentence(item.planName).replace(/^the /, "") : "plan"}. If it's their first payment, <strong>{item.plotLabel}</strong> is then held for them on the plan and they get a provisional allocation letter. The plot isn't sold until the plan total is verified.</>
           ) : !sells ? (
-            <>This records {money(item.expectedAmount, item.currency)} as paid on {buyer}'s {item.planName ?? "plan"}. The plan carries on; the plot isn't sold yet.</>
+            <>This records {item.expectedAmount !== null ? money(item.expectedAmount, item.currency) : "this payment"} as paid on {buyer}'s {item.planName ?? "plan"}. The plan carries on; the plot isn't sold yet.</>
           ) : kind === "full_price" ? (
-            <>This sells <strong>{item.plotLabel}</strong> at {item.estateName} to <strong>{buyer}</strong> for {money(item.expectedAmount, item.currency)}. It can't be undone.</>
+            <>This sells <strong>{item.plotLabel}</strong> at {item.estateName} to <strong>{buyer}</strong> for {item.expectedAmount !== null ? money(item.expectedAmount, item.currency) : "the agreed price"}. It can't be undone.</>
           ) : (
             <>This is the last payment on the plan. Verifying sells <strong>{item.plotLabel}</strong> at {item.estateName} to <strong>{buyer}</strong> and issues their allocation letter. It can't be undone.</>
           )}
@@ -228,13 +242,17 @@ function QueueCard({ item, outcome, onDone }: { item: FinanceQueueItem; outcome?
       )}
       {dialog === "reject" && (
         <ReasonDialog title="Reject this payment?"
-          confirmLabel={kind === "instalment" || kind === "balance" ? "Reject and refund this payment" : "Reject and refund the buyer"} reasonLabel="Why are you rejecting it?"
+          confirmLabel={kind === "instalment" || kind === "balance" || kind === "contribution" ? "Reject and refund this payment" : "Reject and refund the buyer"} reasonLabel="Why are you rejecting it?"
           reasonHint="Recorded with the decision." onClose={() => setDialog(null)}
           action={(reason) => rejectPurchase(item.transactionId, reason)}
-          onDone={() => onDone(kind === "instalment" || kind === "balance"
+          onDone={() => onDone(kind === "contribution"
+            ? `Rejected — HomeTrue is refunding this payment to ${buyer}.`
+            : kind === "instalment" || kind === "balance"
             ? `Rejected — HomeTrue is refunding this payment to ${buyer}. The plan carries on.`
             : `Rejected — ${item.plotLabel} is back on sale and HomeTrue is refunding ${buyer} in full.`)}>
-          {kind === "instalment" || kind === "balance"
+          {kind === "contribution"
+            ? <>HomeTrue refunds this payment ({p ? money(p.amountPaid, p.currency) : "the payment"}). What's already verified on the plan stays; if this was the buyer's first payment, the plot goes back on sale.</>
+            : kind === "instalment" || kind === "balance"
             ? <>HomeTrue refunds only this payment ({p ? money(p.amountPaid, p.currency) : "the payment"}). The plan carries on: the buyer keeps their schedule and what's already verified.</>
             : <>The plot goes back on sale, and HomeTrue returns the buyer's {p ? money(p.amountPaid, p.currency) : "payment"} in full.</>}
         </ReasonDialog>
@@ -254,6 +272,7 @@ export function paymentForLabel(item: FinanceQueueItem): string {
       return `Instalment${of}${item.dueDate ? ` (due ${new Date(item.dueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })})` : ""}${plan}`;
     }
     case "balance": return `Balance paid off${plan}`;
+    case "contribution": return `${item.remainingAfter === 0 ? "Last payment" : "Payment"}${plan}`;
     default: return "Full price";
   }
 }
@@ -265,6 +284,7 @@ export function verifyLabel(item: FinanceQueueItem): string {
   if (item.planWithdrawn || item.planRevoked) return "Verify — release your share";
   if (kind === "full_price") return "Verify and sell";
   if (kind === "deposit") return "Verify deposit — hold plot on plan";
+  if (kind === "contribution" && !verifySells(item)) return "Verify payment";
   return verifySells(item) ? "Verify — sell plot & issue allocation letter" : "Verify instalment";
 }
 
@@ -273,6 +293,11 @@ export function verifyLabel(item: FinanceQueueItem): string {
 function verifiedMessage(item: FinanceQueueItem, decision: FinanceDecision, buyer: string): string {
   if (decision.status === "withdrawn" || decision.status === "revoked") return "Verified. Only your share of this payment is released for payout; the buyer's part is returned to them.";
   if (decision.status === "on_plan") {
+    if (item.paymentFor === "contribution") {
+      return decision.allocationLetterNumber
+        ? `Payment verified. ${item.plotLabel} is held for ${buyer} on the plan; provisional allocation letter ${decision.allocationLetterNumber} issued.`
+        : "Payment verified. The plan carries on.";
+    }
     if (item.paymentFor === "deposit") {
       return `Deposit verified. ${item.plotLabel} is held for ${buyer} on the plan${decision.allocationLetterNumber ? `; provisional allocation letter ${decision.allocationLetterNumber} issued` : ""}.`;
     }

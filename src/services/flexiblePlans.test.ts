@@ -181,3 +181,18 @@ describe("paying again on a flexible plan", () => {
     expect(calls).toEqual(["POST /api/transactions/x1/payments?balance=true"]);
   });
 });
+
+describe("the developer's side of a flexible plan", () => {
+  it("a contribution sells the plot only when it leaves nothing to pay", async () => {
+    const { verifySells } = await import("./financeService");
+    const row = (remainingAfter: number | null) => ({ paymentFor: "contribution" as const, remainingAfter }) as Parameters<typeof verifySells>[0];
+    expect([verifySells(row(14_000_000)), verifySells(row(0)), verifySells(row(null))]).toEqual([false, true, false]);
+  });
+
+  it("reads the Flexible plans list", async () => {
+    respond({ "GET /api/portal/finance/flexible-plans": [] });
+    const { fetchFlexiblePlans } = await import("./planService");
+    expect(await fetchFlexiblePlans()).toEqual([]);
+    expect(calls).toEqual(["/api/portal/finance/flexible-plans"]);
+  });
+});

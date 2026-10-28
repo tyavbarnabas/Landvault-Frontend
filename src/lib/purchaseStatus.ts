@@ -176,7 +176,10 @@ export function purchaseBadge(p: Purchase): { label: string; tone: PurchaseTone 
     case "verifying": return { label: p.schedule ? "Deposit being verified" : p.flexible ? "First payment being verified" : "Being verified", tone: "info", note: p.payment?.receiptNumber ? `Receipt ${p.payment.receiptNumber}` : null };
     case "on_plan": {
       // Where the plan stands today (phase 4–5), as the Figma title chip shows it.
-      if (p.flexible) return { label: "On flexible plan", tone: "info", note: p.flexible.planName };
+      if (p.flexible) {
+        if (p.flexibleStanding?.notice) return { label: "Notice to end your plan", tone: "warning", note: p.flexible.planName };
+        return { label: "On flexible plan", tone: "info", note: p.flexible.planName };
+      }
       const st = p.standing;
       if (st?.revocation?.notice) return { label: "Notice of revocation", tone: "warning", note: p.schedule?.planName ?? null };
       if (st?.status === "in_arrears") return { label: "In arrears", tone: "warning", note: p.schedule?.planName ?? null };

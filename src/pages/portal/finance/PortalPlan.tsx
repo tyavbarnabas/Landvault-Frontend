@@ -17,10 +17,10 @@ import { formatDay } from "../../../lib/formatDate";
 import { ApiError } from "../../../lib/apiClient";
 import { PLANS_REVOKE_PERMISSION } from "../../../services/authService";
 import {
-  PLAN_STATUS_BADGE, WAIVER_REASON_MAX, cancelNotice, checkWaiver, confirmRevocation, fetchPenaltyWaivers, fetchPlanRestructures,
+  PLAN_STATUS_BADGE, WAIVER_REASON_MAX, cancelNotice, checkWaiver, confirmRevocation, fetchFlexiblePlans, fetchPenaltyWaivers, fetchPlanRestructures,
   fetchRevocation, fetchRunningPlan, giveNotice, planErrorCode, planErrorMessage, previewRestructure, proposeRestructure,
   rejectRestructure, scheduleLines, waivePenalty, withdrawProposal,
-  type PenaltyWaivers, type RunningPlan, type PlanRestructures, type PlanRevocation, type Proposal, type ProposalTerms, type WaivablePenalty,
+  type FlexiblePlanRow, type PenaltyWaivers, type RunningPlan, type PlanRestructures, type PlanRevocation, type Proposal, type ProposalTerms, type WaivablePenalty,
 } from "../../../services/planService";
 import Page, { Loading } from "../../../components/ui/Page";
 import Card, { InfoBox } from "../../../components/ui/Card";
@@ -31,6 +31,7 @@ import Dialog, { DialogActions } from "../../../components/ui/Dialog";
 import DisclosureTable, { TableRow } from "../../../components/ui/DisclosureTable";
 import { ErrorText, Field, Input, Select, Textarea } from "../../../components/ui/Field";
 import LoadError from "../../../components/LoadError";
+import { planInSentence } from "../../../services/paymentPlansService";
 
 export default function PortalPlan() {
   const { id } = useParams<{ id: string }>();
@@ -47,8 +48,13 @@ export default function PortalPlan() {
   const [revision, setRevision] = useState(0);
   const revocationChanged = () => { plans.refetch(); setRsOver(null); restructures.refetch(); setRevision((n) => n + 1); };
   const back = { to: "/portal/finance?tab=plans", label: "Running plans" };
+  // A flexible plan isn't a running instalment plan (that route answers 404):
+  // its row in Finance › Flexible plans says where it stands.
+  const flexibles = useFetch(() => fetchFlexiblePlans(), [id]);
+  const flexRow = flexibles.data?.find((r) => r.transactionId === id) ?? null;
 
-  if (plans.loading && !plans.data) return <Page title="Plan" back={back}><Loading /></Page>;
+  if ((plans.loading && !plans.data) || (flexibles.loading && !flexibles.data)) return <Page title="Plan" back={back}><Loading /></Page>;
+  if (!plans.data && flexRow) return <FlexiblePlanView row={flexRow} mayRevoke={mayRevoke} onChanged={flexibles.refetch} />;
   if (plans.error) return <LoadError error={plans.errorValue} what="this plan" onRetry={plans.refetch} />;
   const money = (n: number) => formatMoney(n, plan?.currency ?? "NGN");
   const chip = plan ? PLAN_STATUS_BADGE[plan.status] : null;
@@ -81,6 +87,41 @@ export default function PortalPlan() {
           {plan?.instalments && <CurrentSchedule plan={plan} />}
         </div>
         {mayRevoke && <RevocationSection id={id!} onChanged={revocationChanged} />}
+      </div>
+    </Page>
+  );
+}
+
+// ─── A flexible plan (Figma "Flexible plans" › plan page) ────────────────────
+//
+// What's paid, what's left, when the buyer last paid and the date to finish
+// by — then, for the Executive Director, giving notice on a quiet plan or one
+// past its finish date, withdrawing it, and ending the plan after it runs out.
+
+function FlexiblePlanView({ row, mayRevoke, onChanged }: { row: FlexiblePlanRow; mayRevoke: boolean; onChanged: () => void }) {
+  const s = row.standing;
+  const money = (n: number) => formatMoney(n, row.currency);
+  const pastFinish = s.noticeReason === "finish_by" || s.notice?.trigger === "finish_by";
+  const quiet = !pastFinish && (s.noticeReason === "inactivity" || s.notice?.trigger === "inactivity");
+  return (
+    <Page width="xl" back={{ to: "/portal/finance?tab=flexible", label: "Flexible plans" }} eyebrow={row.transactionReference}
+      title={<span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">{row.plotLabel}<span className="font-[family-name:var(--font-body)] inline-flex gap-1.5">
+        {pastFinish ? <Badge label="Past its finish date" variant="warning" /> : quiet ? <Badge label="Quiet" variant="warning" /> : <Badge label="Paying" variant="success" />}
+        {s.notice ? <Badge label="Notice running" variant="neutral" /> : s.noticeReason ? <Badge label="Can give notice" variant="neutral" /> : null}
+      </span></span>}
+      description={[row.estateName, row.buyerEmail, planInSentence(row.planName).replace(/^the /, "")].filter(Boolean).join(" · ")}>
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <InfoBox label="Paid"><div className="font-mono-data">{money(s.paid)} <span className="text-xs text-[var(--muted-foreground)]">of {money(row.planTotal)}</span></div></InfoBox>
+          <InfoBox label="Left to pay"><div className="font-mono-data">{money(s.remaining)}</div></InfoBox>
+          <InfoBox label="Last payment"><div>{s.lastPaymentOn ? formatDay(s.lastPaymentOn) : "None yet"}</div></InfoBox>
+          <InfoBox label="Finish by"><div>{s.finishBy ? `${formatDay(s.finishBy)}${pastFinish ? " · passed" : ""}` : "No date"}</div></InfoBox>
+        </div>
+        {s.awaitingFinance !== null && (
+          <Alert tone="info" role="status"><span className="font-mono-data">{money(s.awaitingFinance)}</span> from the buyer is waiting for your verification in Finance › Awaiting verification.</Alert>
+        )}
+        {mayRevoke ? <RevocationSection id={row.transactionId} onChanged={onChanged} />
+          : <Alert tone="neutral">Only the Executive Director can give notice on a plan or end it.</Alert>}
       </div>
     </Page>
   );
@@ -152,6 +193,8 @@ function PenaltiesSection({ id, onChanged }: { id: string; onChanged: () => void
     if (planErrorCode(loaded.errorValue) === "NOT_IN_DEMO") {
       return <Card as="section" className="space-y-2"><h2 className="font-semibold text-[var(--foreground)]">Late-payment penalties</h2><Alert tone="info">{planErrorMessage(loaded.errorValue)}</Alert></Card>;
     }
+    // A plan with no penalties at all (a flexible plan) has no waivers route.
+    if (loaded.errorValue instanceof ApiError && loaded.errorValue.status === 404) return null;
     return <LoadError error={loaded.errorValue} what="penalties" onRetry={loaded.refetch} />;
   }
   const w = over ?? loaded.data;
@@ -457,6 +500,13 @@ function RevocationSection({ id, onChanged }: { id: string; onChanged: () => voi
   const today = new Date().toISOString().slice(0, 10);
   const confirmable = !!notice && today >= notice.confirmableFrom;
   const done = (next: PlanRevocation) => { setOver(next); setReason(""); loaded.refetch(); onChanged(); };
+  // A flexible plan: nothing is ever overdue; notice is for a quiet plan or one
+  // past its finish date, and ending it returns exactly what leaving does.
+  const fx = rv.flexible ?? null;
+  const fxFinish = notice?.trigger === "finish_by" || (!notice && fx?.noticeReason === "finish_by");
+  // The backend keeps noticeReason set while a notice runs: offer notice only without one.
+  const canGive = rv.status === "on_plan" && !rv.notice && (fx ? !!fx.noticeReason : rv.revocableNow);
+  const words = fx ? FLEXIBLE_NOTICE_WORDS : NOTICE_WORDS;
 
   const give = async () => {
     if (!reason.trim()) { setError("Give a reason — the buyer reads it."); return; }
@@ -473,58 +523,73 @@ function RevocationSection({ id, onChanged }: { id: string; onChanged: () => voi
 
   return (
     <Card as="section" aria-labelledby="revocation-heading" className="space-y-4">
-      <h2 id="revocation-heading" className="font-semibold text-[var(--foreground)]">Revocation</h2>
-      <p className="text-sm text-[var(--foreground)]">
-        Under the terms on this purchase, a plan can be revoked once an instalment is {rv.afterMonthsUnpaid} months unpaid, after {rv.noticeDays} days' written notice.
-        {rv.status === "revoked" ? " This plan was revoked." : rv.notice ? "" : rv.revocableNow ? " You can give notice now." : rv.revocableFrom ? ` If nothing is paid, that's from ${formatDay(rv.revocableFrom)}.` : " Nothing is late enough for that."}
-      </p>
+      <h2 id="revocation-heading" className="font-semibold text-[var(--foreground)]">{fx ? "Ending the plan" : "Revocation"}</h2>
+      {fx ? (
+        <p className="text-sm text-[var(--foreground)]">
+          Under the terms on this purchase you may give {rv.noticeDays} days' written notice when nothing has been paid for {rv.afterMonthsUnpaid} months{fx.finishBy ? `, or the plan isn't finished by ${formatDay(fx.finishBy)}` : ""}.
+          {rv.status === "revoked" ? " This plan was ended." : rv.notice ? "" : fx.noticeReason === "finish_by" ? " This plan passed its finish date, so you can give notice now. Only finishing the plan ends this notice."
+            : fx.noticeReason === "inactivity" ? ` Nothing has been paid${fx.lastPaymentOn ? ` since ${formatDay(fx.lastPaymentOn)}` : ""}, so you can give notice now.`
+            : fx.quietFrom ? ` If nothing is paid, that's from ${formatDay(fx.quietFrom)}.` : ""}
+        </p>
+      ) : (
+        <p className="text-sm text-[var(--foreground)]">
+          Under the terms on this purchase, a plan can be revoked once an instalment is {rv.afterMonthsUnpaid} months unpaid, after {rv.noticeDays} days' written notice.
+          {rv.status === "revoked" ? " This plan was revoked." : rv.notice ? "" : rv.revocableNow ? " You can give notice now." : rv.revocableFrom ? ` If nothing is paid, that's from ${formatDay(rv.revocableFrom)}.` : " Nothing is late enough for that."}
+        </p>
+      )}
       {s && (
         <dl className="rounded-lg bg-[var(--muted)] p-3.5 text-sm space-y-1.5">
-          <div className="font-semibold text-[var(--foreground)] mb-1">{rv.status === "revoked" ? "What was settled" : "What revoking now would mean"}</div>
+          <div className="font-semibold text-[var(--foreground)] mb-1">{rv.status === "revoked" ? "What was settled" : fx ? "What ending it now would mean" : "What revoking now would mean"}</div>
           <Row label="The buyer has paid" value={money(s.paid)} />
           <Row label="Refunded to the buyer" value={money(s.refund)} />
           <Row label="You keep" value={money(s.developerKeeps)} />
-          <p className="text-xs text-[var(--muted-foreground)]">Exactly what withdrawing returns. The plot goes back on sale.</p>
+          <p className="text-xs text-[var(--muted-foreground)]">{fx
+            ? "Exactly what leaving returns. The plot goes back on sale; if HomeTrue sells it for more than the buyer's price, they get their share of the difference from your payout."
+            : "Exactly what withdrawing returns. The plot goes back on sale."}</p>
         </dl>
       )}
 
       {notice ? (
         <>
           <Alert tone="warning" title="Notice running" role="status">
-            Given {formatDay(notice.givenAt)} · deadline {formatDay(notice.deadline)}. You can confirm from {formatDay(notice.confirmableFrom)} if the buyer is still {rv.afterMonthsUnpaid} months behind.
+            {fx
+              ? <>Given {formatDay(notice.givenAt)} ({fxFinish ? "past its finish date" : `no payment for ${rv.afterMonthsUnpaid} months`}) · deadline {formatDay(notice.deadline)}. You can end the plan from {formatDay(notice.confirmableFrom)} {fxFinish ? "if it still isn't finished" : "if nothing has been paid by then"}.</>
+              : <>Given {formatDay(notice.givenAt)} · deadline {formatDay(notice.deadline)}. You can confirm from {formatDay(notice.confirmableFrom)} if the buyer is still {rv.afterMonthsUnpaid} months behind.</>}
             <div className="mt-1">“{notice.reason}”</div>
           </Alert>
           {error && <ErrorText>{error}</ErrorText>}
           <div className="flex flex-col sm:flex-row gap-3">
-            <Button onClick={() => setConfirming(true)} disabled={!confirmable}>Confirm revocation</Button>
+            <Button onClick={() => setConfirming(true)} disabled={!confirmable}>{fx ? "End the plan" : "Confirm revocation"}</Button>
             <Button variant="secondary" onClick={() => setCancelling(true)}>Withdraw the notice</Button>
           </div>
         </>
-      ) : rv.revocableNow && rv.status === "on_plan" ? (
+      ) : canGive ? (
         <>
           <Field id="rv-reason" label="Reason (the buyer reads this)">
             <Textarea id="rv-reason" rows={3} maxLength={1000} value={reason} onChange={(e) => setReason(e.target.value)} />
           </Field>
           {error && <ErrorText>{error}</ErrorText>}
           <Button onClick={give} disabled={busy}>{busy ? "Giving notice…" : `Give ${rv.noticeDays} days' notice`}</Button>
-          <p className="text-xs text-[var(--muted-foreground)]">The buyer is emailed the reason, what's overdue, the deadline and what a revocation would return. Paying what's overdue before the deadline ends the notice. Nothing else changes now.</p>
+          <p className="text-xs text-[var(--muted-foreground)]">{fx
+            ? `The buyer is emailed the reason, the deadline and what ending the plan would return. ${fxFinish ? "A smaller payment doesn't end this notice — only paying what's left does." : "Any payment you verify before the deadline ends the notice."} Nothing else changes now.`
+            : "The buyer is emailed the reason, what's overdue, the deadline and what a revocation would return. Paying what's overdue before the deadline ends the notice. Nothing else changes now."}</p>
         </>
       ) : null}
 
       {rv.history.length > 0 && (
         <ul className="text-xs text-[var(--muted-foreground)] space-y-1 border-t border-[var(--border)] pt-3">
           {rv.history.map((n) => (
-            <li key={n.id}>{formatDay(n.closedAt ?? n.givenAt)} · {NOTICE_WORDS[n.status] ?? n.status}{n.closeNote ? ` — “${n.closeNote}”` : ""}</li>
+            <li key={n.id}>{formatDay(n.closedAt ?? n.givenAt)} · {words[n.status] ?? n.status}{n.closeNote ? ` — “${n.closeNote}”` : ""}</li>
           ))}
         </ul>
       )}
 
       {confirming && (
-        <Dialog title="Revoke this plan?" onClose={() => setConfirming(false)}>
+        <Dialog title={fx ? "End this plan?" : "Revoke this plan?"} onClose={() => setConfirming(false)}>
           <p className="text-sm text-[var(--muted-foreground)] mb-3">
-            This ends the buyer's plan and puts the plot back on sale.{s ? ` The buyer is refunded ${money(s.refund)} — exactly what withdrawing returns.` : ""} It can't be undone.
+            This ends the buyer's plan and puts the plot back on sale.{s ? ` The buyer is refunded ${money(s.refund)} — exactly what ${fx ? "leaving" : "withdrawing"} returns${fx ? ", and is told about any share if HomeTrue later sells it for more" : ""}.` : ""} It can't be undone.
           </p>
-          <DialogActions onCancel={() => setConfirming(false)} variant="danger" confirmLabel="Revoke the plan"
+          <DialogActions onCancel={() => setConfirming(false)} variant="danger" confirmLabel={fx ? "End the plan" : "Revoke the plan"}
             onConfirm={async () => { try { done(await confirmRevocation(id)); setConfirming(false); } catch (err) { setError(planErrorMessage(err)); setConfirming(false); } }} />
         </Dialog>
       )}
@@ -535,6 +600,11 @@ function RevocationSection({ id, onChanged }: { id: string; onChanged: () => voi
     </Card>
   );
 }
+
+const FLEXIBLE_NOTICE_WORDS: Record<string, string> = {
+  notice: "Notice running", cancelled: "Withdrawn by you", cleared: "Cleared",
+  withdrawn: "Ended — the buyer left the plan", revoked: "Ended by you",
+};
 
 const NOTICE_WORDS: Record<string, string> = {
   notice: "Notice running", cancelled: "Withdrawn by you", cleared: "Cleared — the buyer is no longer behind",

@@ -32,7 +32,8 @@ export interface FinanceQueueItem {
   plotId: string;
   plotLabel: string;
   buyerEmail: string | null;
-  expectedAmount: number;
+  // What this payment should be. Null on a flexible plan's payment outside its limits.
+  expectedAmount: number | null;
   currency: string;
   awaitingSince: string;
   payment: GatewayRecord | null;
@@ -63,15 +64,21 @@ export interface FinanceQueueItem {
   // only the developer's share; rejecting returns it to the buyer too.
   planWithdrawn?: boolean;
   planRevoked?: boolean;
+  // A flexible plan's payment ("contribution"): what's left on the plan once
+  // it's verified. Null when the amount is outside the plan's limits — then
+  // `expectedAmount` is null too and verify is never offered.
+  remainingAfter?: number | null;
 }
 
-export type PaymentFor = "full_price" | "deposit" | "instalment" | "balance";
+// "contribution": a payment of the buyer's own amount on a flexible plan.
+export type PaymentFor = "full_price" | "deposit" | "instalment" | "balance" | "contribution";
 
 // Verifying this payment sells the plot: a full-price payment, a plan's last
 // instalment, or a balance paid off. Never a deposit.
 export function verifySells(item: FinanceQueueItem): boolean {
   const kind = item.paymentFor ?? "full_price";
   if (kind === "full_price" || kind === "balance") return true;
+  if (kind === "contribution") return item.remainingAfter === 0;
   return kind === "instalment" && item.instalmentSequence != null && item.instalmentSequence === item.instalmentCount;
 }
 
