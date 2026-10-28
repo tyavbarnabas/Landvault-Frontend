@@ -10,6 +10,7 @@
 // footer (it used to have neither), one outcome per card with an icon, the
 // amount and reference, and the purchase page's own timeline.
 
+import { planInSentence } from "../../services/paymentPlansService";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { formatMoney } from "../../lib/formatCurrency";
@@ -156,10 +157,15 @@ function Outcome({ payment, bought, polling, gaveUp, onCheckAgain }: {
       // (on_plan), or a full-price payment. Never "before the plot is
       // allocated" for a deposit.
       const plan = bought?.purchase.schedule ? bought.purchase : null;
+      const flexible = bought?.purchase.flexible ? bought.purchase : null;
       const deposit = !!plan && (plan.status === "awaiting_finance" || plan.status === "payment_received");
-      const instalment = plan?.status === "on_plan";
-      const title = deposit ? "Deposit received — awaiting verification" : instalment ? "Payment received — awaiting verification" : "Payment received";
-      const body = deposit
+      const instalment = plan?.status === "on_plan" || flexible?.status === "on_plan";
+      // A flexible plan's first payment, verified, holds the plot on the plan — never "allocated".
+      const firstFlexible = !!flexible && (flexible.status === "awaiting_finance" || flexible.status === "payment_received");
+      const title = deposit || firstFlexible || instalment ? `${deposit ? "Deposit" : "Payment"} received — awaiting verification` : "Payment received";
+      const body = firstFlexible
+        ? `Paystack confirmed ${amount}, your first payment on ${planInSentence(flexible!.flexible!.planName)}${forWhat}. Once the developer's finance team verifies it, the plot is held for you on the plan and you'll get a provisional allocation letter.`
+        : deposit
         ? `Paystack confirmed ${amount}, the deposit on your ${plan!.schedule!.planName}${forWhat}. Once the developer's finance team verifies it, the plot is held for you on your plan and you'll get a provisional allocation letter.`
         : instalment
           ? `Paystack confirmed ${amount}${forWhat}. It counts towards your plan once the developer's finance team verifies it.`
@@ -186,7 +192,10 @@ function Outcome({ payment, bought, polling, gaveUp, onCheckAgain }: {
       return (
         <Status tone="error" icon={<AlertIcon size={22} />} title="Your payment didn't go through"
           body={`${payment.gatewayResponse ? `Paystack said: “${payment.gatewayResponse}”. ` : ""}Nothing was taken.`}
-          actions={<><PayButton transactionId={payment.transactionId} label="Pay again" />{purchaseLink("secondary")}</>} />
+          actions={bought?.purchase.flexible
+            // A flexible plan's payment is the buyer's own amount, chosen on the purchase page.
+            ? <><LinkButton to={`/purchases/${payment.transactionId}`}>Choose an amount and pay again</LinkButton>{back}</>
+            : <><PayButton transactionId={payment.transactionId} label="Pay again" />{purchaseLink("secondary")}</>} />
       );
     case "mismatched":
       return (

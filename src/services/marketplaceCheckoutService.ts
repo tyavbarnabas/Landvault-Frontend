@@ -28,7 +28,7 @@ import { addOwnedPlot, confirmOwnedPayments, updateOwnedPlotStatus } from "./por
 import { addDocuments } from "./documentsService";
 import { convertReservation } from "./reservationService";
 import { mockAddressFor, type Address, type PurchaseAddress } from "./addressService";
-import { mockSchedule, type PlanFrequency } from "./paymentPlansService";
+import { mockSchedule, type PlanFrequency, type PurchaseFlexible } from "./paymentPlansService";
 
 export type MarketplacePaymentMethod = "paystack" | "monnify" | "opay" | "titan" | "virtual_account" | "wire";
 
@@ -114,9 +114,11 @@ export interface Transaction {
   tierId: string;
   intent: "development" | "investment";
   plan: PaymentPlanType;
-  // The declared plan chosen (instalments only), and its fixed schedule.
+  // The declared plan chosen, and its fixed schedule (instalments) or terms
+  // (flexible). Both null when paying in full.
   planId?: string;
   schedule: PlanSchedule | null;
+  flexible: PurchaseFlexible | null;
   currency: Currency;
   fxRateLocked?: number;
   amountDue: number;
@@ -151,8 +153,8 @@ export interface InitiateTransactionInput {
   tierId: string;
   intent: "development" | "investment";
   plan: PaymentPlanType;
-  // The listing's plan id (priceTiers[].paymentPlans[].planId), for
-  // plan "installment". Never a number of months: the plan decides that.
+  // The listing's plan id (priceTiers[].paymentPlans[].planId), for plan
+  // "installment" or "flexible". Never a number of months: the plan decides that.
   planId?: string;
   currency: Currency;
   // What's due first — the price, or the plan's deposit. Display only.
@@ -195,6 +197,7 @@ interface TransactionDto {
   buyerAddress: PurchaseAddress | null;
   offer?: OfferSummary | null;
   schedule?: PlanSchedule | null;
+  flexible?: PurchaseFlexible | null;
 }
 
 // The screen's display fields (estate name, plot label, location…) are kept
@@ -217,21 +220,23 @@ function fromTransactionDto(dto: TransactionDto, { buyer: _buyer, ...shown }: In
     buyerAddress: dto.buyerAddress ?? null,
     offer: dto.offer ?? null,
     schedule: dto.schedule ?? null,
-    // The first payment is the schedule's deposit, never a figure from the page.
-    amountDue: dto.schedule ? dto.schedule.deposit : dto.totalPrice,
+    flexible: dto.flexible ?? null,
+    // The first payment is the schedule's deposit, or at least a flexible
+    // plan's minimum to start — never a figure from the page.
+    amountDue: dto.schedule ? dto.schedule.deposit : dto.flexible ? dto.flexible.minimumToStart : dto.totalPrice,
   };
 }
 
 export async function initiateTransaction(input: InitiateTransactionInput): Promise<Transaction> {
   if (!isMock("checkout")) {
-    // CreateTransactionRequest: { reservationId, intent, plan, planId (plan
-    // "installment" only) }. Nothing else — prices are the backend's, and
-    // installmentMonths is refused (400 INVALID_PAYMENT_PLAN).
+    // CreateTransactionRequest: { reservationId, intent, plan, planId (plans
+    // "installment" and "flexible") }. Nothing else — prices are the
+    // backend's, and installmentMonths is refused (400 INVALID_PAYMENT_PLAN).
     const dto = await apiClient.post<TransactionDto>("/api/checkout/transactions", {
       reservationId: input.reservationId,
       intent: input.intent,
       plan: input.plan,
-      ...(input.plan === "installment" ? { planId: input.planId } : {}),
+      ...(input.plan === "installment" || input.plan === "flexible" ? { planId: input.planId } : {}),
     });
     return fromTransactionDto(dto, input);
   }
@@ -242,6 +247,8 @@ export async function initiateTransaction(input: InitiateTransactionInput): Prom
   const address = mockAddressFor(buyer.email) ?? buyer.address ?? null;
   if (!address) throw new ApiError(409, "Add your address before buying.", { code: "ADDRESS_REQUIRED" });
   // 409 PLAN_NOT_OFFERED: the developer changed the plans since the listing loaded.
+  // Demo listings offer no flexible plans, so demo mode never opens one.
+  if (input.plan === "flexible") throw new ApiError(409, "This estate doesn't offer that plan any more.", { code: "PLAN_NOT_OFFERED" });
   let schedule: PlanSchedule | null = null;
   if (input.plan === "installment") {
     schedule = input.planId ? mockSchedule(input.listingId, input.planId, input.totalPrice) : null;
@@ -259,6 +266,7 @@ export async function initiateTransaction(input: InitiateTransactionInput): Prom
     createdAt: new Date().toISOString(),
     offer: null,
     schedule,
+    flexible: null,
     amountDue: schedule ? schedule.deposit : input.totalPrice,
   };
   // The developer's offer, issued as the purchase opens. Demo documents have

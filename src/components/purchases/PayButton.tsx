@@ -34,8 +34,10 @@ export function goToPaystack(url: string, navigate: NavigateFunction): void {
   else window.location.assign(url);
 }
 
-export default function PayButton({ transactionId, label, busy, onBusy, onOfferNotAccepted, disabled, note = true, onRefused }: {
+export default function PayButton({ transactionId, label, amount, busy, onBusy, onOfferNotAccepted, disabled, note = true, onRefused }: {
   transactionId: string;
+  // A flexible plan's payment: the amount the buyer chose. Otherwise the backend charges what's due.
+  amount?: number;
   label: string;
   busy?: boolean;
   onBusy?: (busy: boolean) => void;
@@ -57,7 +59,7 @@ export default function PayButton({ transactionId, label, busy, onBusy, onOfferN
     setLocalBusy(true);
     onBusy?.(true);
     try {
-      const payment = await startPayment(transactionId);
+      const payment = await startPayment(transactionId, amount !== undefined ? { amount } : {});
       // Leave for Paystack. Nothing is "paid" until the return page verifies.
       goToPaystack(payment.authorizationUrl, navigate);
     } catch (err) {

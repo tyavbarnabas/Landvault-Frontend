@@ -47,7 +47,7 @@ export type { PriceTier, TierAvailability };
 
 export type TitleType = "C of O" | "R of O" | "Governor's Consent" | "Gazette";
 export type ListingTitleStatus = "pending" | "verified" | "rejected";
-export type PaymentPlanType = "outright" | "installment" | "milestone";
+export type PaymentPlanType = "outright" | "installment" | "flexible" | "milestone";
 export type ListingIntent = "development" | "investment" | "both";
 
 // SellerDto. `branchName` is null for a company-level estate, which has no

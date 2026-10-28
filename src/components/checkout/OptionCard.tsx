@@ -10,7 +10,7 @@ interface OptionCardProps {
   checked: boolean;
   onSelect: () => void;
   icon: React.ReactNode;
-  title: string;
+  title: React.ReactNode;
   description: React.ReactNode;
   disabled?: boolean;
   // A figure on the right (a plan's total), above the radio mark.

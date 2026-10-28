@@ -14,6 +14,7 @@ import { isMock } from "../lib/backends";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import type { PaymentPlanType } from "./marketplaceService";
 import { mockTransactionStore, type OfferSummary, type PlanSchedule, type Transaction, type TransactionStatus } from "./marketplaceCheckoutService";
+import type { PurchaseFlexible } from "./paymentPlansService";
 import { addDocuments } from "./documentsService";
 import { confirmOwnedPayments, fetchOwnedPlotById, recordOwnedPayment, updateOwnedPlotStatus } from "./portfolioService";
 import type { PaymentStatus, RefundStatus } from "./paymentTypes";
@@ -65,6 +66,8 @@ export interface Purchase {
   offer: OfferSummary | null;
   // An instalment purchase's fixed plan; null for outright.
   schedule: PlanSchedule | null;
+  // A flexible purchase's fixed terms (no schedule); absent or null otherwise.
+  flexible?: PurchaseFlexible | null;
   // Where a running plan stands today (phase 4), worked out by the backend
   // on every read. Absent before a plan runs and in demo mode.
   standing?: PlanStanding | null;
@@ -118,13 +121,15 @@ export async function fetchMyPurchases(params: PageParams = {}): Promise<Page<Pu
 
 // Start (or resume) paying. It charges whatever is due NOW: the price, a
 // plan's deposit, its next instalment — or with `balance`, everything still
-// owed on the plan in one payment (no discount). The amount is the backend's
-// (`amount`). 201 = a new Paystack link; 200 = the one from the last 30
+// owed on the plan in one payment (no discount). On a flexible plan the buyer
+// chooses `amount`, the one figure ever sent; the backend checks it
+// (INVALID_AMOUNT). The amount charged is the backend's (`amount`). 201 = a new Paystack link; 200 = the one from the last 30
 // minutes, handed back — treated the same. Send the browser to
 // `authorizationUrl` next.
-export async function startPayment(transactionId: string, options: { balance?: boolean } = {}): Promise<Payment> {
+export async function startPayment(transactionId: string, options: { balance?: boolean; amount?: number } = {}): Promise<Payment> {
   if (!isMock("checkout")) {
-    return apiClient.post<Payment>(`/api/transactions/${transactionId}/payments${options.balance ? "?balance=true" : ""}`);
+    const query = options.balance ? "?balance=true" : options.amount !== undefined ? `?amount=${encodeURIComponent(String(options.amount))}` : "";
+    return apiClient.post<Payment>(`/api/transactions/${transactionId}/payments${query}`);
   }
 
   const txn = mockTransactionStore().get(transactionId);

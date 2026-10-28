@@ -7,6 +7,7 @@ import { useState } from "react";
 import { formatInCurrency } from "../../data/mockData";
 import { formatDayTime } from "../../lib/formatDate";
 import type { OfferSummary, PlanSchedule } from "../../services/marketplaceCheckoutService";
+import { planInSentence, type PurchaseFlexible } from "../../services/paymentPlansService";
 import { formatMoney } from "../../lib/formatCurrency";
 import { acceptOffer, offerErrorCode } from "../../services/offerLetterService";
 import Card, { InfoBox } from "../ui/Card";
@@ -25,12 +26,14 @@ const MEANS: [React.ReactNode, string, string][] = [
   [<LockIcon key="l" size={16} />, "Pay only through HomeTrue.", "Never to a bank account in a letter, an email or a message."],
 ];
 
-export default function OfferStep({ offer, transactionId, price, schedule = null, plot, notAccepted, onAccepted, onContinue }: {
+export default function OfferStep({ offer, transactionId, price, schedule = null, flexible = null, plot, notAccepted, onAccepted, onContinue }: {
   offer: OfferSummary;
   transactionId: string;
   price: number;
   // An instalment purchase's plan: the offer states it in full.
   schedule?: PlanSchedule | null;
+  // A flexible purchase's terms: the offer states them too.
+  flexible?: PurchaseFlexible | null;
   plot: string;
   // Pay was pressed before accepting (409 OFFER_NOT_ACCEPTED).
   notAccepted?: boolean;
@@ -83,7 +86,9 @@ export default function OfferStep({ offer, transactionId, price, schedule = null
           </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          {schedule
+          {flexible
+            ? <InfoBox label={`${flexible.planName} · plan total`}><div className="font-mono-data text-lg text-[var(--foreground)]">{formatMoney(flexible.planTotal, "NGN")}</div></InfoBox>
+            : schedule
             ? <InfoBox label={`${schedule.planName} · plan total`}><div className="font-mono-data text-lg text-[var(--foreground)]">{formatMoney(schedule.planTotal, "NGN")}</div></InfoBox>
             : <InfoBox label="Price in the offer"><div className="font-mono-data text-lg text-[var(--foreground)]">{formatInCurrency(price, "NGN")}</div></InfoBox>}
           <InfoBox label="Plot"><div className="font-medium text-[var(--foreground)]">{plot}</div></InfoBox>
@@ -91,6 +96,7 @@ export default function OfferStep({ offer, transactionId, price, schedule = null
         <p className="text-sm text-[var(--muted-foreground)]">
           The letter sets out the price in figures and words, the full commitment, and every fee, condition, refund and default term the developer declared.
           {schedule ? ` For your ${schedule.planName} it also sets out the deposit (${formatMoney(schedule.deposit, "NGN")}), every instalment and its due date, and what a late instalment costs.` : ""}
+          {flexible ? ` For ${planInSentence(flexible.planName)} it also sets out the minimum to start (${formatMoney(flexible.minimumToStart, "NGN")}), what you'd get back if you leave, your share if HomeTrue later sells the plot for more, and when a quiet plan may be ended.` : ""}
         </p>
         <OfferDownloads offer={offer} />
       </Card>

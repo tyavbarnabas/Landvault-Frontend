@@ -113,3 +113,50 @@ describe("declaring flexible plans in the portal", () => {
     expect(q).toEqual(QUOTE);
   });
 });
+
+// The purchase's fixed flexible terms, as Lugbe's plan opens them.
+const TERMS = { planId: "pl2", planName: "Pay as you can", planTotal: 16_500_000, premium: 1_500_000, minimumToStart: 1_500_000, minimumContribution: 100_000,
+  exitDeductionPct: 20, exitAppliesTo: "amount_paid" as const, developerGainSharePct: 60, inactivityMonths: 6, noticeDays: 30, maxMonths: 24, finishBy: "2028-10-28" };
+
+describe("buying on a flexible plan", () => {
+  it("opens the purchase naming the flexible plan, and takes the minimum to start as what's first due", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit = {}) => {
+      calls.push(`${init.method ?? "GET"} ${url.replace("http://api.test", "")} ${init.body ?? ""}`);
+      return new Response(JSON.stringify({ id: "x1", reference: "LV-1", estateId: "e1", plotId: "p1", reservationId: "r1", basePrice: 15_000_000, cornerPremiumPct: null,
+        totalPrice: 15_000_000, intent: "development", plan: "flexible", status: "pending_payment", createdAt: "2026-10-28T12:00:00Z", buyerAddress: null,
+        offer: null, schedule: null, flexible: TERMS }), { status: 201 });
+    }));
+    const { initiateTransaction } = await import("./marketplaceCheckoutService");
+    const txn = await initiateTransaction({ listingId: "e1", listingName: "Lugbe", plotId: "p1", plotLabel: "Block B, Plot 10", sizeSqm: 250, actualAreaSqm: 250, isCorner: false,
+      basePrice: 15_000_000, titleType: "", location: "", reservationId: "r1", tierId: "t1", intent: "development", plan: "flexible", planId: "pl2",
+      currency: "NGN", amountDue: 1_500_000, totalPrice: 15_000_000, buyer: { email: "b@example.com" } });
+    const body = JSON.parse(calls[0].split(" ").slice(2).join(" "));
+    expect(body).toEqual({ reservationId: "r1", intent: "development", plan: "flexible", planId: "pl2" });
+    expect([txn.flexible, txn.schedule, txn.amountDue]).toEqual([TERMS, null, 1_500_000]);
+  });
+
+  it("pays the amount the buyer chose — the one figure ever sent", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit = {}) => {
+      calls.push(`${init.method ?? "GET"} ${url.replace("http://api.test", "")}`);
+      return new Response(JSON.stringify({ reference: "PAY-1", authorizationUrl: "https://checkout.paystack.com/x", amount: 5_000_000 }), { status: 201 });
+    }));
+    const { startPayment } = await import("./paymentsService");
+    await startPayment("x1", { amount: 5_000_000 });
+    await startPayment("x1", { amount: 1_500_000.5 });
+    expect(calls).toEqual(["POST /api/transactions/x1/payments?amount=5000000", "POST /api/transactions/x1/payments?amount=1500000.5"]);
+  });
+
+  it("words a flexible purchase as held on the plan — never allocated before the plan total is verified", async () => {
+    const { describePurchase, purchaseTimeline, purchaseBadge } = await import("../lib/purchaseStatus");
+    const p = (status: string) => ({ id: "x1", reference: "LV-1", estateId: "e1", plotId: "p1", reservationId: "r1", basePrice: 15_000_000, cornerPremiumPct: null,
+      totalPrice: 15_000_000, currency: "NGN", intent: "development", plan: "flexible", installmentMonths: null, status, createdAt: "2026-10-28T12:00:00Z",
+      buyerAddress: null, offer: null, schedule: null, flexible: TERMS, payment: null }) as unknown as Parameters<typeof describePurchase>[0];
+    expect(describePurchase(p("pending_payment")).payLabel).toBe("Make your first payment");
+    expect(describePurchase(p("awaiting_finance")).body).toMatch(/held for you on the plan/);
+    expect(describePurchase(p("on_plan")).title).toBe("Held for you on the “Pay as you can” plan");
+    expect(purchaseBadge(p("awaiting_finance")).label).toBe("First payment being verified");
+    expect(purchaseTimeline(p("on_plan")).map((s) => [s.label, s.state])).toEqual([
+      ["Reserved", "done"], ["First payment made", "done"], ["First payment verified — held for you on the plan", "done"], ["Paid in full — the plot is yours", "current"]]);
+    for (const status of ["pending_payment", "awaiting_finance", "on_plan"]) expect(describePurchase(p(status)).owned).toBe(false);
+  });
+});

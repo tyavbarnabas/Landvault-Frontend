@@ -36,6 +36,7 @@ import { formatMoney } from "../../lib/formatCurrency";
 import PaymentMethodSelector from "../../components/checkout/PaymentMethodSelector";
 import VerificationProgress from "../../components/checkout/VerificationProgress";
 import OrderSummary, { OrderSummaryBar } from "../../components/checkout/OrderSummary";
+import FlexibleFirstPayment from "../../components/purchases/FlexibleFirstPayment";
 import OptionCard from "../../components/checkout/OptionCard";
 import { CheckoutHeader, CheckoutSteps } from "../../components/checkout/CheckoutShell";
 import { ApiError } from "../../lib/apiClient";
@@ -140,7 +141,9 @@ export default function MarketplaceCheckout() {
   const unavailable = tier?.availability === "sold_out" || plot.status === "sold" || plot.status === "reserved";
   // The tier's declared plans, every figure HomeTrue's.
   const tierPlans = tier?.paymentPlans ?? [];
+  const tierFlexible = tier?.flexiblePlans ?? [];
   const chosenPlan = tierPlans.find((p) => p.planId === planId) ?? null;
+  const chosenFlexible = tierFlexible.find((p) => p.planId === planId) ?? null;
 
   const startLock = async () => {
     setLoading(true);
@@ -195,10 +198,10 @@ export default function MarketplaceCheckout() {
         reservationId: reservation.id,
         tierId: plot.tierId,
         intent: purchaseIntent,
-        plan: chosenPlan ? "installment" : "outright",
-        planId: chosenPlan?.planId,
+        plan: chosenPlan ? "installment" : chosenFlexible ? "flexible" : "outright",
+        planId: (chosenPlan ?? chosenFlexible)?.planId,
         currency,
-        amountDue: chosenPlan ? chosenPlan.deposit : totalPrice,
+        amountDue: chosenPlan ? chosenPlan.deposit : chosenFlexible ? chosenFlexible.flexible.minimumToStart : totalPrice,
         totalPrice,
         buyer: { email: user.email, address: user.address },
       });
@@ -289,6 +292,7 @@ export default function MarketplaceCheckout() {
   // chosen plan's deposit or the price. Display only.
   const deposit = transaction?.amountDue ?? (chosenPlan ? chosenPlan.deposit : totalPrice);
   const schedule = transaction?.schedule ?? null;
+  const flexibleTerms = transaction?.flexible ?? null;
   // The journey starts on the plot map (MarketplacePlotSelection shows the same
   // steps), so choosing a plot is step 1 and already done here.
   const steps = ["Choose a plot", "Review", ...(kycWasNeeded ? ["Verify identity"] : []), "Purchase details", "Offer letter", "Payment"];
@@ -298,11 +302,13 @@ export default function MarketplaceCheckout() {
     kyc: ["Verify your identity", "We check who you are before we hold a plot for you. It's needed once."],
     details: ["Purchase details", "Two quick choices and where your letter goes — then the developer's offer."],
     offer: ["Your offer letter", "The developer's offer for this plot. Read it, then accept it to pay."],
-    payment: ["Pay for your plot", "Your plot is held while you pay."],
+    payment: ["Pay for your plot", flexibleTerms ? "Your plot is held while you make your first payment." : "Your plot is held while you pay."],
   };
   const summaryProps = { listing, plot, base, totalPrice, currency, commitment, holdSecondsLeft, held: !!reservation,
     plan: schedule ? { name: schedule.planName, deposit: schedule.deposit, count: schedule.instalments.length, instalment: schedule.instalments[0]?.amount ?? null, frequency: schedule.frequency, planTotal: schedule.planTotal }
-      : chosenPlan ? { name: chosenPlan.name, deposit: chosenPlan.deposit, count: chosenPlan.instalmentCount, instalment: chosenPlan.instalment, frequency: chosenPlan.frequency, planTotal: chosenPlan.planTotal } : null };
+      : chosenPlan ? { name: chosenPlan.name, deposit: chosenPlan.deposit, count: chosenPlan.instalmentCount, instalment: chosenPlan.instalment, frequency: chosenPlan.frequency, planTotal: chosenPlan.planTotal } : null,
+    flexiblePlan: flexibleTerms ? { name: flexibleTerms.planName, minimumToStart: flexibleTerms.minimumToStart, minimumContribution: flexibleTerms.minimumContribution, planTotal: flexibleTerms.planTotal }
+      : !transaction && chosenFlexible ? { name: chosenFlexible.name, minimumToStart: chosenFlexible.flexible.minimumToStart, minimumContribution: chosenFlexible.flexible.minimumContribution, planTotal: chosenFlexible.flexible.planTotal } : null };
   const errorAlert = stepError && <Alert tone="error" role="alert">{stepError}</Alert>;
   const address = user.address ?? null;
   const askAddress = !address || editingAddress || addressRequired;
@@ -480,7 +486,7 @@ export default function MarketplaceCheckout() {
                 <Card as="section" className="sm:p-6">
                   <h2 className="font-semibold text-[var(--foreground)]">How will you pay?</h2>
                   <p className="text-sm text-[var(--muted-foreground)] mb-4">
-                    {tierPlans.length > 0 ? `${plot.sizeSqm} sqm plots · the developer's declared plans. Every figure is HomeTrue's, worked out from the price.` : "Choose how to pay."}
+                    {tierPlans.length + tierFlexible.length > 0 ? `${plot.sizeSqm} sqm plots · the developer's declared plans. Every figure is HomeTrue's, worked out from the price.` : "Choose how to pay."}
                   </p>
                   {plansChanged && (
                     <div className="mb-4">
@@ -489,7 +495,7 @@ export default function MarketplaceCheckout() {
                       </Alert>
                     </div>
                   )}
-                  <PaymentPlanSelector plans={tierPlans} price={totalPrice} currency={tier?.currency ?? "NGN"} planId={chosenPlan?.planId ?? null}
+                  <PaymentPlanSelector plans={tierPlans} flexiblePlans={tierFlexible} price={totalPrice} currency={tier?.currency ?? "NGN"} planId={(chosenPlan ?? chosenFlexible)?.planId ?? null}
                     onChange={setPlanId} tierLabel={`${plot.sizeSqm} sqm`} corner={plot.isCorner} milestoneListed={listing.paymentPlans.includes("milestone")} />
                 </Card>
                 <Card as="section" aria-labelledby="letter-address-heading" className="space-y-4 sm:p-6">
@@ -535,7 +541,7 @@ export default function MarketplaceCheckout() {
             )}
 
             {step === "offer" && transaction?.offer && (
-              <OfferStep offer={transaction.offer} transactionId={transaction.id} price={transaction.totalPrice} schedule={schedule}
+              <OfferStep offer={transaction.offer} transactionId={transaction.id} price={transaction.totalPrice} schedule={schedule} flexible={flexibleTerms}
                 plot={`${plotLabel(plot)}${plot.sizeSqm ? ` · ${plot.sizeSqm} sqm` : ""}`}
                 notAccepted={offerNotAccepted} onAccepted={offerAccepted} onContinue={() => setStep("payment")} />
             )}
@@ -551,7 +557,17 @@ export default function MarketplaceCheckout() {
               </Card>
             )}
 
-            {step === "payment" && transaction && live && (
+            {step === "payment" && transaction && live && flexibleTerms && (
+              // A flexible plan: the buyer chooses the first payment.
+              <>
+                <FlexibleFirstPayment transactionId={transaction.id} flexible={flexibleTerms} onOfferNotAccepted={backToOffer} />
+                <NextSteps kind="flexible" minimumContribution={flexibleTerms.minimumContribution} />
+                <Alert tone="warning">Pay before your hold runs out. If it ends first, nothing is taken and you can reserve the plot again.</Alert>
+                <p className="text-center text-sm"><TextLink to={`/purchases/${transaction.id}`}>View this purchase</TextLink></p>
+              </>
+            )}
+
+            {step === "payment" && transaction && live && !flexibleTerms && (
               // Paystack's own page takes the money; it sends the buyer back to
               // /payments/return, which asks the backend what really happened.
               <>
@@ -561,7 +577,7 @@ export default function MarketplaceCheckout() {
                   <div className="text-sm text-[var(--muted-foreground)]">{schedule ? `${schedule.planName} · then ${schedule.instalments.length} instalments` : "Pay in full"} · {plotLabel(plot)}, {listing.name}</div>
                   <div className="text-sm text-[var(--muted-foreground)] mt-3 pt-3 border-t border-[var(--border)]">Reference <span className="font-mono-data text-[var(--foreground)]">{transaction.reference}</span></div>
                 </Card>
-                <NextSteps plan={!!schedule} />
+                <NextSteps kind={schedule ? "instalment" : "outright"} />
                 <Alert tone="warning">Pay before your hold runs out. If it ends first, nothing is taken and you can reserve the plot again.</Alert>
                 <div className={ACTIONS}>
                   <div className="w-full"><PayButton transactionId={transaction.id} label={schedule ? `Pay deposit ${formatMoney(schedule.deposit, "NGN")} with Paystack` : `Pay ${formatInCurrency(transaction.totalPrice, "NGN")} with Paystack`} onOfferNotAccepted={backToOffer} /></div>
@@ -637,8 +653,12 @@ function Shell({ children, bar, narrow }: { children: React.ReactNode; bar?: Rea
   );
 }
 
-function NextSteps({ plan }: { plan: boolean }) {
-  const items: [React.ReactNode, string, string][] = plan ? [
+function NextSteps({ kind, minimumContribution = null }: { kind: "outright" | "instalment" | "flexible"; minimumContribution?: number | null }) {
+  const items: [React.ReactNode, string, string][] = kind === "flexible" ? [
+    [<CreditCardIcon key="c" size={18} />, "You pay on Paystack's secure page", "You come straight back here once you've paid."],
+    [<ShieldCheckIcon key="s" size={18} />, "The developer verifies your payment", "Then the plot is held for you on the plan, and your provisional allocation letter goes to your vault."],
+    [<FileCheckIcon key="f" size={18} />, "You pay what you like, when you like", `From your purchase page — ${minimumContribution ? `at least ${formatMoney(minimumContribution, "NGN")} each time, or exactly what's left` : "any amount"}. The plot is yours when the plan total is verified.`],
+  ] : kind === "instalment" ? [
     [<CreditCardIcon key="c" size={18} />, "You pay the deposit on Paystack's secure page", "You come straight back here once you've paid."],
     [<ShieldCheckIcon key="s" size={18} />, "The developer verifies your deposit", "Then the plot is held for you on your plan, and your provisional allocation letter goes to your vault."],
     [<FileCheckIcon key="f" size={18} />, "You pay each instalment from your purchase page", "The plot is yours once the last one is verified; your allocation letter follows."],

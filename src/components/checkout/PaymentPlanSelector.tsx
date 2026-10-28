@@ -1,16 +1,19 @@
-// Checkout's "How will you pay?", from the Figma "Instalment plans" proposal:
-// pay in full, or one of the plans the developer declared for this tier, each
-// with HomeTrue's figures. Nothing is worked out here — every deposit,
-// instalment and total is the listing's (priceTiers[].paymentPlans), and the
-// purchase's own schedule replaces them once it opens.
+// Checkout's "How will you pay?", from the Figma "Instalment plans" and
+// "Flexible plans" proposals: pay in full, one of the instalment plans the
+// developer declared for this tier, or a flexible ("pay as you can") one, each
+// with HomeTrue's figures. Nothing is worked out here — every figure is the
+// listing's (priceTiers[].paymentPlans / flexiblePlans), and the purchase's
+// own schedule or terms replace them once it opens.
 
 import { formatMoney } from "../../lib/formatCurrency";
 import OptionCard from "./OptionCard";
-import { CalendarIcon, CreditCardIcon, InfoIcon } from "../icons";
-import { frequencyWord, type TierPlan } from "../../services/paymentPlansService";
+import { CalendarIcon, CreditCardIcon, InfoIcon, WalletIcon } from "../icons";
+import Badge from "../ui/Badge";
+import { frequencyWord, planInSentence, type FlexibleTierPlan, type TierPlan } from "../../services/paymentPlansService";
 
 interface PaymentPlanSelectorProps {
   plans: TierPlan[];
+  flexiblePlans?: FlexibleTierPlan[];
   // The price in full, as the listing gives it for this plot.
   price: number;
   currency: string;
@@ -23,13 +26,14 @@ interface PaymentPlanSelectorProps {
   milestoneListed?: boolean;
 }
 
-export default function PaymentPlanSelector({ plans, price, currency, planId, onChange, tierLabel, corner, milestoneListed }: PaymentPlanSelectorProps) {
+export default function PaymentPlanSelector({ plans, flexiblePlans = [], price, currency, planId, onChange, tierLabel, corner, milestoneListed }: PaymentPlanSelectorProps) {
   const money = (n: number) => formatMoney(n, currency);
   const chosen = plans.find((p) => p.planId === planId) ?? null;
+  const chosenFlexible = flexiblePlans.find((p) => p.planId === planId) ?? null;
   return (
     <div className="space-y-4">
       <div role="radiogroup" aria-label="Payment plan" className="grid gap-3">
-        <OptionCard name="payment-plan" value="outright" checked={!chosen} onSelect={() => onChange(null)}
+        <OptionCard name="payment-plan" value="outright" checked={!chosen && !chosenFlexible} onSelect={() => onChange(null)}
           icon={<CreditCardIcon size={20} />} title="Pay in full"
           description={<>Pay the full price at once. The plot is yours once the developer verifies your payment.<span className="sm:hidden"> {money(price)}.</span></>}
           aside={<Total value={money(price)} note="the price" />} />
@@ -43,7 +47,36 @@ export default function PaymentPlanSelector({ plans, price, currency, planId, on
             </>}
             aside={<Total value={money(p.planTotal)} note={p.premium > 0 ? `includes ${money(p.premium)} for paying over time` : "no extra for paying over time"} />} />
         ))}
+        {flexiblePlans.map((p) => (
+          <OptionCard key={p.planId} name="payment-plan" value={p.planId} checked={chosenFlexible?.planId === p.planId} onSelect={() => onChange(p.planId)}
+            icon={<WalletIcon size={20} />} title={<span className="inline-flex flex-wrap items-center gap-2">{p.name}<Badge label="Flexible" variant="info" /></span>}
+            description={<>
+              {money(p.flexible.minimumToStart)} to start, then any amount you choose, any time, until it's paid. No due dates.
+              <span className="sm:hidden"> Total {money(p.flexible.planTotal)}.</span>
+            </>}
+            aside={<Total value={money(p.flexible.planTotal)} note={p.flexible.premium > 0 ? `includes ${money(p.flexible.premium)} for paying over time` : "no extra for paying over time"} />} />
+        ))}
       </div>
+
+      {chosenFlexible && (
+        <div className="rounded-xl bg-[var(--muted)] p-4 space-y-2.5">
+          <div className="text-sm font-semibold text-[var(--foreground)]">On {planInSentence(chosenFlexible.name)}</div>
+          <dl className="space-y-1.5 text-sm">
+            <Row label="To start — your first payment" value={`${money(chosenFlexible.flexible.minimumToStart)} or more`} />
+            <Row label="After that, each payment" value={chosenFlexible.flexible.minimumContribution ? `${money(chosenFlexible.flexible.minimumContribution)} or more` : "Any amount"} />
+            {chosenFlexible.flexible.premium > 0 && <Row label="Includes for paying over time" value={money(chosenFlexible.flexible.premium)} />}
+            <div className="border-t border-[var(--border)] pt-2"><Row label="Plan total" value={money(chosenFlexible.flexible.planTotal)} bold /></div>
+          </dl>
+          <p className="flex gap-2 text-xs text-[var(--muted-foreground)]">
+            <InfoIcon size={14} className="mt-px shrink-0" />
+            <span>
+              You choose each amount and when to pay; nothing is ever late. The plot is held for you from your first verified payment and is yours when the plan total is verified.
+              You can leave any time and get back what you paid, less the developer's share — your offer letter sets it out, with what you'd get if HomeTrue later sells the plot for more.
+              {corner ? " These figures are for a plot that isn't a corner plot; your offer letter has this plot's, which are higher." : ""}
+            </span>
+          </p>
+        </div>
+      )}
 
       {chosen && (
         <div className="rounded-xl bg-[var(--muted)] p-4 space-y-2.5">
@@ -66,7 +99,7 @@ export default function PaymentPlanSelector({ plans, price, currency, planId, on
         </div>
       )}
 
-      {plans.length === 0 && <p className="text-sm text-[var(--muted-foreground)]">The {tierLabel} plots are sold outright only.</p>}
+      {plans.length === 0 && flexiblePlans.length === 0 && <p className="text-sm text-[var(--muted-foreground)]">The {tierLabel} plots are sold outright only.</p>}
       {milestoneListed && <p className="text-xs text-[var(--muted-foreground)]">Milestone plans aren't available for online payment.</p>}
     </div>
   );

@@ -9,6 +9,7 @@
 import type { Purchase } from "../services/paymentsService";
 import { formatInCurrency } from "../data/mockData";
 import type { RefundStatus } from "../services/paymentTypes";
+import { planInSentence } from "../services/paymentPlansService";
 
 export type PurchaseTone = "success" | "info" | "warning" | "neutral";
 
@@ -43,10 +44,11 @@ export function describePurchase(purchase: Purchase): PurchaseState {
   const p = purchase.payment;
   const base = { canPay: false, payLabel: "Pay", payNote: null, refund: refundLine(p?.refundStatus), owned: false };
   const plan = purchase.schedule;
+  const flex = purchase.flexible ?? null;
 
   switch (purchase.status) {
     case "verified":
-      if (plan) {
+      if (plan || flex) {
         return { ...base, tone: "success", owned: true, title: "Paid in full — the plot is yours",
           body: "The developer has verified your last payment and the plot is allocated to you. Your allocation letter is in your vault." };
       }
@@ -55,12 +57,20 @@ export function describePurchase(purchase: Purchase): PurchaseState {
 
     // A deposit verified: held on the plan, never "yours", "sold" or "allocated".
     case "on_plan":
+      if (flex) {
+        return { ...base, tone: "info", canPay: true, payLabel: "Pay an amount", title: `Held for you on ${planInSentence(flex.planName)}`,
+          body: "The plot is yours once the plan total is verified. Until then nobody else can buy it." };
+      }
       return { ...base, tone: "info", canPay: true, payLabel: "Pay the next instalment",
         title: plan ? `Held for you on the ${plan.planName}` : "Held for you on your plan",
         body: "The plot is yours once your last instalment is verified. Until then nobody else can buy it." };
 
     case "awaiting_finance":
     case "payment_received":
+      if (flex) {
+        return { ...base, tone: "info", title: "Payment received — awaiting verification",
+          body: "Paystack has confirmed your first payment. Once the developer's finance team verifies it, the plot is held for you on the plan and you'll get a provisional allocation letter." };
+      }
       if (plan) {
         return { ...base, tone: "info", title: "Deposit received — awaiting verification",
           body: "Paystack has confirmed your deposit. Once the developer's finance team verifies it, the plot is held for you on your plan and you'll get a provisional allocation letter." };
@@ -117,8 +127,9 @@ export function describePurchase(purchase: Purchase): PurchaseState {
         return { ...base, tone: "neutral", canPay: payable, payNote, payLabel: "Continue payment", title: "Awaiting payment",
           body: "A payment was started but hasn't been completed. If you paid by bank transfer, it can take a few minutes to show." };
       }
-      return { ...base, tone: "neutral", canPay: payable, payNote, payLabel: first, title: "Awaiting payment",
-        body: plan ? "Pay the deposit before your reservation ends. Once it's verified, the plot is held for you on your plan." : "Pay to secure this plot before your reservation ends." };
+      return { ...base, tone: "neutral", canPay: payable, payNote, payLabel: flex ? "Make your first payment" : first, title: "Awaiting payment",
+        body: flex ? "Choose your first payment before your reservation ends. Once it's verified, the plot is held for you on the plan."
+          : plan ? "Pay the deposit before your reservation ends. Once it's verified, the plot is held for you on your plan." : "Pay to secure this plot before your reservation ends." };
     }
   }
 }
@@ -162,9 +173,10 @@ export function purchaseBadge(p: Purchase): { label: string; tone: PurchaseTone 
   switch (stage) {
     case "pay": return { label: "Awaiting payment", tone: "warning", note: describePurchase(p).payNote };
     case "payment_failed": return { label: "Payment failed", tone: "error", note: "Nothing was taken. You can try again." };
-    case "verifying": return { label: p.schedule ? "Deposit being verified" : "Being verified", tone: "info", note: p.payment?.receiptNumber ? `Receipt ${p.payment.receiptNumber}` : null };
+    case "verifying": return { label: p.schedule ? "Deposit being verified" : p.flexible ? "First payment being verified" : "Being verified", tone: "info", note: p.payment?.receiptNumber ? `Receipt ${p.payment.receiptNumber}` : null };
     case "on_plan": {
       // Where the plan stands today (phase 4–5), as the Figma title chip shows it.
+      if (p.flexible) return { label: "On flexible plan", tone: "info", note: p.flexible.planName };
       const st = p.standing;
       if (st?.revocation?.notice) return { label: "Notice of revocation", tone: "warning", note: p.schedule?.planName ?? null };
       if (st?.status === "in_arrears") return { label: "In arrears", tone: "warning", note: p.schedule?.planName ?? null };
@@ -177,7 +189,7 @@ export function purchaseBadge(p: Purchase): { label: string; tone: PurchaseTone 
   }
   if (p.status === "withdrawn") return { label: "Withdrawn", tone: "neutral", note: "Refunds come back in parts" };
   if (p.status === "revoked") return { label: "Plan revoked", tone: "neutral", note: "Refunded as on withdrawal" };
-  if (p.status === "verified") return { label: p.schedule ? "Paid in full" : "Plot allocated", tone: "success", note: p.payment?.receiptNumber ? `Receipt ${p.payment.receiptNumber}` : null };
+  if (p.status === "verified") return { label: p.schedule || p.flexible ? "Paid in full" : "Plot allocated", tone: "success", note: p.payment?.receiptNumber ? `Receipt ${p.payment.receiptNumber}` : null };
   if (p.payment?.refundStatus === "processed") {
     return { label: "Refunded", tone: "neutral", note: p.status === "rejected" ? "The developer didn't accept the payment; refund paid" : "Your refund has been paid" };
   }
@@ -236,6 +248,19 @@ export function purchaseTimeline(p: Purchase): TimelineStep[] {
   const verifying = p.status === "payment_received" || p.status === "awaiting_finance";
   // A plan: the deposit's check holds the plot on the plan; only the last
   // instalment (or a pay-off) being verified makes it the buyer's.
+  // A flexible plan: the first payment's check holds the plot on the plan; the
+  // payment that reaches the plan total, verified, makes it the buyer's.
+  if (p.flexible && p.status !== "withdrawn" && p.status !== "revoked") {
+    steps[1] = { ...steps[1], label: p.status === "pending_payment" ? steps[1].label : "First payment made" };
+    const onPlan = p.status === "on_plan" || p.status === "verified";
+    steps.push({ key: "verified", label: "First payment verified — held for you on the plan", at: null,
+      note: verifying ? "Their finance team is checking the money arrived." : onPlan ? "Your provisional allocation letter is in your vault." : null,
+      state: onPlan ? "done" : verifying ? "current" : "upcoming" });
+    steps.push({ key: "allocated", label: "Paid in full — the plot is yours", at: null,
+      note: p.status === "verified" ? "Your allocation letter is in your vault." : "When the payment that reaches the plan total is verified.",
+      state: p.status === "verified" ? "done" : p.status === "on_plan" ? "current" : "upcoming" });
+    return steps;
+  }
   if (p.schedule && (p.status === "withdrawn" || p.status === "revoked")) {
     steps[1] = { ...steps[1], label: "Deposit paid" };
     steps.push({ key: "verified", label: "Held for you on the plan", at: null, note: null, state: "done" });

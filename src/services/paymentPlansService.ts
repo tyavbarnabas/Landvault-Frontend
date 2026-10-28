@@ -73,6 +73,24 @@ export interface FlexibleTierPlan {
   flexible: FlexiblePlanQuote;
 }
 
+// A flexible purchase's terms, copied from the agreed price when it opened and
+// fixed (TransactionDto.flexible). No schedule, no due dates.
+export interface PurchaseFlexible {
+  planId: string;
+  planName: string;
+  planTotal: number;
+  premium: number;
+  minimumToStart: number;
+  minimumContribution: number | null;
+  exitDeductionPct: number;
+  exitAppliesTo: ExitBasis;
+  developerGainSharePct: number;
+  inactivityMonths: number;
+  noticeDays: number;
+  maxMonths: number | null;
+  finishBy: string | null;
+}
+
 // A plan's name in a sentence: "the 12-month plan", but the "Pay as you can" plan.
 export function planInSentence(name: string): string {
   return /\bplan$/i.test(name.trim()) ? `the ${name.trim()}` : `the “${name.trim()}” plan`;

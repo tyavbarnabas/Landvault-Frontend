@@ -6,6 +6,7 @@ import { useState } from "react";
 import { describePurchase } from "../../lib/purchaseStatus";
 import type { Purchase } from "../../services/paymentsService";
 import PayButton from "./PayButton";
+import FlexibleFirstPayment from "./FlexibleFirstPayment";
 import Alert from "../ui/Alert";
 
 // `refundShown`: the page shows the refund in full (RefundPanel), so the
@@ -25,7 +26,10 @@ export default function PurchaseStatusPanel({ purchase, refundShown = false }: {
         <p className="text-sm text-[var(--muted-foreground)]">Accept the offer letter for this purchase, then pay here.</p>
       )}
       {/* On a plan, its card has the instalment and pay-off buttons. */}
-      {state.canPay && !offerWaiting && purchase.status !== "on_plan" && <PayButton transactionId={purchase.id} label={state.payLabel} busy={paying} onBusy={setPaying} />}
+      {/* A flexible plan's first payment is the buyer's own amount. */}
+      {state.canPay && !offerWaiting && purchase.status !== "on_plan" && (purchase.flexible
+        ? <FlexibleFirstPayment transactionId={purchase.id} flexible={purchase.flexible} />
+        : <PayButton transactionId={purchase.id} label={state.payLabel} busy={paying} onBusy={setPaying} />)}
       {state.payNote && purchase.status === "pending_payment" && (
         <p className="text-xs text-[var(--muted-foreground)]">{state.payNote}</p>
       )}

@@ -28,6 +28,8 @@ interface OrderSummaryProps {
   // The instalment plan chosen (the listing's figures, then the purchase's
   // own schedule once it's open). Null when paying in full.
   plan?: { name: string; deposit: number; count: number; instalment: number | null; frequency: string; planTotal: number } | null;
+  // A flexible plan chosen instead: its minimum to start and later minimum.
+  flexiblePlan?: { name: string; minimumToStart: number; minimumContribution: number | null; planTotal: number } | null;
 }
 
 const HOLD_MINUTES = Math.round(RESERVATION_SECONDS / 60);
@@ -40,7 +42,7 @@ function total(commitment: TierCommitment, corner: boolean) {
   return corner && commitment.totalCommitmentIfCorner ? commitment.totalCommitmentIfCorner : commitment.totalCommitment;
 }
 
-function Figures({ listing, plot, base, totalPrice, currency, commitment, holdSecondsLeft, held, plan }: OrderSummaryProps) {
+function Figures({ listing, plot, base, totalPrice, currency, commitment, holdSecondsLeft, held, plan, flexiblePlan }: OrderSummaryProps) {
   const inNaira = commitment?.currency === "NGN" && currency !== "NGN";
   return (
     <div className="space-y-4">
@@ -74,6 +76,14 @@ function Figures({ listing, plot, base, totalPrice, currency, commitment, holdSe
             </p>
           ))}
         </div>
+      )}
+      {flexiblePlan && (
+        <dl className="rounded-lg bg-[var(--secondary)] px-3.5 py-3 space-y-1.5 text-sm">
+          <div className="font-semibold text-[var(--secondary-foreground)]">{flexiblePlan.name}</div>
+          <Row label="To start" value={formatMoney(flexiblePlan.minimumToStart, "NGN")} />
+          {flexiblePlan.minimumContribution !== null && <Row label="Then at least" value={formatMoney(flexiblePlan.minimumContribution, "NGN")} />}
+          <Row label="Plan total" value={formatMoney(flexiblePlan.planTotal, "NGN")} />
+        </dl>
       )}
       {plan && (
         <dl className="rounded-lg bg-[var(--secondary)] px-3.5 py-3 space-y-1.5 text-sm">
@@ -113,10 +123,12 @@ const PROMISES: [React.ReactNode, string][] = [
   [<LockIcon key="l" />, "Card and bank payments are taken on Paystack's secure page. HomeTrue never sees your card."],
 ];
 
-export function TrustPromises({ className, plan }: { className?: string; plan?: boolean }) {
-  const promises: [React.ReactNode, string][] = plan
+export function TrustPromises({ className, plan }: { className?: string; plan?: "instalment" | "flexible" | null }) {
+  const promises: [React.ReactNode, string][] = plan === "instalment"
     ? [[<ShieldCheckIcon key="s" />, "The developer verifies each payment. On a plan, the plot is yours once your last instalment is verified."], ...PROMISES.slice(1)]
-    : PROMISES;
+    : plan === "flexible"
+      ? [[<ShieldCheckIcon key="s" />, "The developer verifies each payment. On a flexible plan, the plot is yours once the plan total is verified."], ...PROMISES.slice(1)]
+      : PROMISES;
   return (
     <ul className={`space-y-3 ${className ?? ""}`}>
       {promises.map(([icon, text]) => (
@@ -137,7 +149,7 @@ export default function OrderSummary(props: OrderSummaryProps) {
         {listing.imageUrl && <img src={listing.imageUrl} alt="" loading="lazy" className="w-full aspect-[16/7] object-cover" />}
         <div className="p-6"><Figures {...props} /></div>
       </div>
-      <TrustPromises className="px-1" plan={!!props.plan} />
+      <TrustPromises className="px-1" plan={props.plan ? "instalment" : props.flexiblePlan ? "flexible" : null} />
     </aside>
   );
 }
