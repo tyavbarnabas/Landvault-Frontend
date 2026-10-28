@@ -75,3 +75,41 @@ describe("planInSentence", () => {
     expect(planInSentence("Pay as you can")).toBe("the “Pay as you can” plan");
   });
 });
+
+describe("declaring flexible plans in the portal", () => {
+  it("sends the flexible terms in the same set as the instalment plans", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit = {}) => {
+      calls.push(`${init.method ?? "GET"} ${url.replace("http://api.test", "")} ${init.body ?? ""}`);
+      return new Response(JSON.stringify({ version: 4, plans: [] }), { status: 200 });
+    }));
+    const { savePaymentPlans } = await import("./paymentPlansService");
+    await savePaymentPlans("e1", [
+      { name: "12-month plan", depositPct: 30, instalmentCount: 12, frequency: "monthly", premiumPct: 10 },
+      { name: "Pay as you can", kind: "flexible", depositPct: 10, premiumPct: 10,
+        flexible: { minimumContribution: 100_000, exit: { deductionPct: 20, appliesTo: "amount_paid" }, developerGainSharePct: 60, inactivityMonths: 6, noticeDays: 30, maxMonths: 24 } },
+    ]);
+    const [method, url, ...rest] = calls[0].split(" ");
+    const body = rest.join(" ");
+    expect([method, url]).toEqual(["PUT", "/api/portal/estates/e1/payment-plans"]);
+    expect(JSON.parse(body).plans[1]).toEqual({ name: "Pay as you can", kind: "flexible", depositPct: 10, premiumPct: 10,
+      flexible: { minimumContribution: 100_000, exit: { deductionPct: 20, appliesTo: "amount_paid" }, developerGainSharePct: 60, inactivityMonths: 6, noticeDays: 30, maxMonths: 24 } });
+  });
+
+  it("places the backend's field errors beside the right field", async () => {
+    const { errorKey } = await import("../components/portal/PaymentPlansPanel");
+    const drafts = [{ kind: "installment" as const }, { kind: "flexible" as const }];
+    expect(errorKey("plans[1].flexible.developerGainSharePct", drafts)).toBe("1.developerGainSharePct");
+    expect(errorKey("plans[1].flexible.exit.deductionPct", drafts)).toBe("1.deductionPct");
+    expect(errorKey("plans[1].flexible.exit.appliesTo", drafts)).toBe("1.deductionPct");
+    expect(errorKey("plans[1].depositPct", drafts)).toBe("1.depositPct");
+    expect(errorKey("plans[0].depositAmount", drafts)).toBe("0.deposit");
+    expect(errorKey("plans", drafts)).toBeNull();
+  });
+
+  it("demo mode works out the same figures the backend gives Lugbe's plan", async () => {
+    const { mockFlexibleQuote } = await import("./paymentPlansService");
+    const q = mockFlexibleQuote({ name: "Pay as you can", kind: "flexible", depositPct: 10, premiumPct: 10,
+      flexible: { minimumContribution: 100_000, exit: { deductionPct: 20, appliesTo: "amount_paid" }, developerGainSharePct: 60, inactivityMonths: 6, noticeDays: 30, maxMonths: 24 } }, 15_000_000);
+    expect(q).toEqual(QUOTE);
+  });
+});
