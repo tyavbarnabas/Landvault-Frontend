@@ -251,7 +251,10 @@ export function purchaseTimeline(p: Purchase): TimelineStep[] {
   // A flexible plan: the first payment's check holds the plot on the plan; the
   // payment that reaches the plan total, verified, makes it the buyer's.
   if (p.flexible && p.status !== "withdrawn" && p.status !== "revoked") {
-    steps[1] = { ...steps[1], label: p.status === "pending_payment" ? steps[1].label : "First payment made" };
+    // The purchase carries only its latest payment: once the plan runs, that
+    // may be a later one, so the first payment's line names no date or amount.
+    const running = p.status === "on_plan" || p.status === "verified";
+    steps[1] = p.status === "pending_payment" ? steps[1] : running ? { ...steps[1], label: "First payment made", at: null, note: null } : { ...steps[1], label: "First payment made" };
     const onPlan = p.status === "on_plan" || p.status === "verified";
     steps.push({ key: "verified", label: "First payment verified — held for you on the plan", at: null,
       note: verifying ? "Their finance team is checking the money arrived." : onPlan ? "Your provisional allocation letter is in your vault." : null,
