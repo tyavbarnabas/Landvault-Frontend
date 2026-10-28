@@ -37,13 +37,14 @@ function badgeFor(r: ScheduleRow): { label: string; variant: "success" | "warnin
 
 // Shown before "Show all": the first few and the last.
 const FOLDED = 4;
+const UNFOLDABLE = new Set<RowState>(["next", "awaiting", "due_today", "overdue", "in_arrears"]);
 
 export function PlanScheduleCard({ purchase, owned }: { purchase: Purchase; owned: OwnedPlot | null }) {
   const schedule = purchase.schedule!;
   const rows = scheduleRows(schedule, owned, purchase.status, purchase.standing);
   const [all, setAll] = useState(rows.length <= FOLDED + 2);
-  // Fold the middle, but never past the row that's next or awaiting.
-  const lastKeep = Math.max(FOLDED, rows.findIndex((r) => r.state === "next" || r.state === "awaiting") + 2);
+  // Fold the middle, but never past a row that needs attention: late, due, next or awaiting.
+  const lastKeep = Math.max(FOLDED, rows.reduce((last, r, i) => (UNFOLDABLE.has(r.state) ? i : last), -1) + 2);
   const shown = all ? rows : [...rows.slice(0, lastKeep), rows[rows.length - 1]];
   const hidden = rows.length - shown.length;
   const money = (n: number) => formatMoney(n, purchase.currency);
@@ -80,9 +81,6 @@ export function PlanScheduleCard({ purchase, owned }: { purchase: Purchase; owne
             <tr className={`${penalty || waived ? "" : "border-b"} border-[var(--border)] last:border-b-0`}>
               <td className="py-2.5 pr-3 text-[var(--foreground)]">
                 {r.label}
-                {!all && hidden > 0 && i === shown.length - 2 && (
-                  <div><Button variant="link" onClick={() => setAll(true)} className="text-xs mt-1">Show {hidden} more</Button></div>
-                )}
               </td>
               <td className="py-2.5 pr-3 text-[var(--muted-foreground)]">{r.dueDate ? formatDay(r.dueDate) : "On paying"}</td>
               <td className="py-2.5 text-right font-mono-data text-[var(--foreground)]">{money(r.amount)}</td>
@@ -102,6 +100,12 @@ export function PlanScheduleCard({ purchase, owned }: { purchase: Purchase; owne
             {waived && (
               <tr className="border-b border-[var(--border)]">
                 <td colSpan={4} className="pb-2.5 pr-3 text-xs text-[var(--muted-foreground)]">{waived}</td>
+              </tr>
+            )}
+            {/* After the row's own penalty lines, so the fold never splits an instalment from its penalty. */}
+            {!all && hidden > 0 && i === shown.length - 2 && (
+              <tr className="border-b border-[var(--border)]">
+                <td colSpan={4} className="py-2"><Button variant="link" onClick={() => setAll(true)} className="text-xs">Show {hidden} more</Button></td>
               </tr>
             )}
           </Fragment>);

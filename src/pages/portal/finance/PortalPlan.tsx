@@ -184,7 +184,7 @@ function PenaltiesSection({ id, onChanged }: { id: string; onChanged: () => void
                   <Figure label="Waived" value={money(p.waived)} />,
                   <Figure label="Outstanding" value={money(p.outstanding)} strong />,
                 ]}
-                action={openSeq === p.instalmentSequence ? null : <Button variant="secondary" onClick={() => { setOpenSeq(p.instalmentSequence); setDone(""); setStale(""); }}>Waive</Button>}
+                action={openSeq === p.instalmentSequence ? null : p.outstanding <= 0 ? <span className="text-xs text-[var(--muted-foreground)]">Fully waived</span> : <Button variant="secondary" onClick={() => { setOpenSeq(p.instalmentSequence); setDone(""); setStale(""); }}>Waive</Button>}
                 below={openSeq === p.instalmentSequence ? (
                   <WaiveForm id={id} penalty={p} money={money} onCancel={() => setOpenSeq(null)} onWaived={waived} onStale={refresh} />
                 ) : undefined}
@@ -473,7 +473,7 @@ function RevocationSection({ id, onChanged }: { id: string; onChanged: () => voi
       <h2 id="revocation-heading" className="font-semibold text-[var(--foreground)]">Revocation</h2>
       <p className="text-sm text-[var(--foreground)]">
         Under the terms on this purchase, a plan can be revoked once an instalment is {rv.afterMonthsUnpaid} months unpaid, after {rv.noticeDays} days' written notice.
-        {rv.status === "revoked" ? " This plan was revoked." : rv.revocableNow ? " You can give notice now." : rv.revocableFrom ? ` If nothing is paid, that's from ${formatDay(rv.revocableFrom)}.` : " Nothing is late enough for that."}
+        {rv.status === "revoked" ? " This plan was revoked." : rv.notice ? "" : rv.revocableNow ? " You can give notice now." : rv.revocableFrom ? ` If nothing is paid, that's from ${formatDay(rv.revocableFrom)}.` : " Nothing is late enough for that."}
       </p>
       {s && (
         <dl className="rounded-lg bg-[var(--muted)] p-3.5 text-sm space-y-1.5">

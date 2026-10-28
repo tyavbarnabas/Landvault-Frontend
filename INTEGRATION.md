@@ -196,7 +196,7 @@ Built from the Figma "Penalty waivers" page (developer plan page, Running plans,
 - **Running plans**: "Waive penalty" beside "Open plan" on rows whose `arrears.penaltyAmount` > 0 (`?section=penalties`).
 - **Buyer**: `standing.instalments[].penaltyWaived` is read; the penalty shown stays the net one. "₦X waived by the developer" under the instalment; fully waived reads "Late-payment penalty of ₦X waived by the developer". No buyer request flow.
 - **Also from the Figma page**: a restructured schedule says "Restructured on {date} · version n" (date = the accepted restructure's `acceptedAt` from `GET /api/transactions/{id}/restructure`); the schedule card stacks per payment on a phone; the plot page's instalment list uses the status tokens and badges instead of raw red/amber/emerald.
-- **Not checked live**: the backend running on 8080 predates changeset 109 (its waiver code was still uncommitted on `feature/penalty-waivers`), so the GET answered 404. The screens were checked against the Figma frames with the two GETs answered from fixtures in the browser; nothing was posted. The "Done means" walkthrough (backdated instalment, waive part then the rest, buyer email) is still to do once the backend is restarted on that branch.
+- **Checked live 2026-10-28** (see L below): waived part, then the rest, of a backdated instalment's penalty; the buyer was emailed both times.
 - No demo data (by design): in demo mode the section says it needs the live service.
 
 ### K. Phases 4–5 screens aligned with the Figma frames — 2026-10-25
@@ -218,6 +218,25 @@ the house date format on the finance queue; plot, estate and plan on the withdra
   revoked entry's `refund` in the Paid column ("Refund of ₦… on its way" for pending / partly_refunded, "Refunded ₦…", "Nothing to
   refund" for none). `needsYourAccount` shows "Needs your bank account" on the row and, on the plot page, a link to the purchase page,
   where `POST /api/payments/{reference}/refund-account` already lives (RefundPanel).
+
+### L. Phases 4–5 live walkthrough — 2026-10-28
+
+On LV-FZWRH9R4 (integration test buyer, Lugbe Demo Gardens, 12-month plan). It predated phase 4, so it was given the
+estate's late terms by SQL (5% at 1 month, revocable after 3 months unpaid, 30 days' notice, penalties not refundable) and
+its schedule moved back 4 months: instalments 1–3 in arrears, 4 overdue.
+
+Checked live: the buyer's arrears panel, chip, schedule penalties and the pay button with its penalty; the withdrawal quote
+(read only); the portal plan page and Running plans; the waiver too large, ₦20,000, then the remaining ₦28,125, and the buyer's
+"waived by the developer" line; restructure request → proposal with live preview → letter PDF → accept; notice of revocation
+(confirm correctly disabled until 28 Nov) and the buyer's notice panel; after accepting, `on_track`, notice ended, schedule
+v2 with the carried penalty on instalment 1. MailDev got all six buyer emails.
+
+Fixed on the way: the schedule fold hid overdue instalments; "Show N more" split an instalment from its penalty line; a fully
+waived penalty still offered Waive; the revocation intro said "You can give notice now" while a notice ran; the notice panel
+and arrears panel said "Ask to restructure" while a request or proposal was open.
+
+Not run: paying a late instalment (Paystack), withdrawing a notice, confirming a revocation, withdrawal, rejecting or declining
+a restructure. Flexible plans (backend changesets 110–114) aren't in the frontend at all.
 
 ### Also worth a look, lower priority
 

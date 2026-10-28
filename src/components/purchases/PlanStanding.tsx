@@ -22,6 +22,11 @@ import { Loading } from "../ui/Page";
 
 const PANEL = "rounded-xl border border-[var(--warning-border)] bg-[var(--warning-surface)] text-[var(--warning-text)] px-4 py-4 sm:px-5 space-y-2";
 
+// Every link to the restructure page says where the buyer's request stands.
+function restructureLabel(status: NonNullable<Purchase["standing"]>["restructureStatus"]): string {
+  return status === "proposed" ? "See the proposal" : status === "requested" ? "See your request" : "Ask to restructure";
+}
+
 // The arrears panel, or the notice of revocation when one is running.
 export function StandingPanel({ purchase, onPay }: { purchase: Purchase; onPay: () => void }) {
   const standing = purchase.standing;
@@ -44,7 +49,7 @@ export function StandingPanel({ purchase, onPay }: { purchase: Purchase; onPay: 
         <div className="flex flex-wrap gap-2 pt-1">
           <Button onClick={onPay}>Pay now</Button>
           <LinkButton to={withdrawTo} variant="secondary">See withdrawal figures</LinkButton>
-          <Link to={restructureTo} className="self-center text-sm font-medium underline">Ask to restructure</Link>
+          <Link to={restructureTo} className="self-center text-sm font-medium underline">{restructureLabel(standing.restructureStatus)}</Link>
         </div>
       </section>
     );
@@ -64,7 +69,7 @@ export function StandingPanel({ purchase, onPay }: { purchase: Purchase; onPay: 
       )}
       <div className="flex flex-wrap gap-2 pt-1">
         <Button onClick={onPay}>Pay what's due</Button>
-        <LinkButton to={restructureTo} variant="secondary">Ask to restructure</LinkButton>
+        <LinkButton to={restructureTo} variant="secondary">{restructureLabel(standing.restructureStatus)}</LinkButton>
       </div>
     </section>
   );
@@ -84,7 +89,7 @@ export function PlanOptionsCard({ purchase }: { purchase: Purchase }) {
         </p>
       </div>
       <LinkButton to={`/purchases/${purchase.id}/restructure`} variant="secondary" fullWidth>
-        {purchase.standing.restructureStatus === "proposed" ? "See the proposal" : open ? "See your request" : "Ask to restructure"}
+        {restructureLabel(purchase.standing.restructureStatus)}
       </LinkButton>
       <div className="border-t border-[var(--border)] pt-3 space-y-1">
         <div className="text-sm font-medium text-[var(--foreground)]">Withdraw from the plan</div>
