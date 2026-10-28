@@ -30,6 +30,7 @@ import { fetchDocumentsByPlotId } from "../../services/documentsService";
 import PlanCard from "../../components/purchases/PlanCard";
 import { PlanPaymentsCard, PlanScheduleCard } from "../../components/purchases/PlanScheduleCard";
 import LetterCard from "../../components/purchases/LetterCard";
+import { FlexibleNoticePanel, FlexiblePlanCard } from "../../components/purchases/FlexiblePlanCard";
 import { PlanOptionsCard, PlanSettlementCard, StandingPanel } from "../../components/purchases/PlanStanding";
 import { formatMoney } from "../../lib/formatCurrency";
 import { frequencyWord } from "../../services/paymentPlansService";
@@ -47,7 +48,7 @@ export default function PurchaseDetail() {
     const [listing, plot, owned, documents] = await Promise.all([
       fetchListingById(purchase.estateId).catch(() => undefined),
       fetchPlotById(purchase.estateId, purchase.plotId).catch(() => undefined),
-      paid && purchase.schedule ? fetchOwnedPlotById(purchase.id).catch(() => undefined) : undefined,
+      paid && (purchase.schedule || purchase.flexible) ? fetchOwnedPlotById(purchase.id).catch(() => undefined) : undefined,
       paid ? fetchDocumentsByPlotId(purchase.id).catch(() => []) : [],
     ]);
     return { purchase, estateName: listing?.name ?? null, plot: plot ?? null, owned: owned ?? null, documents };
@@ -79,7 +80,8 @@ export default function PurchaseDetail() {
     : purchase.plan === "outright" ? "Pay in full" : "Instalments";
   // While a plan is late (or under notice) its standing panel says what to do;
   // "held for you on the plan" would only compete with it.
-  const late = purchase.status === "on_plan" && (!!purchase.standing?.arrears || !!purchase.standing?.revocation?.notice);
+  const late = purchase.status === "on_plan" && (!!purchase.standing?.arrears || !!purchase.standing?.revocation?.notice || !!purchase.flexibleStanding?.notice);
+  const flexibleRunning = !!purchase.flexible && (purchase.status === "on_plan" || purchase.status === "verified");
   const restructure = purchase.status === "on_plan" ? purchase.standing?.restructureStatus : null;
   return (
     <Page width="xl" back={{ to: "/purchases", label: "My purchases" }} eyebrow={purchase.reference}
@@ -90,6 +92,7 @@ export default function PurchaseDetail() {
         <div className="space-y-6 min-w-0">
           {/* A notice of revocation or arrears comes first: what's owed and what to do. */}
           <StandingPanel purchase={purchase} onPay={() => document.getElementById("plan-heading")?.scrollIntoView({ behavior: "smooth", block: "start" })} />
+          <FlexibleNoticePanel purchase={purchase} onPay={() => document.getElementById("plan-heading")?.scrollIntoView({ behavior: "smooth", block: "start" })} />
           {!late && <PurchaseStatusPanel purchase={purchase} refundShown={showRefund} />}
           <PlanSettlementCard purchase={purchase} />
           {showRefund && p && <RefundPanel paymentReference={p.reference} />}
@@ -97,6 +100,13 @@ export default function PurchaseDetail() {
             <>
               <PlanCard purchase={purchase} owned={owned} onChanged={loaded.refetch} />
               <PlanScheduleCard purchase={purchase} owned={owned} />
+              <PlanPaymentsCard purchase={purchase} owned={owned} documents={documents} />
+            </>
+          )}
+
+          {flexibleRunning && (
+            <>
+              <FlexiblePlanCard purchase={purchase} onChanged={loaded.refetch} />
               <PlanPaymentsCard purchase={purchase} owned={owned} documents={documents} />
             </>
           )}
@@ -139,7 +149,7 @@ export default function PurchaseDetail() {
           {letter && <LetterCard letter={letter} />}
           <PlanOptionsCard purchase={purchase} />
           {/* A plan's payments are in its history; this is a single payment's card. */}
-          {p && !schedule && (
+          {p && !schedule && !flexibleRunning && (
             <Card as="section" aria-labelledby="payment-heading">
               <h2 id="payment-heading" className="font-semibold text-[var(--foreground)] mb-3">Payment</h2>
               <dl className="space-y-2.5 text-sm">

@@ -160,3 +160,24 @@ describe("buying on a flexible plan", () => {
     for (const status of ["pending_payment", "awaiting_finance", "on_plan"]) expect(describePurchase(p(status)).owned).toBe(false);
   });
 });
+
+describe("paying again on a flexible plan", () => {
+  it("lists each payment as a payment — no instalment numbers without a schedule", async () => {
+    const { paymentHistory } = await import("../lib/planProgress");
+    const owned = { payments: [
+      { id: "a", date: "2026-10-28", amount: 2_000_000, currency: "NGN", type: "contribution", status: "confirmed", receiptId: "r1" },
+      { id: "b", date: "2026-11-02", amount: 500_000, currency: "NGN", type: "contribution", status: "pending_verification", receiptId: null },
+    ] } as unknown as Parameters<typeof paymentHistory>[0];
+    expect(paymentHistory(owned, null).map((r) => [r.label, r.amount, r.verified])).toEqual([["Payment", 2_000_000, true], ["Payment", 500_000, false]]);
+  });
+
+  it("pays what's left with ?balance=true, never a figure from the page", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit = {}) => {
+      calls.push(`${init.method ?? "GET"} ${url.replace("http://api.test", "")}`);
+      return new Response(JSON.stringify({ reference: "PAY-2", authorizationUrl: "https://checkout.paystack.com/y", amount: 14_500_000 }), { status: 201 });
+    }));
+    const { startPayment } = await import("./paymentsService");
+    await startPayment("x1", { balance: true });
+    expect(calls).toEqual(["POST /api/transactions/x1/payments?balance=true"]);
+  });
+});

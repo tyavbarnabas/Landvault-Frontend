@@ -34,10 +34,13 @@ export function goToPaystack(url: string, navigate: NavigateFunction): void {
   else window.location.assign(url);
 }
 
-export default function PayButton({ transactionId, label, amount, busy, onBusy, onOfferNotAccepted, disabled, note = true, onRefused }: {
+export default function PayButton({ transactionId, label, amount, balance, variant = "primary", busy, onBusy, onOfferNotAccepted, disabled, note = true, onRefused }: {
   transactionId: string;
+  variant?: "primary" | "secondary";
   // A flexible plan's payment: the amount the buyer chose. Otherwise the backend charges what's due.
   amount?: number;
+  // Pay everything still owed on the plan (?balance=true).
+  balance?: boolean;
   label: string;
   busy?: boolean;
   onBusy?: (busy: boolean) => void;
@@ -59,7 +62,7 @@ export default function PayButton({ transactionId, label, amount, busy, onBusy, 
     setLocalBusy(true);
     onBusy?.(true);
     try {
-      const payment = await startPayment(transactionId, amount !== undefined ? { amount } : {});
+      const payment = await startPayment(transactionId, balance ? { balance: true } : amount !== undefined ? { amount } : {});
       // Leave for Paystack. Nothing is "paid" until the return page verifies.
       goToPaystack(payment.authorizationUrl, navigate);
     } catch (err) {
@@ -78,7 +81,7 @@ export default function PayButton({ transactionId, label, amount, busy, onBusy, 
 
   return (
     <div className="space-y-2">
-      <Button size="lg" fullWidth onClick={pay} disabled={working || disabled}>{working ? "Opening Paystack…" : label}</Button>
+      <Button size="lg" fullWidth variant={variant} onClick={pay} disabled={working || disabled}>{working ? "Opening Paystack…" : label}</Button>
       {error && <ErrorText>{error}</ErrorText>}
       {note && <p className="text-xs text-[var(--muted-foreground)]">You'll pay on Paystack's secure page — by card or bank transfer — then come back here.</p>}
     </div>

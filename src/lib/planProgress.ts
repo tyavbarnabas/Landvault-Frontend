@@ -113,9 +113,10 @@ export interface HistoryRow {
   penaltyAmount: number | null;
 }
 
-export function paymentHistory(owned: OwnedPlot | null | undefined, schedule: PlanSchedule): HistoryRow[] {
+// A flexible plan has no schedule: every payment is just "Payment".
+export function paymentHistory(owned: OwnedPlot | null | undefined, schedule: PlanSchedule | null): HistoryRow[] {
   if (!owned) return [];
-  const count = schedule.instalments.length;
+  const count = schedule?.instalments.length ?? 0;
   // Instalments are paid one at a time, in order: the nth instalment payment
   // is instalment n.
   let n = 0;

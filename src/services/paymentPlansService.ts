@@ -91,6 +91,23 @@ export interface PurchaseFlexible {
   finishBy: string | null;
 }
 
+// Where a running flexible plan stands today (transaction.flexibleStanding),
+// worked out by the backend on every read. Nothing here is ever "due".
+export interface FlexibleStanding {
+  paid: number;
+  remaining: number;
+  // A payment Paystack confirmed that finance hasn't verified yet: the next
+  // one is refused until then (INSTALMENT_AWAITING_VERIFICATION).
+  awaitingFinance: number | null;
+  lastPaymentOn: string | null;
+  // From when the developer may give notice if nothing is paid.
+  quietFrom: string | null;
+  finishBy: string | null;
+  // Why the developer may give notice now, or null.
+  noticeReason: "inactivity" | "finish_by" | null;
+  notice: { trigger: "inactivity" | "finish_by"; reason: string; givenAt: string; deadline: string; confirmableFrom: string } | null;
+}
+
 // A plan's name in a sentence: "the 12-month plan", but the "Pay as you can" plan.
 export function planInSentence(name: string): string {
   return /\bplan$/i.test(name.trim()) ? `the ${name.trim()}` : `the “${name.trim()}” plan`;

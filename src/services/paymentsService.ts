@@ -14,7 +14,7 @@ import { isMock } from "../lib/backends";
 import { paginateMock, type Page, type PageParams } from "../lib/pagination";
 import type { PaymentPlanType } from "./marketplaceService";
 import { mockTransactionStore, type OfferSummary, type PlanSchedule, type Transaction, type TransactionStatus } from "./marketplaceCheckoutService";
-import type { PurchaseFlexible } from "./paymentPlansService";
+import type { FlexibleStanding, PurchaseFlexible } from "./paymentPlansService";
 import { addDocuments } from "./documentsService";
 import { confirmOwnedPayments, fetchOwnedPlotById, recordOwnedPayment, updateOwnedPlotStatus } from "./portfolioService";
 import type { PaymentStatus, RefundStatus } from "./paymentTypes";
@@ -68,6 +68,7 @@ export interface Purchase {
   schedule: PlanSchedule | null;
   // A flexible purchase's fixed terms (no schedule); absent or null otherwise.
   flexible?: PurchaseFlexible | null;
+  flexibleStanding?: FlexibleStanding | null;
   // Where a running plan stands today (phase 4), worked out by the backend
   // on every read. Absent before a plan runs and in demo mode.
   standing?: PlanStanding | null;

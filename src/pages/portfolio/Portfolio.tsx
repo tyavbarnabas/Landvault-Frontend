@@ -222,14 +222,14 @@ function EstateGroup({ plots }: { plots: OwnedPlot[] }) {
 function planText(plot: OwnedPlot): string {
   const intent = plot.intent === "investment" ? "Investment" : "Development";
   if (plot.plan === "outright") return `Outright · ${intent}`;
-  return `${plot.planName ?? "Instalment plan"} · ${intent}`;
+  return `${plot.planName ?? (plot.plan === "flexible" ? "Flexible plan" : "Instalment plan")} · ${intent}`;
 }
 
 // Under the plot: when it became the buyer's, or when the plan started or ended.
 function dateText(plot: OwnedPlot): string {
   if (plot.status === "withdrawn" && plot.endedAt) return `Withdrew ${formatDay(plot.endedAt)}`;
   if (plot.status === "revoked" && plot.endedAt) return `Revoked ${formatDay(plot.endedAt)}`;
-  if (plot.plan === "installment" && plot.status !== "completed" && plot.planStartedAt) return `On plan since ${formatDay(plot.planStartedAt)}`;
+  if ((plot.plan === "installment" || plot.plan === "flexible") && plot.status !== "completed" && plot.planStartedAt) return `On plan since ${formatDay(plot.planStartedAt)}`;
   return plot.acquiredDate ? `Acquired ${formatDay(plot.acquiredDate)}` : "Not acquired until finance verifies";
 }
 
@@ -262,6 +262,10 @@ function NextPayment({ plot }: { plot: OwnedPlot }) {
   }
   if (plot.status === "withdrawn" || plot.status === "revoked") return <span className="text-sm text-[var(--muted-foreground)]">{plot.refund ? "—" : "Refund in parts"}</span>;
   if (plot.status === "pending_verification") return <span className="text-sm text-[var(--muted-foreground)]">Awaiting verification</span>;
+  // A flexible plan: the buyer pays what they like, when they like.
+  if (plot.plan === "flexible" && plot.status === "installment_active") {
+    return <div className="text-sm text-[var(--muted-foreground)]"><div>Any time</div><div className="text-xs">nothing is due</div></div>;
+  }
   if (plot.nextDueDate && plot.nextDueAmount !== undefined) {
     const days = Math.round((new Date(plot.nextDueDate).getTime() - Date.now()) / 86_400_000);
     const tone = days < 0 ? "text-[var(--warning-text)]" : days <= 7 ? "text-[var(--warning-text)]" : "text-[var(--foreground)]";
@@ -299,7 +303,7 @@ function PlotRow({ plot }: { plot: OwnedPlot }) {
               {dateText(plot)}
             </div>
           </div>
-          <span className="lg:hidden shrink-0 flex flex-col items-end gap-1"><PlotStatusBadge status={plot.status} /><RestructureBadge plot={plot} /></span>
+          <span className="lg:hidden shrink-0 flex flex-col items-end gap-1"><PlotStatusBadge status={plot.status} plan={plot.plan} /><RestructureBadge plot={plot} /></span>
         </div>
         <div className="hidden lg:block text-sm font-mono-data text-[var(--foreground)]">{size ?? "—"}</div>
         <div className="hidden lg:block text-sm text-[var(--foreground)]">{planText(plot)}</div>
@@ -308,6 +312,8 @@ function PlotRow({ plot }: { plot: OwnedPlot }) {
             // Equity is 0 until finance verifies: a bar at 0% would read as "nothing paid".
             plot.plan === "installment"
               ? <p className="text-xs text-[var(--muted-foreground)]">Deposit received; your equity shows once finance verifies it.</p>
+              : plot.plan === "flexible"
+              ? <p className="text-xs text-[var(--muted-foreground)]">First payment received; your equity shows once finance verifies it.</p>
               : <p className="text-xs text-[var(--muted-foreground)]">Payment of <span className="font-mono-data">{formatAmount(plot.totalPrice, plot.currency)}</span> received; your equity shows once finance confirms it.</p>
           ) : (
             <>
@@ -323,7 +329,7 @@ function PlotRow({ plot }: { plot: OwnedPlot }) {
             </>
           )}
         </div>
-        <div className="hidden lg:flex flex-col items-start gap-1"><PlotStatusBadge status={plot.status} /><RestructureBadge plot={plot} /></div>
+        <div className="hidden lg:flex flex-col items-start gap-1"><PlotStatusBadge status={plot.status} plan={plot.plan} /><RestructureBadge plot={plot} /></div>
         <div className="mt-2 lg:mt-0"><NextPayment plot={plot} /></div>
         <ChevronRightIcon size={16} className="hidden lg:block text-[var(--muted-foreground)]" />
       </Link>

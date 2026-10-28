@@ -93,6 +93,9 @@ export default function PlotView() {
   // A plan bought through checkout: its fixed schedule and its Pay buttons are
   // on the purchase page, every figure the backend's — nothing worked out here.
   const purchasePlan = plot.plan === "installment" && !!plot.transactionId;
+  // A flexible ("pay as you can") plan: no schedule; paying is on the purchase page.
+  const flexiblePlan = plot.plan === "flexible" && !!plot.transactionId;
+  const planLabel = plot.plan === "outright" ? "Outright" : flexiblePlan ? plot.planName ?? "Flexible plan" : purchasePlan ? "Instalment plan" : `${plot.installmentMonths}-month ${plot.plan}`;
   const canPay = installments && !purchasePlan && (plot.status === "installment_active" || plot.status === "in_arrears") && !!nextPeriod;
   const pending = plot.status === "pending_verification";
   const docsAvailable = isAvailable("documents");
@@ -206,7 +209,7 @@ export default function PlotView() {
             {[plot.estate, sizeText(plot), plot.location].filter(Boolean).join(" · ")}
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
-            <PlotStatusBadge status={plot.status} />
+            <PlotStatusBadge status={plot.status} plan={plot.plan} />
             {titleRow && <Badge label={titleRow.badge} variant={titleRow.tone} />}
           </div>
         </div>
@@ -270,6 +273,7 @@ export default function PlotView() {
                 <p className="text-sm text-[var(--muted-foreground)]">
                   {pending ? "Your equity and acquired date show once finance confirms the payment."
                     : paidOff ? "Paid in full and verified by the developer's finance team."
+                    : flexiblePlan ? `${formatAmount(outstanding, plot.currency)} left to pay — held for you on the plan until the plan total is verified.`
                     : purchasePlan ? `${plot.installmentsPaid ?? 0} of ${plot.installmentMonths ?? "?"} instalments paid — held for you on your plan until the last one is verified.`
                     : `${pct}% paid · ${formatAmount(outstanding, plot.currency)} to go`}
                 </p>
@@ -277,10 +281,10 @@ export default function PlotView() {
             </div>
             <dl className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4 border-t border-[var(--border)]">
               <Fact label="Paid" value={formatAmount(plot.paidAmount, plot.currency)} mono green={!pending && plot.paidAmount > 0} />
-              {purchasePlan
+              {purchasePlan || flexiblePlan
                 ? <Fact label="Plan total" value={formatAmount(plot.totalPrice, plot.currency)} mono />
                 : <Fact label={paidOff ? "Price" : "Outstanding"} value={formatAmount(paidOff ? plot.totalPrice : outstanding, plot.currency)} mono />}
-              <Fact label="Plan" value={plot.plan === "outright" ? "Outright" : purchasePlan ? "Instalment plan" : `${plot.installmentMonths}-month ${plot.plan}`} />
+              <Fact label="Plan" value={planLabel} />
               <Fact label="Acquired" value={plot.acquiredDate ? formatDay(plot.acquiredDate) : "When finance verifies"} />
             </dl>
             {!paidOff && !pending && (
@@ -309,7 +313,13 @@ export default function PlotView() {
               <LinkButton to={`/purchases/${plot.transactionId}`} variant="secondary">Schedule and payments</LinkButton>
             </Section>
           )}
-          {!purchasePlan && schedule && schedule.periods.length > 0 && (
+          {flexiblePlan && (
+            <Section title="Your plan">
+              <p className="text-sm text-[var(--muted-foreground)] mb-3">What's paid, what's left, every payment and the way to pay again are on this plot's purchase page.</p>
+              <LinkButton to={`/purchases/${plot.transactionId}`} variant="secondary">Pay and payments</LinkButton>
+            </Section>
+          )}
+          {!purchasePlan && !flexiblePlan && schedule && schedule.periods.length > 0 && (
             <Section title="Instalment schedule">
               <PaymentSchedule periods={schedule.periods} currency={plot.currency} nextPayablePeriodId={nextPeriod?.id} />
             </Section>
@@ -357,7 +367,7 @@ export default function PlotView() {
                 ["Surveyed area", plot.actualSqm ? `${plot.actualSqm} sqm` : "Not yet surveyed"],
                 ["Type", plot.isCorner ? "Corner piece ★" : "Standard"],
                 ["Intent", plot.intent === "development" ? "Development" : "Investment"],
-                ["Plan", plot.plan === "outright" ? "Outright" : `${plot.installmentMonths}-month ${plot.plan}`],
+                ["Plan", planLabel],
                 ["Acquired", plot.acquiredDate ? formatDay(plot.acquiredDate) : "When finance verifies"],
               ].map(([l, v]) => (
                 <div key={l} className="flex justify-between gap-4 py-2.5 border-b border-[var(--border)]">

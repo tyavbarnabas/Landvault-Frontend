@@ -24,7 +24,8 @@ const STATUS_INFO: Record<PlotAccountStatus, { label: string; variant: BadgeVari
   superseded: { label: "Superseded by upgrade", variant: "neutral" },
 };
 
-export default function PlotStatusBadge({ status }: { status: string }) {
-  const info = STATUS_INFO[status as PlotAccountStatus];
+// A flexible plan is never "on an instalment plan".
+export default function PlotStatusBadge({ status, plan }: { status: string; plan?: string }) {
+  const info = plan === "flexible" && status === "installment_active" ? { label: "On flexible plan", variant: "info" as BadgeVariant } : STATUS_INFO[status as PlotAccountStatus];
   return <StatusBadge label={info?.label ?? status} variant={info?.variant ?? "neutral"} />;
 }

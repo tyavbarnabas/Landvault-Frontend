@@ -6,7 +6,7 @@ export type { GeoPoint };
 // "on-plan": held for a buyer on an instalment plan (deposit verified) — not
 // for sale and can't be withheld, but not sold until the plan completes.
 export type PlotStatus = "available-dev" | "available-inv" | "reserved" | "on-plan" | "sold" | "withheld";
-export type PaymentPlan = "outright" | "milestone" | "installment";
+export type PaymentPlan = "outright" | "milestone" | "installment" | "flexible";
 export type Currency = "NGN" | "USD" | "GBP" | "EUR";
 export type KYCStatus = "unsubmitted" | "submitted" | "under_review" | "approved" | "rejected";
 

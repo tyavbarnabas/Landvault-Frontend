@@ -154,7 +154,7 @@ export function PlanScheduleCard({ purchase, owned }: { purchase: Purchase; owne
 }
 
 export function PlanPaymentsCard({ purchase, owned, documents }: { purchase: Purchase; owned: OwnedPlot | null; documents: Document[] }) {
-  const rows = paymentHistory(owned, purchase.schedule!);
+  const rows = paymentHistory(owned, purchase.schedule ?? null);
   if (rows.length === 0) return null;
   return (
     <Card as="section" aria-labelledby="history-heading">
