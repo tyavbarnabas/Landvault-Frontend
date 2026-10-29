@@ -1,0 +1,51 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // Run by `pnpm lint` and in CI. Errors fail the build; warnings are known
+  // debt to clear as screens are touched (FIGMA_DESIGN_RULES §4).
+  "plugins": ["react", "typescript", "unicorn", "oxc", "jsx-a11y", "vitest"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "settings": {
+    // Our Field primitives render the native controls, so a <label> round
+    // them is labelled.
+    "jsx-a11y": {
+      "components": { "Input": "input", "Select": "select", "Textarea": "textarea", "Button": "button" }
+    }
+  },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "warn",
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+
+    // The automatic JSX runtime: React needn't be in scope.
+    "react/react-in-jsx-scope": "off",
+    // Table rows pass cells as an array; DisclosureTable keys them.
+    "react/jsx-key": "off",
+    // role="status" / role="alert" on a <div> is the house style for messages.
+    "jsx-a11y/prefer-tag-over-role": "off",
+    // Dialog moves focus into itself on purpose (focus trap).
+    "jsx-a11y/no-autofocus": "off",
+    // Sorting a copy is the norm here; toSorted needs ES2023.
+    "unicorn/no-array-sort": "off",
+    "unicorn/no-array-reverse": "off",
+    "unicorn/consistent-function-scoping": "off",
+
+    // React Compiler purity rules: worth clearing, not yet build-breaking.
+    "react/set-state-in-effect": "warn",
+    "react/purity": "warn",
+    "react/refs": "warn",
+    "react/immutability": "warn",
+    "jsx-a11y/label-has-associated-control": "warn",
+    // False positives: valid tokens such as "given-name" are rejected, and
+    // empty table cells and <summary> count as unlabelled controls.
+    "jsx-a11y/autocomplete-valid": "off",
+    "jsx-a11y/control-has-associated-label": "off",
+
+    "vitest/no-conditional-expect": "warn",
+    "vitest/require-mock-type-parameters": "off",
+    "vitest/require-to-throw-message": "off"
+  },
+  "ignorePatterns": ["dist", "node_modules"]
+}

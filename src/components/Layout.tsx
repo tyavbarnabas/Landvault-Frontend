@@ -440,7 +440,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
       {/* Mobile overlay */}
       {mobileOpen && (
+        // The backdrop is a mouse convenience; the nav links close the menu too.
+        // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
         <div
+          aria-hidden="true"
           className="fixed inset-0 z-30 bg-black/50 lg:hidden"
           onClick={() => setMobileOpen(false)}
         />
@@ -454,6 +457,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           style={{ height: "52px" }}
         >
           <button
+            type="button"
+            aria-label="Open menu"
+            aria-expanded={mobileOpen}
             className="lg:hidden text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
             onClick={() => setMobileOpen(true)}
           >

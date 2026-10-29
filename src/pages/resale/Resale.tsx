@@ -7,7 +7,7 @@ import { useApp } from "../../contexts/AppContext";
 import PlotStatusBadge from "../../components/portfolio/PlotStatusBadge";
 import ResaleProgress from "../../components/resale/ResaleProgress";
 import {
-  fetchMyListings, createListing, fetchMyOffersReceived,
+  createListing, fetchMyOffersReceived,
   declineOffer, acceptOffer, getListingEligibility, fetchResaleTransfer, fetchMyResaleTransfers,
   RESALE_POLICY, type ResaleListing, type ResaleOffer, type ResaleTransfer, type OutstandingTreatment,
 } from "../../services/resaleService";

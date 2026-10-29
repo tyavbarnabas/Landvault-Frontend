@@ -22,3 +22,6 @@ logs/
 
 # Personal Claude Code overrides for this project (not shared with the team)
 .claude/settings.local.json
+
+# Test coverage reports (pnpm test:coverage)
+coverage

@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect } from "react";
-import { useSearchParams, Link } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import type { OwnedPlot } from "../../data/mockData";
 import { fetchOwnedPlots } from "../../services/portfolioService";
 import { fetchDisputes, createDispute, type DisputeTicket } from "../../services/disputesService";
-import { useApp } from "../../contexts/AppContext";
 import { ListCard } from "../../components/ui/Card";
 
 interface ChatMessage {
@@ -24,7 +23,6 @@ const INITIAL_MESSAGES: ChatMessage[] = [
 
 export default function Support() {
   const [searchParams] = useSearchParams();
-  const { user } = useApp();
   const isDisputeFlow = searchParams.get("dispute") === "true";
   const disputePlotId = searchParams.get("plot");
 
@@ -78,7 +76,7 @@ export default function Support() {
         </div>
       </div>
 
-      {tab === "chat" && <ChatPanel userName={user?.name || "You"} />}
+      {tab === "chat" && <ChatPanel />}
       {tab === "disputes" && (
         <DisputesPanel
           initialPlotId={isDisputeFlow ? disputePlotId || "" : ""}
@@ -95,7 +93,7 @@ export default function Support() {
 
 // ─── Chat panel ────────────────────────────────────────────────────────────
 
-function ChatPanel({ userName }: { userName: string }) {
+function ChatPanel() {
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
   const [input, setInput] = useState("");
   const [agentTyping, setAgentTyping] = useState(false);

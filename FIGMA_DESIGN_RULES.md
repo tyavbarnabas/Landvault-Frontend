@@ -15,7 +15,7 @@ Don't paste it in as it comes.
 | Forms | `react-hook-form` + `zod` (`@hookform/resolvers`) |
 | Maps | `leaflet` / `react-leaflet` (`src/components/map/`); the Leaflet CSS is imported in `src/index.css` |
 | Build | Vite 8 (`vite.config.ts`, `@` → `src`), served by Figma Make on `$PORT` (8443) |
-| Tests / format | Vitest (`*.test.ts` beside the source), oxfmt |
+| Tests / lint / format | Vitest (`*.test.ts` beside the source), oxlint (`.oxlintrc.json`: errors fail CI, warnings are debt), oxfmt. `pnpm check` runs types, lint, tests and build, as CI (`.github/workflows/ci.yml`) does on every push |
 | Component docs | **No Storybook.** `vite.config.ts` registers `src/**/*.stories.tsx` for the Figma Make kit, but none exist yet |
 
 Don't add UI libraries such as shadcn, MUI, Radix, lucide or Framer Motion. Everything is

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import LoadError from "../../../components/LoadError";
-import { useParams, useSearchParams, Link } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import EstateSetupPage from "../../../components/portal/EstateSetupPage";
 import { useFetch } from "../../../lib/useFetch";
 import { formatAmount, type Currency } from "../../../data/mockData";

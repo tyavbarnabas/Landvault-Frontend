@@ -109,7 +109,6 @@ export default function PlotView() {
   const hasActions = actions.upgrade || actions.resale || actions.dispute;
   // With nothing to pay and no actions (every live plot today), the overview
   // takes the full width, like the cards above it.
-  const sidebar = canPay || hasActions;
   const titleStatus = plotTitleStatus(plot);
   const purchasePayment = plot.payments[0];
 

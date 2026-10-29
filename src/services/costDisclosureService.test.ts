@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  fetchCostDisclosure, isGrandfathered, isRange, range,
+  fetchCostDisclosure, isRange, range,
   tierCommitmentForLandPrice, tierCommitmentForSize,
   type PublicFee, type TierCommitment,
 } from "./costDisclosureService";

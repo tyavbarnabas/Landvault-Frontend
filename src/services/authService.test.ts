@@ -1,9 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   AUTH_ERROR_CODES, MOCK_DEMO_CODES, changePassword, confirmTwoFactor, disableTwoFactor, errorCodeOf,
   forgotPassword, isBuyer, isPlatformStaff, isPortalStaff, landingRouteFor, login,
   regenerateRecoveryCodes, resetPassword, restoreSession, setupTwoFactor, verifyTwoFactor,
-  type AuthUser,
 } from "./authService";
 
 const BUYER = "emeka.okonkwo@gmail.com";        // 2FA off

@@ -14,7 +14,7 @@ import {
 import LoadError from "../../../components/LoadError";
 import StatusBadge, { onboardingRequestStatusBadge } from "../../../components/StatusBadge";
 import Page, { Loading } from "../../../components/ui/Page";
-import Card, { InfoBox, ListCard } from "../../../components/ui/Card";
+import Card, { InfoBox } from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import TextLink from "../../../components/ui/TextLink";
 import Alert from "../../../components/ui/Alert";

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { formatAmount, type Estate } from "../../data/mockData";
 import { fetchEstates, fetchPriceTiers, type PriceTier } from "../../services/estatesService";
 import { toListingPlot, priceForPlot, type ListingPlot } from "../../services/marketplacePlotsService";
@@ -106,7 +106,6 @@ export function SyndicateList() {
 // ─── Create syndicate ──────────────────────────────────────────────────────
 
 export function CreateSyndicate() {
-  const navigate = useNavigate();
   const { currency } = useApp();
   const [estates, setEstates] = useState<Estate[]>([]);
   const [step, setStep] = useState<"name" | "plot" | "members" | "done">("name");
@@ -332,7 +331,6 @@ export function CreateSyndicate() {
 export function SyndicateDetail() {
   const { id } = useParams();
   const { currency } = useApp();
-  const navigate = useNavigate();
   const [estates, setEstates] = useState<Estate[]>([]);
   const [syn, setSyn] = useState<Syndicate | null | undefined>(undefined); // undefined = loading, null = not found
 

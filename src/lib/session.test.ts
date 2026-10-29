@@ -295,7 +295,7 @@ describe("the frontend never handles the refresh token", () => {
       for (const name of readdirSync(dir)) {
         const path = join(dir, name);
         if (statSync(path).isDirectory()) walk(path);
-        else if (/\.(ts|tsx)$/.test(name) && !/\.test\.ts$/.test(name) && readFileSync(path, "utf8").includes("refreshToken")) offenders.push(path);
+        else if (/\.(ts|tsx)$/.test(name) && !name.endsWith(".test.ts") && readFileSync(path, "utf8").includes("refreshToken")) offenders.push(path);
       }
     };
     walk(join(__dirname, ".."));

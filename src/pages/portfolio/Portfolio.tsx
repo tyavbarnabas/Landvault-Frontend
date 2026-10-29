@@ -290,7 +290,7 @@ function NextPayment({ plot }: { plot: OwnedPlot }) {
     return (
       <div className={`text-sm ${tone}`}>
         <div className="font-mono-data">{formatAmount(plot.nextDueAmount, plot.currency)}</div>
-        <div className={`text-xs ${days >= 0 && days > 7 ? "text-[var(--muted-foreground)]" : ""}`}>{days < 0 ? "was due" : "due"} {formatDay(plot.nextDueDate)}</div>
+        <div className={`text-xs ${days > 7 ? "text-[var(--muted-foreground)]" : ""}`}>{days < 0 ? "was due" : "due"} {formatDay(plot.nextDueDate)}</div>
       </div>
     );
   }

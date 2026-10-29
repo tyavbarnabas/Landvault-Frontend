@@ -223,7 +223,7 @@ export default function TenantDetail() {
                     <input
                       type="checkbox"
                       checked={failedDocIds.has(doc.id)}
-                      onChange={() => setFailedDocIds((prev) => { const next = new Set(prev); next.has(doc.id) ? next.delete(doc.id) : next.add(doc.id); return next; })}
+                      onChange={() => setFailedDocIds((prev) => { const next = new Set(prev); if (next.has(doc.id)) next.delete(doc.id); else next.add(doc.id); return next; })}
                       className="w-3.5 h-3.5 accent-[var(--accent)]"
                     />
                     {DOCUMENT_TYPE_LABELS[doc.type]} — {doc.fileName}

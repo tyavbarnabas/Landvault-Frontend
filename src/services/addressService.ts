@@ -64,7 +64,7 @@ export function addressLines(a: PurchaseAddress & { countryName?: string }): str
 // The backend's field errors, by field; anything else as one message.
 export function addressErrors(err: unknown): { fields: Partial<Record<keyof AddressInput, string>>; message: string } {
   if (!(err instanceof ApiError)) return { fields: {}, message: "Your address couldn't be saved. Check your connection and try again." };
-  const fields = { ...(err.body?.fieldErrors ?? {}) } as Partial<Record<keyof AddressInput, string>>;
+  const fields = { ...err.body?.fieldErrors } as Partial<Record<keyof AddressInput, string>>;
   if (err.body?.code === "UNKNOWN_STATE") fields.state ??= "Choose a Nigerian state, or the FCT.";
   if (err.body?.code === "UNKNOWN_COUNTRY") fields.country ??= "Choose a country from the list.";
   return { fields, message: Object.keys(fields).length ? "" : err.message || "Your address couldn't be saved. Try again." };

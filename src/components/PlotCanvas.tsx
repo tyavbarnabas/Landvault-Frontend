@@ -23,7 +23,7 @@ import { formatAmount } from "../data/mockData";
 import { BUYER_FACING_STATUSES, STATUS_COLORS, STATUS_LABELS } from "../lib/plotStatus";
 import { CAPABILITIES } from "../lib/capabilities";
 import { AGIS_LAYER_LABELS, AGIS_LAYER_COLORS, isAffected, type AGISLayer } from "../services/agisService";
-import { plotLabel, type ListingPlot, type PlotStatus } from "../services/marketplacePlotsService";
+import { plotLabel, type ListingPlot } from "../services/marketplacePlotsService";
 import type { PriceTier } from "../services/marketplaceService";
 
 export type PlotCanvasMode = "browse" | "select" | "readonly";
@@ -146,7 +146,8 @@ function PlotCanvasInner({
   const toggleLayer = (l: AGISLayer) => {
     setActiveLayers((prev) => {
       const next = new Set(prev);
-      next.has(l) ? next.delete(l) : next.add(l);
+      if (next.has(l)) next.delete(l);
+      else next.add(l);
       return next;
     });
   };
@@ -273,6 +274,8 @@ function PlotCanvasInner({
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
       >
+        {/* Hover only drives the tooltip; each plot is its own control. */}
+        {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
         <svg
           width={svgWidth * zoom}
           height={svgHeight * zoom}

@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { formatAmount, type OwnedPlot, type Estate } from "../../data/mockData";
 import { fetchOwnedPlotById, sizeText } from "../../services/portfolioService";
 import { fetchEstates, fetchPriceTiers, type PriceTier } from "../../services/estatesService";
-import { toListingPlot, priceForPlot, type ListingPlot } from "../../services/marketplacePlotsService";
+import { toListingPlot, type ListingPlot } from "../../services/marketplacePlotsService";
 import {
   getUpgradeEligibility, computeUpgradeQuote, requestUpgrade, fetchUpgradeRequest, fetchUpgradeRequestForPlot,
   type UpgradeQuote, type UpgradeRequest, type DeltaPaymentMethod,

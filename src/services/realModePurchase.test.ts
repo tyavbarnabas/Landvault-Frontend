@@ -58,18 +58,6 @@ const LISTING = {
   },
 };
 
-const plotFeature = (id: string, plotNumber: string, availability: string, isCorner = false) => ({
-  type: "Feature", geometry: { type: "Polygon", coordinates: [] },
-  properties: { kind: "plot", id, plotNumber, blockName: "Block A", availability, isCorner, priceTierId: "t1", nominalSizeSqm: 500, actualAreaSqm: 512 },
-});
-const MAP = {
-  type: "FeatureCollection",
-  features: [
-    { type: "Feature", geometry: { type: "Polygon", coordinates: [] }, properties: { kind: "estate" } },
-    plotFeature("p1", "1", "AVAILABLE"), plotFeature("p2", "2", "UNAVAILABLE", true),
-  ],
-};
-
 describe("marketplace listings", () => {
   it("reads the feed from /api/marketplace/estates and maps nulls safely", async () => {
     respond({ "GET /api/marketplace/estates?limit=10": { status: 200, body: { items: [LISTING], total: 1, cursor: null, hasMore: false } } });

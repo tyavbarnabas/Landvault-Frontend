@@ -22,9 +22,10 @@ describe("service registry", () => {
 
   it("gives every mocked service a reason to show", async () => {
     const { SERVICES } = await import("./backends");
-    for (const [key, e] of Object.entries(SERVICES) as [string, { status: string; reason?: string }][]) {
-      if (e.status !== "live") expect([key, !!e.reason]).toEqual([key, true]);
-    }
+    const missing = (Object.entries(SERVICES) as [string, { status: string; reason?: string }][])
+      .filter(([, e]) => e.status !== "live" && !e.reason)
+      .map(([key]) => key);
+    expect(missing).toEqual([]);
   });
 
   it("mocks everything when no backend is configured", async () => {

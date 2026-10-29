@@ -18,7 +18,6 @@
 // ₦4,500,000 of land carrying ₦8,110,000 of declared fees.
 
 import type { Currency } from "../data/mockData";
-import { apiClient } from "../lib/apiClient";
 import { isMock } from "../lib/backends";
 import { fetchListingDto, type ListingDto } from "./marketplaceService";
 
