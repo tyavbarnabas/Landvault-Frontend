@@ -138,11 +138,14 @@ function DueRow({ due, onDone }: { due: RefundDue; onDone: (message: string) => 
   const cells = [
     <>
       <div className="font-semibold text-[var(--foreground)]">{due.buyerName ?? "Buyer name not on record"}</div>
-      {due.buyerEmail && <div className="text-xs text-[var(--muted-foreground)]">{due.buyerEmail}</div>}
+      {due.buyerEmail && <div className="text-xs text-[var(--muted-foreground)] wrap-anywhere">{due.buyerEmail}</div>}
     </>,
     <>
       <div className="text-sm text-[var(--foreground)] first-letter:uppercase">{paidWith ?? "—"}</div>
-      <div className="text-xs text-[var(--muted-foreground)]"><span className="font-mono-data">{due.paymentReference}</span>{due.paidAt ? ` · ${formatDay(due.paidAt)}` : ""}</div>
+      {/* A payment reference is 39 characters with nowhere to wrap: let it
+          break anywhere rather than run into the next column. */}
+      <div className="text-xs text-[var(--muted-foreground)] font-mono-data break-all">{due.paymentReference}</div>
+      {due.paidAt && <div className="text-xs text-[var(--muted-foreground)]">{formatDay(due.paidAt)}</div>}
     </>,
     <span className="text-sm text-[var(--muted-foreground)]">{due.reason ?? "—"}</span>,
     <span className="font-mono-data font-medium text-[var(--foreground)]">{money(due.amount, due.currency)}</span>,
@@ -195,7 +198,7 @@ function SendCard({ refund: r, onDone }: { refund: AdminRefund; onDone: (message
         <div className="min-w-0">
           <div className="font-semibold text-[var(--foreground)]">{buyerOf(r)}</div>
           <div className="text-xs text-[var(--muted-foreground)]">
-            {r.paymentReference ? <><span className="font-mono-data">{r.paymentReference}</span> · </> : null}started {formatDay(r.createdAt)}{r.reason ? ` · ${r.reason.toLowerCase()}` : ""}
+            {r.paymentReference ? <><span className="font-mono-data break-all">{r.paymentReference}</span> · </> : null}started {formatDay(r.createdAt)}{r.reason ? ` · ${r.reason.toLowerCase()}` : ""}
           </div>
         </div>
         <div className="font-mono-data font-medium text-lg text-[var(--foreground)]">{money(r.amount, r.currency)}</div>
@@ -256,10 +259,10 @@ function RefundList({ refunds, tab }: { refunds: AdminRefund[]; tab: Exclude<Tab
         const cells = [
           <>
             <div className="font-semibold text-[var(--foreground)]">{r.buyerName ?? "Buyer name not on record"}</div>
-            {r.buyerEmail && <div className="text-xs text-[var(--muted-foreground)]">{r.buyerEmail}</div>}
+            {r.buyerEmail && <div className="text-xs text-[var(--muted-foreground)] wrap-anywhere">{r.buyerEmail}</div>}
           </>,
           <span className="font-mono-data font-medium text-[var(--foreground)]">{money(r.amount, r.currency)}</span>,
-          <span className="font-mono-data text-xs text-[var(--muted-foreground)]">{r.paymentReference ?? "—"}</span>,
+          <span className="block font-mono-data text-xs text-[var(--muted-foreground)] break-all">{r.paymentReference ?? "—"}</span>,
           <span className="text-sm text-[var(--muted-foreground)]"><span className="lg:hidden">Started </span>{formatDay(r.createdAt)}</span>,
           stage === "ready_to_send" ? <StatusBadge label="Ready to send" variant="warning" /> : <StatusBadge {...refundStatusBadge(r.status)} />,
         ];
