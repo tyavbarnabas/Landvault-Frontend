@@ -14,6 +14,7 @@ import { normalizeVerifyCode } from "../services/documentsService";
 import { NIGERIAN_STATES } from "../data/nigerianStates";
 import { useFetch } from "../lib/useFetch";
 import EstateCard from "../components/marketplace/EstateCard";
+import NightSky from "../components/marketplace/NightSky";
 import Card from "../components/ui/Card";
 import Button, { LinkButton } from "../components/ui/Button";
 import { Input, Select } from "../components/ui/Field";
@@ -59,8 +60,10 @@ export default function Landing() {
 
   return (
     <div className="bg-[var(--background)]">
-      {/* Hero */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-10 pb-10 lg:pt-16 lg:pb-14 grid lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] gap-10 lg:gap-16 items-center">
+      {/* Hero, under the night sky at night */}
+      <div className="relative overflow-hidden">
+      <NightSky />
+      <section className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-10 pb-10 lg:pt-16 lg:pb-14 grid lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] gap-10 lg:gap-16 items-center">
         <div>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--success-border)] bg-[var(--success-surface)] text-[var(--success-text)] px-3 py-1 text-xs font-medium mb-5">
             <ShieldCheckIcon size={13} />Every developer on HomeTrue is verified
@@ -99,6 +102,7 @@ export default function Landing() {
           </ul>
         </Card>
       </section>
+      </div>
 
       {/* Live counts */}
       <section className="max-w-6xl mx-auto px-4 sm:px-6" aria-label="HomeTrue in numbers">
@@ -128,7 +132,7 @@ export default function Landing() {
           <Card className="text-center text-sm text-[var(--muted-foreground)] py-12">No estates are published yet — check back soon.</Card>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {newest.map((l) => <EstateCard key={l.id} listing={l} />)}
+            {newest.map((l, i) => <EstateCard key={l.id} listing={l} index={i} />)}
           </div>
         )}
       </section>
@@ -154,20 +158,20 @@ export default function Landing() {
       </section>
 
       {/* Why it's safe */}
-      <section className="bg-[var(--primary)] py-14" aria-labelledby="trust-heading">
+      <section className="bg-[var(--surface-inverse)] py-14" aria-labelledby="trust-heading">
         <div className="max-w-6xl mx-auto px-4 sm:px-6">
-          <h2 id="trust-heading" className="font-display text-3xl text-[var(--primary-foreground)] mb-2">Built so you never pay for land that isn't there</h2>
-          <p className="text-[var(--primary-foreground)] opacity-75 mb-8 max-w-2xl">What HomeTrue does on every purchase — whether you're in Abuja or abroad.</p>
+          <h2 id="trust-heading" className="font-display text-3xl text-[var(--surface-inverse-foreground)] mb-2">Built so you never pay for land that isn't there</h2>
+          <p className="text-[var(--surface-inverse-foreground)] opacity-75 mb-8 max-w-2xl">What HomeTrue does on every purchase — whether you're in Abuja or abroad.</p>
           <ul className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
             {TRUST.map(({ icon: Icon, title, body }) => (
-              <li key={title} className="rounded-xl p-6 bg-[var(--primary-foreground)]/[0.07] space-y-3">
+              <li key={title} className="rounded-xl p-6 bg-[var(--surface-inverse-foreground)]/[0.07] space-y-3">
                 <span className="w-10 h-10 rounded-lg bg-[var(--accent)] text-[var(--accent-foreground)] flex items-center justify-center"><Icon size={20} /></span>
-                <div className="font-semibold text-[var(--primary-foreground)]">{title}</div>
-                <p className="text-sm text-[var(--primary-foreground)] opacity-75 leading-relaxed">{body}</p>
+                <div className="font-semibold text-[var(--surface-inverse-foreground)]">{title}</div>
+                <p className="text-sm text-[var(--surface-inverse-foreground)] opacity-75 leading-relaxed">{body}</p>
               </li>
             ))}
           </ul>
-          <p className="mt-6 inline-flex items-start gap-2.5 rounded-lg px-4 py-3 bg-[var(--primary-foreground)]/[0.07] text-sm font-medium text-[var(--primary-foreground)]">
+          <p className="mt-6 inline-flex items-start gap-2.5 rounded-lg px-4 py-3 bg-[var(--surface-inverse-foreground)]/[0.07] text-sm font-medium text-[var(--surface-inverse-foreground)]">
             <span className="text-[var(--accent)] mt-0.5"><AlertIcon size={16} /></span>
             HomeTrue never asks you to pay into a bank account named in a letter, message or flyer.
           </p>

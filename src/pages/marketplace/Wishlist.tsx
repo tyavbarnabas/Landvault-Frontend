@@ -131,11 +131,11 @@ export default function Wishlist() {
           )}
           {view === "cards" ? (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {shown.map((w) => {
+              {shown.map((w, i) => {
                 const detail = details.get(key(w));
                 const change = priceChangeSinceSaved(w);
                 return detail
-                  ? <ListingCard key={key(w)} item={detail} priceChangeSinceSaved={change ?? undefined} priceChangeCurrency={w.currentCurrency ?? undefined} />
+                  ? <ListingCard key={key(w)} item={detail} priceChangeSinceSaved={change ?? undefined} priceChangeCurrency={w.currentCurrency ?? undefined} index={i} />
                   : <SummaryCard key={key(w)} saved={w} />;
               })}
             </div>

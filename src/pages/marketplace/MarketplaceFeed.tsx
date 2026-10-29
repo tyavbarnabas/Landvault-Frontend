@@ -157,7 +157,7 @@ export default function MarketplaceFeed() {
       {!loading && !error && listings.length > 0 && (
         <>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {listings.map((item) => <ListingCard key={`${item.listingType}:${item.data.id}`} item={item} />)}
+            {listings.map((item, i) => <ListingCard key={`${item.listingType}:${item.data.id}`} item={item} index={i} />)}
           </div>
           {hasMore && (
             <button onClick={loadMore} disabled={loadingMore} className="mt-6 w-full py-2.5 border border-[var(--border)] rounded-md text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors disabled:opacity-60">

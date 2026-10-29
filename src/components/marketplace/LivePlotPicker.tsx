@@ -103,7 +103,7 @@ export default function LivePlotPicker({ listing, selectedSizeSqm, onSelectSizeS
       )}
 
       {plots.some((p) => p.hasBoundary === false) && (
-        <p className="text-xs text-amber-800">
+        <p className="text-xs text-[var(--warning-text)]">
           Plots marked “boundary not surveyed” aren't on the map: their exact position in the estate isn't confirmed yet.
         </p>
       )}
@@ -121,7 +121,7 @@ export default function LivePlotPicker({ listing, selectedSizeSqm, onSelectSizeS
                     className={`w-full text-left px-4 py-3 rounded-lg border text-sm flex items-center gap-3 ${plot.id === selectedPlotId ? "border-[var(--accent)] bg-[var(--muted)]" : "border-[var(--border)] bg-[var(--card)]"} disabled:opacity-60`}>
                     <span className="font-medium text-[var(--foreground)]">{plotLabel(plot)}{plot.isCorner ? " ★" : ""}</span>
                     <span className="text-[var(--muted-foreground)]">{plot.sizeSqm ? `${plot.sizeSqm} sqm` : ""}</span>
-                    {plot.hasBoundary === false && <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">boundary not surveyed</span>}
+                    {plot.hasBoundary === false && <span className="text-[11px] px-1.5 py-0.5 rounded bg-[var(--warning-surface)] text-[var(--warning-text)] border border-[var(--warning-border)]">boundary not surveyed</span>}
                     <span className="ml-auto font-mono-data text-[var(--foreground)]">{available ? formatInCurrency(final, tier?.currency) : "Not available"}</span>
                   </button>
                 </li>

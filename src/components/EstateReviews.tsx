@@ -134,7 +134,7 @@ export default function EstateReviews({ estateId, estateName }: { estateId: stri
           className="w-full px-3 py-2.5 border border-[var(--border)] rounded-md text-sm bg-[var(--card)] resize-none"
         />
         <div className="flex items-center justify-between">
-          <span className="text-xs text-emerald-700">{justSubmitted ? "✓ Review posted" : ""}</span>
+          <span className="text-xs text-[var(--success-text)]">{justSubmitted ? "✓ Review posted" : ""}</span>
           <button
             type="submit"
             disabled={!rating || !comment.trim() || posting}
@@ -174,7 +174,7 @@ export default function EstateReviews({ estateId, estateName }: { estateId: stri
                   onClick={() => toggleLike(r.id)}
                   className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md border transition-colors ${
                     likedIds.has(r.id)
-                      ? "border-[var(--accent)] text-[var(--accent)] bg-amber-50"
+                      ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--warning-surface)]"
                       : "border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
                   }`}
                 >

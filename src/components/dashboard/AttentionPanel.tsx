@@ -2,12 +2,12 @@ import { Link } from "react-router-dom";
 import type { AttentionItem } from "../../services/platformMetricsService";
 
 const SEVERITY_STYLES = {
-  amber: "bg-amber-50 border-amber-200 text-amber-900",
-  red: "bg-red-50 border-red-200 text-red-900",
+  amber: "bg-[var(--warning-surface)] border-[var(--warning-border)] text-[var(--warning-text)]",
+  red: "bg-[var(--error-surface)] border-[var(--error-border)] text-[var(--error-text)]",
 };
 const SEVERITY_BADGE = {
-  amber: "bg-amber-100 text-amber-800",
-  red: "bg-red-100 text-red-800",
+  amber: "bg-[var(--warning-surface)] text-[var(--warning-text)]",
+  red: "bg-[var(--error-surface)] text-[var(--error-text)]",
 };
 
 function AttentionRow({ item }: { item: AttentionItem }) {
@@ -36,11 +36,11 @@ export default function AttentionPanel({ items, loading, error }: { items: Atten
       )}
 
       {!loading && !error && items.length === 0 && (
-        <div className="flex items-center gap-2.5 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-emerald-600 shrink-0">
+        <div className="flex items-center gap-2.5 bg-[var(--success-surface)] border border-[var(--success-border)] rounded-lg px-4 py-3">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-[var(--success-text)] shrink-0">
             <path d="M20 6 9 17l-5-5" />
           </svg>
-          <span className="text-sm text-emerald-800 font-medium">Nothing needs your attention.</span>
+          <span className="text-sm text-[var(--success-text)] font-medium">Nothing needs your attention.</span>
         </div>
       )}
 

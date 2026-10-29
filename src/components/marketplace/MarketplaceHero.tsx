@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { NIGERIAN_STATES } from "../../data/nigerianStates";
 import type { UnifiedListingFilters } from "../../services/marketplaceFeedService";
 import { FileTextIcon, LockIcon, MapPinIcon, ShieldCheckIcon } from "../icons";
+import NightSky from "./NightSky";
 
 interface MarketplaceHeroProps {
   filters: UnifiedListingFilters;
@@ -29,8 +30,9 @@ export default function MarketplaceHero({ filters, onSearch }: MarketplaceHeroPr
   };
 
   return (
-    <section className="bg-[var(--secondary)]">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-8 pb-7 sm:pt-12 sm:pb-10">
+    <section className="relative overflow-hidden bg-[var(--secondary)]">
+      <NightSky />
+      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-8 pb-7 sm:pt-12 sm:pb-10">
         <h1 className="font-display text-[28px] leading-[34px] sm:text-[44px] sm:leading-[52px] text-[var(--foreground)]">Find verified land across Nigeria</h1>
         <p className="hidden sm:block text-base text-[var(--secondary-foreground)] mt-3">Developer estates and resale plots from every seller on HomeTrue. Every fee is declared before you pay.</p>
 

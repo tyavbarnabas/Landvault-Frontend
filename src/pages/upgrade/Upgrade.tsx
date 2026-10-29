@@ -65,17 +65,17 @@ export default function Upgrade() {
   if (!eligibility.eligible) {
     return (
       <div className="p-6 max-w-3xl mx-auto">
-        <div className="bg-red-50 border border-red-200 rounded-xl p-5">
-          <div className="text-sm font-semibold text-red-900 mb-1">This plot can't start an upgrade right now</div>
-          <p className="text-xs text-red-800 mb-4">{eligibility.reason}</p>
+        <div className="bg-[var(--error-surface)] border border-[var(--error-border)] rounded-xl p-5">
+          <div className="text-sm font-semibold text-[var(--error-text)] mb-1">This plot can't start an upgrade right now</div>
+          <p className="text-xs text-[var(--error-text)] mb-4">{eligibility.reason}</p>
           <div className="flex flex-col gap-2 items-start">
             {ownedPlot.status === "in_arrears" && (
-              <Link to={`/portfolio/${ownedPlot.id}`} className="text-xs font-medium text-red-800 hover:underline">Request restructuring →</Link>
+              <Link to={`/portfolio/${ownedPlot.id}`} className="text-xs font-medium text-[var(--error-text)] hover:underline">Request restructuring →</Link>
             )}
             {ownedPlot.status === "upgrade_pending" && inFlightRequest && (
-              <Link to={`/upgrade/request/${inFlightRequest.id}`} className="text-xs font-medium text-red-800 hover:underline">View upgrade progress →</Link>
+              <Link to={`/upgrade/request/${inFlightRequest.id}`} className="text-xs font-medium text-[var(--error-text)] hover:underline">View upgrade progress →</Link>
             )}
-            <Link to={`/portfolio/${ownedPlot.id}`} className="text-xs font-medium text-red-800 hover:underline">Back to plot →</Link>
+            <Link to={`/portfolio/${ownedPlot.id}`} className="text-xs font-medium text-[var(--error-text)] hover:underline">Back to plot →</Link>
           </div>
         </div>
       </div>
@@ -252,7 +252,7 @@ export default function Upgrade() {
             <h3 className="font-semibold text-sm mb-4">Equity calculation</h3>
             <div className="space-y-2 text-sm">
               <DeltaRow label="Current plot price" value={formatAmount(quote.currentPlotPrice, quote.currency)} />
-              <DeltaRow label="Your equity paid" value={`− ${formatAmount(quote.equityPaid, quote.currency)}`} color="text-emerald-700" />
+              <DeltaRow label="Your equity paid" value={`− ${formatAmount(quote.equityPaid, quote.currency)}`} color="text-[var(--success-text)]" />
               {quote.outstandingOnCurrent > 0 && (
                 <DeltaRow label="Outstanding on current (retired, not carried forward)" value={formatAmount(quote.outstandingOnCurrent, quote.currency)} />
               )}
@@ -271,18 +271,18 @@ export default function Upgrade() {
                   label={quote.direction === "downgrade" ? "Credit due to you" : "Amount due (delta)"}
                   value={quote.direction === "downgrade" ? formatAmount(Math.abs(quote.delta), quote.currency) : formatAmount(quote.delta + quote.adminFee, quote.currency)}
                   bold
-                  color={quote.direction === "downgrade" ? "text-emerald-700" : undefined}
+                  color={quote.direction === "downgrade" ? "text-[var(--success-text)]" : undefined}
                 />
               </div>
             </div>
 
             {quote.direction === "even" && (
-              <div className="mt-3 p-3 bg-emerald-50 rounded-lg text-xs text-emerald-800">
+              <div className="mt-3 p-3 bg-[var(--success-surface)] rounded-lg text-xs text-[var(--success-text)]">
                 Your equity covers the full price of the new plot exactly — no additional payment required.
               </div>
             )}
             {quote.direction === "downgrade" && (
-              <div className="mt-3 p-3 bg-emerald-50 rounded-lg text-xs text-emerald-800">
+              <div className="mt-3 p-3 bg-[var(--success-surface)] rounded-lg text-xs text-[var(--success-text)]">
                 You've paid more into your current plot than the new one costs. Once this completes, you'll receive{" "}
                 <strong className="font-mono-data">{formatAmount(Math.abs(quote.delta), quote.currency)}</strong> back — nothing is absorbed or left unaccounted for.{" "}
                 {UPGRADE_POLICY_NOTE}
@@ -384,11 +384,11 @@ export default function Upgrade() {
             </ul>
           </div>
 
-          {submitError && <p role="alert" className="text-sm text-red-600">{submitError}</p>}
+          {submitError && <p role="alert" className="text-sm text-[var(--error-text)]">{submitError}</p>}
 
           <div className="flex gap-2">
             <button onClick={() => setStep("delta")} className="flex-1 py-2.5 border border-[var(--border)] rounded-md text-sm text-[var(--muted-foreground)]">← Back</button>
-            <button onClick={handleSubmit} disabled={submitting} className="flex-[2] py-2.5 bg-[var(--accent)] text-white rounded-md text-sm font-semibold disabled:opacity-60 hover:opacity-90 transition-opacity">
+            <button onClick={handleSubmit} disabled={submitting} className="flex-[2] py-2.5 bg-[var(--accent)] text-[var(--accent-foreground)] rounded-md text-sm font-semibold disabled:opacity-60 hover:opacity-90 transition-opacity">
               {submitting ? "Submitting…" : "Submit upgrade request"}
             </button>
           </div>

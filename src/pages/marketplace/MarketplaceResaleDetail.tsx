@@ -27,6 +27,7 @@ import Alert from "../../components/ui/Alert";
 import TextLink from "../../components/ui/TextLink";
 import { Loading } from "../../components/ui/Page";
 import { MapPinIcon, ShieldCheckIcon } from "../../components/icons";
+import EstatePhoto from "../../components/marketplace/EstatePhoto";
 
 const UNAVAILABLE_COPY: Record<string, string> = {
   resale_pending: "This plot's title is already transferring to another buyer.",
@@ -88,13 +89,13 @@ export default function MarketplaceResaleDetail() {
 
       <div className="grid lg:grid-cols-[minmax(0,1fr)_22rem] gap-8 items-start">
         <div className="space-y-6 min-w-0">
-          <div className="relative aspect-[21/9] rounded-xl overflow-hidden bg-[var(--muted)] flex items-center justify-center">
+          <EstatePhoto className="aspect-[21/9] rounded-xl overflow-hidden bg-[var(--muted)] flex items-center justify-center">
             {estate?.imageUrl ? (
               <img src={estate.imageUrl} alt={`${listing.estateName} estate`} loading="lazy" className="w-full h-full object-cover" />
             ) : (
               <MapPinIcon size={40} className="text-[var(--muted-foreground)]/40" />
             )}
-          </div>
+          </EstatePhoto>
 
           <div className="space-y-2">
             <ListingTypeBadge type="resale" />

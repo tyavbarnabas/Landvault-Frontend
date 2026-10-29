@@ -1,8 +1,8 @@
 import type { TierAvailability } from "../../services/marketplaceService";
 
 const STYLES: Record<TierAvailability, string> = {
-  available: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  low_stock: "bg-amber-50 text-amber-700 border-amber-200",
+  available: "bg-[var(--success-surface)] text-[var(--success-text)] border-[var(--success-border)]",
+  low_stock: "bg-[var(--warning-surface)] text-[var(--warning-text)] border-[var(--warning-border)]",
   sold_out: "bg-[var(--muted)] text-[var(--muted-foreground)] border-[var(--border)]",
 };
 

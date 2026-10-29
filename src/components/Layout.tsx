@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useApp } from "../contexts/AppContext"
 import { DOCUMENTS_REVIEW_PERMISSION, DOCUMENTS_VIEW_PERMISSION, TITLE_REVIEW_PERMISSION, isBuyer, isPlatformStaff, isPortalStaff } from "../services/authService";
+import ThemeSwitch from "./ThemeSwitch"
 import ErrorBoundary from "./ErrorBoundary"
 import { isLive } from "../lib/backends";
 
@@ -338,7 +339,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {/* Sidebar */}
       <aside
         className={`
-          fixed inset-y-0 left-0 z-40 w-56 bg-[var(--primary)] flex flex-col
+          fixed inset-y-0 left-0 z-40 w-56 bg-[var(--surface-inverse)] flex flex-col
           transform transition-transform duration-200
           ${mobileOpen ? "translate-x-0" : "-translate-x-full"}
           lg:relative lg:translate-x-0 lg:flex
@@ -398,7 +399,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors
                         ${
                           active
-                            ? "bg-white/15 text-white font-medium"
+                            ? "bg-[var(--surface-inverse-active)] text-[var(--surface-inverse-active-foreground)] font-medium"
                             : "text-white/55 hover:bg-white/8 hover:text-white/85"
                         }
                       `}
@@ -416,7 +417,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* User */}
         <div className="px-3 py-4 border-t border-white/10">
           <div className="flex items-center gap-2.5 mb-2.5">
-            <div className="w-7 h-7 rounded-full bg-[var(--accent)] flex items-center justify-center text-white text-xs font-bold shrink-0">
+            <div className="w-7 h-7 rounded-full bg-[var(--accent)] flex items-center justify-center text-[var(--accent-foreground)] text-xs font-bold shrink-0">
               {user?.name.charAt(0)}
             </div>
             <div className="flex-1 min-w-0">
@@ -487,6 +488,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <option value="EUR">EUR €</option>
             </select>
           )}
+
+          <ThemeSwitch />
 
           {/* Notifications */}
           <div className="relative">

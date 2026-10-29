@@ -13,10 +13,10 @@ type RowState = "done" | "active" | "upcoming" | "failed";
 
 const ICONS: Record<RowState, string> = { done: "✓", active: "⏳", upcoming: "○", failed: "✕" };
 const COLORS: Record<RowState, string> = {
-  done: "text-emerald-700 bg-emerald-100",
-  active: "text-amber-700 bg-amber-100",
+  done: "text-[var(--success-text)] bg-[var(--success-surface)]",
+  active: "text-[var(--warning-text)] bg-[var(--warning-surface)]",
   upcoming: "text-[var(--muted-foreground)] bg-[var(--muted)]",
-  failed: "text-red-700 bg-red-100",
+  failed: "text-[var(--error-text)] bg-[var(--error-surface)]",
 };
 
 function Row({ state, label, detail }: { state: RowState; label: string; detail?: string }) {
@@ -61,7 +61,7 @@ function QuoteBreakdown({ r }: { r: UpgradeRequest }) {
       <div className="flex justify-between"><span className="text-[var(--muted-foreground)]">To</span><span className="font-mono-data">{r.toEstateName} — {r.toPlotLabel}</span></div>
       <div className="border-t border-[var(--border)] my-1" />
       <div className="flex justify-between"><span className="text-[var(--muted-foreground)]">Current plot price</span><span className="font-mono-data">{formatAmount(quote.currentPlotPrice, quote.currency)}</span></div>
-      <div className="flex justify-between"><span className="text-[var(--muted-foreground)]">Your equity paid</span><span className="font-mono-data text-emerald-700">− {formatAmount(quote.equityPaid, quote.currency)}</span></div>
+      <div className="flex justify-between"><span className="text-[var(--muted-foreground)]">Your equity paid</span><span className="font-mono-data text-[var(--success-text)]">− {formatAmount(quote.equityPaid, quote.currency)}</span></div>
       {quote.outstandingOnCurrent > 0 && (
         <div className="flex justify-between"><span className="text-[var(--muted-foreground)]">Outstanding on current (retired, not carried forward)</span><span className="font-mono-data">{formatAmount(quote.outstandingOnCurrent, quote.currency)}</span></div>
       )}
@@ -75,7 +75,7 @@ function QuoteBreakdown({ r }: { r: UpgradeRequest }) {
       )}
       <div className="border-t border-[var(--border)] pt-2 mt-1 flex justify-between">
         <span className="font-medium text-[var(--foreground)]">{quote.direction === "downgrade" ? "Credit due to you" : "Amount due"}</span>
-        <span className={`font-mono-data font-bold text-base ${quote.direction === "downgrade" ? "text-emerald-700" : ""}`}>
+        <span className={`font-mono-data font-bold text-base ${quote.direction === "downgrade" ? "text-[var(--success-text)]" : ""}`}>
           {quote.direction === "downgrade" ? formatAmount(Math.abs(quote.delta), quote.currency) : formatAmount(quote.delta + quote.adminFee, quote.currency)}
         </span>
       </div>
@@ -171,7 +171,7 @@ export default function UpgradeProgress({ request }: { request: UpgradeRequest }
       </ol>
 
       {isFailed && (
-        <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+        <div className="mt-4 p-3 bg-[var(--warning-surface)] border border-[var(--warning-border)] rounded-lg text-xs text-[var(--warning-text)]">
           <div className="font-semibold mb-1">What happens next</div>
           Your original plot returns to normal standing — nothing was lost, and you can request an upgrade again whenever you're ready.
         </div>

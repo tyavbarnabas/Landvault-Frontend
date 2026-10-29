@@ -4,8 +4,8 @@ import { fetchMyEnquiries, type Enquiry } from "../../services/enquiryService";
 import { ListCard } from "../../components/ui/Card";
 
 const STATUS_STYLES: Record<Enquiry["status"], string> = {
-  open: "bg-blue-50 text-blue-700 border-blue-200",
-  answered: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  open: "bg-[var(--info-surface)] text-[var(--info-text)] border-[var(--info-border)]",
+  answered: "bg-[var(--success-surface)] text-[var(--success-text)] border-[var(--success-border)]",
   closed: "bg-[var(--muted)] text-[var(--muted-foreground)] border-[var(--border)]",
 };
 

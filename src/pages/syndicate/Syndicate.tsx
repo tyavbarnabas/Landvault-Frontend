@@ -79,7 +79,7 @@ export function SyndicateList() {
 
                 <div className="flex items-center gap-2">
                   {syn.members.map((m) => (
-                    <div key={m.id} title={`${m.name} (${m.pct}%)`} className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold border-2 ${m.status === "joined" ? "bg-[var(--primary)] text-white border-[var(--card)]" : "bg-[var(--muted)] text-[var(--muted-foreground)] border-[var(--border)]"}`}>
+                    <div key={m.id} title={`${m.name} (${m.pct}%)`} className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold border-2 ${m.status === "joined" ? "bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--card)]" : "bg-[var(--muted)] text-[var(--muted-foreground)] border-[var(--border)]"}`}>
                       {m.name.charAt(0)}
                     </div>
                   ))}
@@ -278,12 +278,12 @@ export function CreateSyndicate() {
                   className="w-16 px-2 py-1.5 text-sm border border-[var(--border)] rounded text-center font-mono-data"
                 />
                 <span className="text-sm text-[var(--muted-foreground)]">%</span>
-                <button onClick={() => removeMember(i)} className="text-[var(--muted-foreground)] hover:text-red-500 text-lg leading-none">×</button>
+                <button onClick={() => removeMember(i)} className="text-[var(--muted-foreground)] hover:text-[var(--error-text)] text-lg leading-none">×</button>
               </div>
             ))}
             <button onClick={addMember} className="text-xs text-[var(--accent)] hover:underline mt-1">+ Add member</button>
 
-            <div className={`mt-3 pt-3 border-t border-[var(--border)] flex items-center justify-between text-sm font-medium ${totalPct !== 100 ? "text-red-600" : "text-emerald-700"}`}>
+            <div className={`mt-3 pt-3 border-t border-[var(--border)] flex items-center justify-between text-sm font-medium ${totalPct !== 100 ? "text-[var(--error-text)]" : "text-[var(--success-text)]"}`}>
               <span>Total</span>
               <span className="font-mono-data">{totalPct}% {totalPct !== 100 ? "(must equal 100%)" : "✓"}</span>
             </div>
@@ -411,7 +411,7 @@ export function SyndicateDetail() {
                     <td className="px-4 py-3 text-right font-mono-data font-medium">{m.pct}%</td>
                     <td className="px-4 py-3 text-right font-mono-data text-xs">{formatAmount(m.contributed, currency)}</td>
                     <td className="px-4 py-3 text-right">
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${m.status === "joined" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${m.status === "joined" ? "bg-[var(--success-surface)] text-[var(--success-text)]" : "bg-[var(--warning-surface)] text-[var(--warning-text)]"}`}>
                         {m.status}
                       </span>
                     </td>
@@ -464,9 +464,9 @@ export function SyndicateDetail() {
 
 function StatusPill({ status }: { status: string }) {
   const s: Record<string, string> = {
-    forming: "bg-amber-50 text-amber-700 border-amber-200",
-    active: "bg-blue-50 text-blue-700 border-blue-200",
-    completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    forming: "bg-[var(--warning-surface)] text-[var(--warning-text)] border-[var(--warning-border)]",
+    active: "bg-[var(--info-surface)] text-[var(--info-text)] border-[var(--info-border)]",
+    completed: "bg-[var(--success-surface)] text-[var(--success-text)] border-[var(--success-border)]",
   };
   return (
     <span className={`text-xs font-medium px-3 py-1 rounded-full border capitalize ${s[status] || ""}`}>{status}</span>
@@ -477,7 +477,7 @@ function Stat({ label, value, green }: { label: string; value: string; green?: b
   return (
     <div>
       <div className="text-xs text-[var(--muted-foreground)] mb-0.5">{label}</div>
-      <div className={`font-semibold font-mono-data text-sm ${green ? "text-emerald-700" : ""}`}>{value}</div>
+      <div className={`font-semibold font-mono-data text-sm ${green ? "text-[var(--success-text)]" : ""}`}>{value}</div>
     </div>
   );
 }

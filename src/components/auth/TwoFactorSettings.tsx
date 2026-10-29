@@ -86,13 +86,13 @@ export default function TwoFactorSettings() {
             A code from your authenticator app, as well as your password, each time you sign in.
           </p>
         </div>
-        <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium shrink-0 ${enabled ? "bg-emerald-50 text-emerald-700" : "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${enabled ? "bg-emerald-500" : "bg-gray-400"}`} aria-hidden="true" />
+        <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium shrink-0 ${enabled ? "bg-[var(--success-surface)] text-[var(--success-text)]" : "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${enabled ? "bg-[var(--success)]" : "bg-[var(--muted-foreground)]"}`} aria-hidden="true" />
           {enabled ? "Enabled" : "Disabled"}
         </div>
       </div>
 
-      {notice && <p className="mt-4 text-xs text-emerald-800 bg-emerald-50 rounded-lg p-3">{notice}</p>}
+      {notice && <p className="mt-4 text-xs text-[var(--success-text)] bg-[var(--success-surface)] rounded-lg p-3">{notice}</p>}
 
       {panel === "enrolling" && (
         <div className="mt-4">
@@ -110,7 +110,7 @@ export default function TwoFactorSettings() {
 
       {panel === "idle" && enabled && (
         <div className="mt-4 space-y-4">
-          <div className="p-3 bg-emerald-50 rounded-lg text-xs text-emerald-800">
+          <div className="p-3 bg-[var(--success-surface)] rounded-lg text-xs text-[var(--success-text)]">
             Active, using an authenticator app.
             {/* So a user knows to generate more before running out. */}
             {" "}
@@ -129,7 +129,7 @@ export default function TwoFactorSettings() {
                 Required for platform staff accounts — it can't be turned off.
               </span>
             ) : (
-              <button onClick={() => setPanel("disabling")} className="px-3 py-1.5 border border-[var(--border)] rounded-md text-xs font-medium text-red-700 hover:bg-red-50">
+              <button onClick={() => setPanel("disabling")} className="px-3 py-1.5 border border-[var(--border)] rounded-md text-xs font-medium text-[var(--error-text)] hover:bg-[var(--error-surface)]">
                 Turn off two-factor
               </button>
             )}
@@ -157,7 +157,7 @@ export default function TwoFactorSettings() {
             placeholder={panel === "disabling" ? "000000 or xxxx-xxxx" : "000000"}
             className="w-full px-3 py-2.5 bg-[var(--card)] border border-[var(--border)] rounded-md text-sm font-mono-data"
           />
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-[var(--error-text)]">{error}</p>}
           <div className="flex gap-3">
             <button type="submit" disabled={busy} className="px-4 py-2 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-md text-sm font-semibold disabled:opacity-60 hover:opacity-90">
               {busy ? "Checking…" : panel === "disabling" ? "Turn off two-factor" : "Generate new codes"}

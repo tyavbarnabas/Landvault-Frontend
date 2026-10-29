@@ -225,7 +225,7 @@ function PlotCanvasInner({
               className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border transition-colors ${agisOpen || activeLayers.size > 0 ? "bg-[var(--secondary)] border-[var(--primary)] text-[var(--primary)]" : "border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
             >
               <span aria-hidden="true">🗺</span> AGIS overlay
-              {activeLayers.size > 0 && <span className="ml-0.5 bg-[var(--primary)] text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]">{activeLayers.size}</span>}
+              {activeLayers.size > 0 && <span className="ml-0.5 bg-[var(--primary)] text-[var(--primary-foreground)] rounded-full w-4 h-4 flex items-center justify-center text-[10px]">{activeLayers.size}</span>}
             </button>
           )}
           <div className="flex items-center gap-1" role="group" aria-label="Zoom controls">
@@ -241,7 +241,7 @@ function PlotCanvasInner({
         <div className="mb-3 p-3 bg-[var(--card)] border border-[var(--border)] rounded-xl">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-[var(--foreground)]">FCT / AGIS municipal layers</span>
-            <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+            <span className="text-xs text-[var(--warning-text)] bg-[var(--warning-surface)] border border-[var(--warning-border)] px-2 py-0.5 rounded-full">
               ⚠ Indicative — pending manual verification for plots not yet surveyed
             </span>
           </div>

@@ -11,7 +11,7 @@ const COLUMNS: { heading: string; links: { to: string; label: string }[] }[] = [
 
 export default function SiteFooter() {
   return (
-    <footer className="bg-[var(--primary)] text-[var(--primary-foreground)] mt-16">
+    <footer className="bg-[var(--surface-inverse)] text-[var(--surface-inverse-foreground)] mt-16">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-12 pb-8">
         <div className="grid gap-10 sm:grid-cols-[1fr_auto_auto_auto] sm:gap-16">
           <div>

@@ -65,7 +65,7 @@ export default function WishlistButton({ listingId, listingType, className, labe
       aria-busy={busy || undefined}
       aria-label={label ? undefined : wishlisted ? "Remove from wishlist" : "Save to wishlist"}
       onClick={handleClick}
-      className={className ?? "w-8 h-8 flex items-center justify-center rounded-full bg-white/90 backdrop-blur hover:bg-white shadow-sm transition-colors"}
+      className={className ?? "w-8 h-8 flex items-center justify-center rounded-full bg-[var(--card)]/90 backdrop-blur hover:bg-[var(--card)] shadow-sm transition-colors"}
     >
       <svg width="16" height="16" viewBox="0 0 24 24" fill={wishlisted ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" aria-hidden="true" className={wishlisted ? "text-[var(--error)]" : label ? "" : "text-[var(--muted-foreground)]"}>
         <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8Z" />

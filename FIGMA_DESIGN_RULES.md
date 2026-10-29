@@ -41,7 +41,7 @@ these by hand.
   --font-body: "Outfit", system-ui, sans-serif;
   --font-mono: "DM Mono", "Courier New", monospace;
 }
-.dark { /* same names, dark values; defined but not toggled anywhere yet */ }
+.dark { /* Night: same names, warm night values; toggled by lib/theme.ts */ }
 ```
 
 `@theme inline` also exposes them as Tailwind colours (`bg-primary` and so on), **but
@@ -199,7 +199,11 @@ Inputs get their focus ring globally (`box-shadow: 0 0 0 2px var(--ring)` in
   (`md:` is rare). Typical uses are `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3` and a side
   nav that collapses below `lg`. Figma desktop frames should still collapse cleanly at
   phone width.
-- **Dark mode:** `.dark` tokens exist but nothing toggles them, and no `dark:` variants
+- **Night (dark) mode:** `lib/theme.ts` puts `.dark` on `<html>` (Day / Night / Match my device,
+  switch in both headers and Settings › Appearance). Pages get it free through the tokens; don't add
+  `dark:` classes. Dark bands (side nav, footer, trust panels) use `--surface-inverse` /
+  `--surface-inverse-foreground`, never `--primary` (Night's primary is a light gold). Wrap estate
+  photos in `components/marketplace/EstatePhoto` (the night lamp) and give hero bands `NightSky`.
   are used. If you use the tokens, dark mode will come for free later. Don't add `dark:` classes.
 
 ## 7. Icons

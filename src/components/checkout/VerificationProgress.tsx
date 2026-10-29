@@ -41,10 +41,10 @@ function stageStates(status: VerificationStageStatus): [StageState, StageState, 
 
 const ICONS: Record<StageState, string> = { done: "✓", active: "⏳", upcoming: "○", failed: "✕" };
 const COLORS: Record<StageState, string> = {
-  done: "text-emerald-700 bg-emerald-100",
-  active: "text-amber-700 bg-amber-100",
+  done: "text-[var(--success-text)] bg-[var(--success-surface)]",
+  active: "text-[var(--warning-text)] bg-[var(--warning-surface)]",
   upcoming: "text-[var(--muted-foreground)] bg-[var(--muted)]",
-  failed: "text-red-700 bg-red-100",
+  failed: "text-[var(--error-text)] bg-[var(--error-surface)]",
 };
 
 export default function VerificationProgress({
@@ -82,7 +82,7 @@ export default function VerificationProgress({
       </ol>
 
       {status === "rejected" && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-800">
+        <div className="p-3 bg-[var(--error-surface)] border border-[var(--error-border)] rounded-lg text-xs text-[var(--error-text)]">
           <div className="font-semibold mb-1">What happens next</div>
           Contact support with your reference number above — no funds are lost, and nothing else about your plan changes while this is resolved.
         </div>

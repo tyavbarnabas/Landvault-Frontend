@@ -29,9 +29,9 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
           <div className="w-full max-w-[400px]">{children}</div>
         </main>
 
-        <ul className="lg:hidden w-full max-w-[400px] mx-auto rounded-xl bg-[var(--primary)] p-4 space-y-2 mb-6" aria-label="Why HomeTrue">
+        <ul className="lg:hidden w-full max-w-[400px] mx-auto rounded-xl bg-[var(--surface-inverse)] p-4 space-y-2 mb-6" aria-label="Why HomeTrue">
           {POINTS.slice(0, 3).map((p) => (
-            <li key={p.title} className="flex items-center gap-2 text-sm text-[var(--primary-foreground)]">
+            <li key={p.title} className="flex items-center gap-2 text-sm text-[var(--surface-inverse-foreground)]">
               <span className="text-[var(--accent)]"><CheckIcon size={14} /></span>{p.title}
             </li>
           ))}
@@ -42,16 +42,16 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
         </p>
       </div>
 
-      <aside className="hidden lg:flex flex-col justify-center bg-[var(--primary)] px-14 xl:px-16 py-16 gap-7" aria-label="Why HomeTrue">
+      <aside className="hidden lg:flex flex-col justify-center bg-[var(--surface-inverse)] px-14 xl:px-16 py-16 gap-7" aria-label="Why HomeTrue">
         <p className="font-mono-data text-xs tracking-widest text-[var(--accent)]">WHY HOMETRUE</p>
-        <p className="font-display text-4xl leading-tight text-[var(--primary-foreground)] max-w-md">Land you can check before you pay for it.</p>
+        <p className="font-display text-4xl leading-tight text-[var(--surface-inverse-foreground)] max-w-md">Land you can check before you pay for it.</p>
         <ul className="space-y-5">
           {POINTS.map(({ icon: Icon, title, body }) => (
             <li key={title} className="flex gap-3.5">
               <span className="w-9 h-9 shrink-0 rounded-lg bg-[var(--accent)] text-[var(--accent-foreground)] flex items-center justify-center"><Icon size={18} /></span>
               <div>
-                <div className="font-semibold text-[var(--primary-foreground)]">{title}</div>
-                <div className="text-sm text-[var(--primary-foreground)] opacity-75">{body}</div>
+                <div className="font-semibold text-[var(--surface-inverse-foreground)]">{title}</div>
+                <div className="text-sm text-[var(--surface-inverse-foreground)] opacity-75">{body}</div>
               </div>
             </li>
           ))}

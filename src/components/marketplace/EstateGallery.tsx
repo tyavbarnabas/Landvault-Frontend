@@ -5,6 +5,7 @@
 // photo presented as the estate.
 
 import { useState } from "react";
+import EstatePhoto from "./EstatePhoto";
 import type { ListingPhoto } from "../../services/marketplaceService";
 
 export default function EstateGallery({ photos, estateName, children }: {
@@ -20,7 +21,7 @@ export default function EstateGallery({ photos, estateName, children }: {
 
   return (
     <figure className="mb-6">
-      <div className="relative aspect-[4/3] sm:aspect-[21/9] bg-[var(--muted)] rounded-xl overflow-hidden">
+      <EstatePhoto className="aspect-[4/3] sm:aspect-[21/9] bg-[var(--muted)] rounded-xl overflow-hidden">
         {current ? (
           <img src={current.url} alt={current.caption ?? estateName} className="w-full h-full object-cover" />
         ) : (
@@ -33,13 +34,13 @@ export default function EstateGallery({ photos, estateName, children }: {
           <>
             <GalleryButton side="left" label="Previous photo" onClick={() => go(-1)} />
             <GalleryButton side="right" label="Next photo" onClick={() => go(1)} />
-            <span className="absolute bottom-3 right-3 text-xs font-mono-data px-2 py-0.5 rounded-full bg-black/55 text-white" aria-live="polite">
+            <span className="absolute z-10 bottom-3 right-3 text-xs font-mono-data px-2 py-0.5 rounded-full bg-black/55 text-white" aria-live="polite">
               {index + 1} / {photos.length}
             </span>
           </>
         )}
-        {children && <div className="absolute top-4 right-4">{children}</div>}
-      </div>
+        {children && <div className="absolute z-10 top-4 right-4">{children}</div>}
+      </EstatePhoto>
 
       {current?.caption && <figcaption className="text-sm text-[var(--muted-foreground)] mt-2">{current.caption}</figcaption>}
 
@@ -71,7 +72,7 @@ function GalleryButton({ side, label, onClick }: { side: "left" | "right"; label
       type="button"
       onClick={onClick}
       aria-label={label}
-      className={`absolute top-1/2 -translate-y-1/2 ${side === "left" ? "left-3" : "right-3"} w-9 h-9 flex items-center justify-center rounded-full bg-[var(--card)]/90 text-[var(--foreground)] shadow-sm hover:bg-[var(--card)]`}
+      className={`absolute z-10 top-1/2 -translate-y-1/2 ${side === "left" ? "left-3" : "right-3"} w-9 h-9 flex items-center justify-center rounded-full bg-[var(--card)]/90 text-[var(--foreground)] shadow-sm hover:bg-[var(--card)]`}
     >
       <ChevronIcon direction={side} />
     </button>

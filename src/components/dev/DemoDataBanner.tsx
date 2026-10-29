@@ -20,7 +20,7 @@ export default function DemoDataBanner() {
 
   if (!BACKEND_CONFIGURED || served.length === 0) return null;
   return (
-    <div className="px-4 py-2 text-xs bg-amber-50 text-amber-900 border-b border-amber-200" role="note" aria-label="Demo data on this page">
+    <div className="px-4 py-2 text-xs bg-[var(--warning-surface)] text-[var(--warning-text)] border-b border-[var(--warning-border)]" role="note" aria-label="Demo data on this page">
       <span className="font-semibold">Demo data on this page</span> — not from the backend:{" "}
       {served.map((key, i) => (
         <ServiceName key={key} entry={SERVICES[key]} first={i === 0} />

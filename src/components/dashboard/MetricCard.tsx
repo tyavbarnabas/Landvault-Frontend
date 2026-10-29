@@ -14,7 +14,7 @@ export default function MetricCard({ label, value, trendPct, sub }: MetricCardPr
       <div className="text-xs text-[var(--muted-foreground)] mb-1">{label}</div>
       <div className="font-semibold font-mono-data text-xl text-[var(--foreground)]" title={value}>{value}</div>
       {trendPct !== undefined && (
-        <div className={`text-xs font-medium mt-1 ${trendUp ? "text-emerald-600" : "text-red-600"}`}>
+        <div className={`text-xs font-medium mt-1 ${trendUp ? "text-[var(--success-text)]" : "text-[var(--error-text)]"}`}>
           {trendUp ? "▲" : "▼"} {Math.abs(trendPct).toFixed(0)}% vs last period
         </div>
       )}

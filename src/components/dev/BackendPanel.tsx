@@ -26,7 +26,7 @@ export default function BackendPanel() {
               {BACKEND_CONFIGURED ? String(import.meta.env.VITE_API_BASE_URL) : "Not configured — full mock mode"}
             </div>
             {originBad && (
-              <div className="mt-1 text-red-700">
+              <div className="mt-1 text-[var(--error-text)]">
                 This origin ({origin}) isn't in the backend's allowed origins ({BACKEND_ALLOWED_ORIGINS.join(", ")}). Requests will fail as "Failed to fetch".
               </div>
             )}
@@ -54,7 +54,7 @@ export default function BackendPanel() {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className={`px-3 py-1.5 rounded-full border shadow-sm font-medium ${originBad ? "bg-red-50 text-red-800 border-red-200" : "bg-[var(--card)] text-[var(--foreground)] border-[var(--border)]"}`}
+        className={`px-3 py-1.5 rounded-full border shadow-sm font-medium ${originBad ? "bg-[var(--error-surface)] text-[var(--error-text)] border-[var(--error-border)]" : "bg-[var(--card)] text-[var(--foreground)] border-[var(--border)]"}`}
         aria-expanded={open}
       >
         {BACKEND_CONFIGURED ? `API: ${live.length} live · ${mocked.length} mock` : "Mock mode"}
@@ -70,7 +70,7 @@ function List({ title, items, live }: { title: string; items: [ServiceKey, Servi
       <ul className="space-y-1">
         {items.map(([key, e]) => (
           <li key={key} className="flex gap-2">
-            <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${live ? "bg-emerald-500" : e.status === "misaligned" ? "bg-amber-500" : "bg-[var(--muted-foreground)]/50"}`} aria-hidden="true" />
+            <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${live ? "bg-[var(--success)]" : e.status === "misaligned" ? "bg-[var(--warning)]" : "bg-[var(--muted-foreground)]/50"}`} aria-hidden="true" />
             <span>
               <span className="text-[var(--foreground)]">{e.label}</span>
               {!live && BACKEND_CONFIGURED && (

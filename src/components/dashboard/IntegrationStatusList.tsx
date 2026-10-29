@@ -1,9 +1,9 @@
 type IntegrationStatus = "healthy" | "degraded" | "down";
 
 const DOT_COLOR: Record<IntegrationStatus, string> = {
-  healthy: "bg-emerald-500",
-  degraded: "bg-amber-500",
-  down: "bg-red-500",
+  healthy: "bg-[var(--success)]",
+  degraded: "bg-[var(--warning)]",
+  down: "bg-[var(--error)]",
 };
 const STATUS_LABEL: Record<IntegrationStatus, string> = {
   healthy: "Healthy",
@@ -11,9 +11,9 @@ const STATUS_LABEL: Record<IntegrationStatus, string> = {
   down: "Down",
 };
 const STATUS_TEXT_COLOR: Record<IntegrationStatus, string> = {
-  healthy: "text-emerald-700",
-  degraded: "text-amber-700",
-  down: "text-red-700",
+  healthy: "text-[var(--success-text)]",
+  degraded: "text-[var(--warning-text)]",
+  down: "text-[var(--error-text)]",
 };
 
 // The dot is decorative only — status is always paired with a text label so

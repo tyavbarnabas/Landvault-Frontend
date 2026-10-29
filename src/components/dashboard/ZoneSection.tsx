@@ -29,7 +29,7 @@ export function PreviewDataBadge() {
   return (
     <span
       title="Illustrative data — the real backend isn't connected yet."
-      className="text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200"
+      className="text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-[var(--info-surface)] text-[var(--info-text)] border border-[var(--info-border)]"
     >
       Preview data
     </span>

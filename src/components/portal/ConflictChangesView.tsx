@@ -42,7 +42,7 @@ function ConflictLine({ item }: { item: ConflictItem }) {
         <span className="font-medium text-[var(--foreground)]">{item.yourEntityLabel}</span>
         <span className="text-[var(--muted-foreground)]">{item.conflictType === "estate_overlap" ? "estate boundary" : "plot boundary"}</span>
         {item.overlapAreaSqm !== null && <span className="text-[var(--muted-foreground)] font-mono-data">{item.overlapAreaSqm.toLocaleString()} sqm overlap</span>}
-        {item.blocksPublication && <span className="text-red-700 font-medium">Blocks publication</span>}
+        {item.blocksPublication && <span className="text-[var(--error-text)] font-medium">Blocks publication</span>}
       </div>
       {/* The backend's own guidance — it never names the other party. */}
       {item.guidance && <p className="text-[var(--muted-foreground)] mt-1">{item.guidance}</p>}

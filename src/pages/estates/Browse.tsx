@@ -117,7 +117,7 @@ export default function Browse() {
 
 export function TitleBadge({ type, verified }: { type: string; verified: boolean }) {
   return (
-    <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${verified ? "bg-white text-emerald-800" : "bg-white text-amber-700"}`}>
+    <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${verified ? "bg-white text-[var(--success-text)]" : "bg-white text-[var(--warning-text)]"}`}>
       {verified ? "✓" : "⚠"} {type}
     </span>
   );

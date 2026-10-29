@@ -27,10 +27,10 @@ function financeVerificationReached(t: ResaleTransfer): boolean {
 
 const ICONS: Record<RowState, string> = { done: "✓", active: "⏳", upcoming: "○", failed: "✕" };
 const COLORS: Record<RowState, string> = {
-  done: "text-emerald-700 bg-emerald-100",
-  active: "text-amber-700 bg-amber-100",
+  done: "text-[var(--success-text)] bg-[var(--success-surface)]",
+  active: "text-[var(--warning-text)] bg-[var(--warning-surface)]",
   upcoming: "text-[var(--muted-foreground)] bg-[var(--muted)]",
-  failed: "text-red-700 bg-red-100",
+  failed: "text-[var(--error-text)] bg-[var(--error-surface)]",
 };
 
 function Row({ state, label, detail }: { state: RowState; label: string; detail?: string }) {
@@ -83,7 +83,7 @@ export default function ResaleProgress({ transfer }: { transfer: ResaleTransfer 
             <div className="ml-9 mb-1">
               <div className="text-sm font-medium text-[var(--foreground)]">Buyer payment &amp; finance verification</div>
               {transfer.buyerKycVerified && (
-                <div className="text-xs text-emerald-700 mt-0.5">Buyer identity verified ✓</div>
+                <div className="text-xs text-[var(--success-text)] mt-0.5">Buyer identity verified ✓</div>
               )}
             </div>
             <div className="ml-9 p-4 bg-[var(--background)] rounded-lg border border-[var(--border)]">
@@ -133,7 +133,7 @@ export default function ResaleProgress({ transfer }: { transfer: ResaleTransfer 
       </ol>
 
       {(transfer.status === "developer_declined" || transfer.status === "payment_window_expired" || transfer.status === "finance_rejected") && (
-        <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+        <div className="mt-4 p-3 bg-[var(--warning-surface)] border border-[var(--warning-border)] rounded-lg text-xs text-[var(--warning-text)]">
           <div className="font-semibold mb-1">What happens next</div>
           Your plot returns to normal standing — nothing was lost, and you can list it again whenever you're ready.
         </div>

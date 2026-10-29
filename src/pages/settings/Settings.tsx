@@ -3,10 +3,11 @@ import { useApp } from "../../contexts/AppContext";
 import { Link } from "react-router-dom";
 import TwoFactorSettings from "../../components/auth/TwoFactorSettings";
 import AddressSection from "../../components/account/AddressSection";
+import AppearanceSettings from "../../components/account/AppearanceSettings";
 import { CHECKOUT_RESERVE_PERMISSION } from "../../services/authService";
 import type { Currency } from "../../data/mockData";
 
-type Tab = "profile" | "security" | "notifications" | "sessions";
+type Tab = "profile" | "security" | "appearance" | "notifications" | "sessions";
 
 export default function Settings() {
   const { user, currency, setCurrency } = useApp();
@@ -29,6 +30,7 @@ export default function Settings() {
   const TABS: { id: Tab; label: string }[] = [
     { id: "profile", label: "Profile" },
     { id: "security", label: "Security & 2FA" },
+    { id: "appearance", label: "Appearance" },
     { id: "notifications", label: "Notifications" },
     { id: "sessions", label: "Active sessions" },
   ];
@@ -62,13 +64,13 @@ export default function Settings() {
               <h2 className="font-semibold mb-5">Profile information</h2>
 
               {/* KYC status */}
-              <div className={`mb-5 px-4 py-3 rounded-xl border flex items-center gap-3 ${user?.kycStatus === "approved" ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-200"}`}>
-                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${user?.kycStatus === "approved" ? "bg-emerald-500" : "bg-amber-500"}`} />
+              <div className={`mb-5 px-4 py-3 rounded-xl border flex items-center gap-3 ${user?.kycStatus === "approved" ? "bg-[var(--success-surface)] border-[var(--success-border)]" : "bg-[var(--warning-surface)] border-[var(--warning-border)]"}`}>
+                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${user?.kycStatus === "approved" ? "bg-[var(--success)]" : "bg-[var(--warning)]"}`} />
                 <div>
-                  <div className={`text-sm font-medium ${user?.kycStatus === "approved" ? "text-emerald-900" : "text-amber-900"}`}>
+                  <div className={`text-sm font-medium ${user?.kycStatus === "approved" ? "text-[var(--success-text)]" : "text-[var(--warning-text)]"}`}>
                     {user?.kycStatus === "approved" ? "Identity verified" : "KYC pending"}
                   </div>
-                  <div className={`text-xs ${user?.kycStatus === "approved" ? "text-emerald-700" : "text-amber-700"}`}>
+                  <div className={`text-xs ${user?.kycStatus === "approved" ? "text-[var(--success-text)]" : "text-[var(--warning-text)]"}`}>
                     {user?.kycStatus === "approved" ? `${user.kycType === "diaspora" ? "Passport" : "NIN"} — read-only once approved` : "Complete identity verification to transact"}
                   </div>
                 </div>
@@ -122,6 +124,8 @@ export default function Settings() {
             </div>
           )}
 
+          {tab === "appearance" && <AppearanceSettings />}
+
           {tab === "notifications" && (
             <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-6">
               <h2 className="font-semibold mb-5">Notification preferences</h2>
@@ -160,9 +164,9 @@ export default function Settings() {
                       </div>
                     </div>
                     {s.current ? (
-                      <span className="text-xs text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full">Current</span>
+                      <span className="text-xs text-[var(--success-text)] bg-[var(--success-surface)] px-2.5 py-1 rounded-full">Current</span>
                     ) : (
-                      <button className="text-xs text-red-600 hover:underline">Revoke</button>
+                      <button className="text-xs text-[var(--error-text)] hover:underline">Revoke</button>
                     )}
                   </div>
                 ))}

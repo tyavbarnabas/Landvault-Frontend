@@ -91,47 +91,71 @@ body,
   --error-border: #FCA5A5;
   --error-text: #B91C1C;
 
+  /* The dark band behind the side nav, the site footer and the trust panels.
+     It was --primary, but Night's primary is a light gold. */
+  --surface-inverse: #0D2B1E;
+  --surface-inverse-foreground: #F5F0E8;
+  --surface-inverse-active: rgb(255 255 255 / 0.15);
+  --surface-inverse-active-foreground: #FFFFFF;
+
+  /* Night atmosphere: the same in both themes, only shown at night. */
+  --glow-warm: #FFB65C;
+  --glow-window: #FFD48A;
+  --sky-top: #0B1426;
+  --sky-bottom: #1A2A35;
+  --star: #FFF4DA;
+  --image-shade: #0A0F14;
+
   --font-display: "DM Serif Display", Georgia, serif;
   --font-body: "Outfit", system-ui, sans-serif;
   --font-mono: "DM Mono", "Courier New", monospace;
 }
 
+/* Night: a cosy evening on the estate, not a black screen (Figma "Screen —
+   Night mode"). Warm near-black greens, cream text, a gold that glows.
+   Applied as the `dark` class on <html> by lib/theme.ts. */
 .dark {
-  --background: #0A1A10;
-  --foreground: #EFF4F0;
-  --card: #111F17;
-  --card-foreground: #EFF4F0;
-  --primary: #4ADE80;
-  --primary-foreground: #0A1A10;
-  --secondary: #1A3D28;
-  --secondary-foreground: #EFF4F0;
-  --muted: #1A2E1F;
-  --muted-foreground: #8BA892;
-  --accent: #D4A945;
-  --accent-foreground: #0A1A10;
-  --border: #1F3527;
-  --ring: #4ADE80;
+  color-scheme: dark;
+  --background: #0F1512;
+  --foreground: #F3ECE0;
+  --card: #171F1A;
+  --card-foreground: #F3ECE0;
+  --primary: #E8C07A;
+  --primary-foreground: #1B150B;
+  --secondary: #1D2B22;
+  --secondary-foreground: #DDE7DE;
+  --muted: #1E2721;
+  --muted-foreground: #A6AFA4;
+  --accent: #F2B45E;
+  --accent-foreground: #1B150B;
+  --border: #2B352E;
+  --ring: #F2B45E;
 
-  --success: #34D399;
-  --success-foreground: #0A1A10;
-  --success-surface: #0F2A1E;
-  --success-border: #1F5135;
-  --success-text: #86EFAC;
-  --warning: #F59E0B;
-  --warning-foreground: #0A1A10;
-  --warning-surface: #2A1F0A;
-  --warning-border: #5C4310;
-  --warning-text: #FCD34D;
-  --info: #60A5FA;
-  --info-foreground: #0A1A10;
-  --info-surface: #0F1D33;
-  --info-border: #1E3A66;
-  --info-text: #93C5FD;
-  --error: #EF4444;
-  --error-foreground: #FFFFFF;
-  --error-surface: #2D1214;
-  --error-border: #7F1D1D;
-  --error-text: #FCA5A5;
+  --surface-inverse: #0A0F0C;
+  --surface-inverse-foreground: #E9E1D2;
+  --surface-inverse-active: rgb(242 180 94 / 0.12);
+  --surface-inverse-active-foreground: #F2B45E;
+
+  --success: #6FCF97;
+  --success-foreground: #0F1512;
+  --success-surface: #13241A;
+  --success-border: #25432F;
+  --success-text: #A3E3BC;
+  --warning: #F2B35B;
+  --warning-foreground: #1B150B;
+  --warning-surface: #2A2013;
+  --warning-border: #4E3B1F;
+  --warning-text: #F6CB86;
+  --info: #8DB8E8;
+  --info-foreground: #0F1512;
+  --info-surface: #141F2E;
+  --info-border: #263C58;
+  --info-text: #B7D3F2;
+  --error: #EF8A7E;
+  --error-foreground: #1B0F0D;
+  --error-surface: #2B1715;
+  --error-border: #5A2B24;
+  --error-text: #F6B2A8;
 }
 
 body {
@@ -174,4 +198,143 @@ input, select, textarea {
 }
 input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 2px var(--ring);
+}
+
+/* ─── Night atmosphere ───────────────────────────────────────────────────────
+   The switch: a dusk wash over the page (0–300 ms), the theme flips under it,
+   then the estates' lamps come on one after another (80 ms apart). The wash
+   and the .lights-on class are added by lib/theme.ts for one switch only. */
+
+.theme-switching,
+.theme-switching * {
+  transition: background-color 300ms ease, border-color 300ms ease, color 300ms ease, fill 300ms ease !important;
+}
+
+.theme-wash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  animation: theme-wash 700ms ease-in-out forwards;
+}
+.theme-wash.to-night {
+  background:
+    radial-gradient(120% 70% at 50% 110%, rgb(255 182 92 / 0.35), transparent 60%),
+    linear-gradient(180deg, var(--sky-top), var(--sky-bottom));
+}
+.theme-wash.to-day {
+  background:
+    radial-gradient(120% 70% at 50% 110%, rgb(255 212 138 / 0.55), transparent 60%),
+    linear-gradient(180deg, #F5F0E8, #FAFAF8);
+}
+@keyframes theme-wash {
+  0% { opacity: 0; }
+  43% { opacity: 0.7; }
+  100% { opacity: 0; }
+}
+
+/* An estate photo (or its placeholder). By day nothing changes. At night the
+   photo is dimmed and cooled like moonlight, and a warm lamp is lit in one
+   corner; `--lamp-i` staggers the lamps on a switch. */
+.estate-photo {
+  position: relative;
+  isolation: isolate;
+}
+.estate-photo::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0;
+}
+.dark .estate-photo img {
+  filter: brightness(0.72) saturate(0.8) contrast(1.05);
+}
+.dark .estate-photo::before {
+  opacity: 1;
+  background:
+    radial-gradient(55% 60% at 12% 88%, rgb(255 182 92 / 0.55), rgb(255 182 92 / 0.14) 45%, transparent 70%),
+    radial-gradient(70% 55% at 85% 0%, rgb(184 205 235 / 0.16), transparent 70%),
+    linear-gradient(180deg, rgb(10 15 20 / 0.35), rgb(10 15 20 / 0.05) 55%, rgb(10 15 20 / 0.3));
+  animation: lamp-breathe 4s ease-in-out infinite;
+}
+.dark .estate-photo.lamp-right::before {
+  background:
+    radial-gradient(55% 60% at 88% 88%, rgb(255 182 92 / 0.55), rgb(255 182 92 / 0.14) 45%, transparent 70%),
+    radial-gradient(70% 55% at 15% 0%, rgb(184 205 235 / 0.16), transparent 70%),
+    linear-gradient(180deg, rgb(10 15 20 / 0.35), rgb(10 15 20 / 0.05) 55%, rgb(10 15 20 / 0.3));
+}
+.dark.lights-on .estate-photo::before {
+  animation:
+    lamp-on 500ms ease-out calc(var(--lamp-i, 0) * 80ms) both,
+    lamp-breathe 4s ease-in-out calc(500ms + var(--lamp-i, 0) * 80ms) infinite;
+}
+@keyframes lamp-on {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes lamp-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.86; }
+}
+
+/* A card lifts toward the light at night instead of casting a shadow. */
+.dark .night-glow:hover {
+  box-shadow: 0 0 0 1px rgb(242 180 94 / 0.35), 0 12px 36px -10px rgb(255 182 92 / 0.3);
+}
+
+/* The night sky behind a hero: hidden by day. */
+.night-sky {
+  display: none;
+}
+.dark .night-sky {
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(90% 60% at 50% 120%, rgb(255 182 92 / 0.12), transparent 70%),
+    linear-gradient(180deg, var(--sky-top), var(--sky-bottom));
+}
+.night-sky .moon {
+  position: absolute;
+  top: 18%;
+  right: 8%;
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 38% 35%, #FFF8E6, var(--star) 55%, #E9D9B4);
+  box-shadow: 0 0 24px 6px rgb(255 244 218 / 0.25), 0 0 80px 24px rgb(255 244 218 / 0.08);
+}
+.night-sky .star {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  border-radius: 9999px;
+  background: var(--star);
+  animation: star-twinkle 3s ease-in-out infinite;
+}
+@keyframes star-twinkle {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 0.3; }
+}
+
+/* Maps: the tiles dimmed so they don't glare at night. */
+.dark .leaflet-tile-pane {
+  filter: brightness(0.7) saturate(0.8);
+}
+.dark .leaflet-bar a,
+.dark .leaflet-control-attribution {
+  background: var(--card) !important;
+  color: var(--foreground) !important;
+  border-color: var(--border) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-wash { display: none; }
+  .theme-switching, .theme-switching * { transition: none !important; }
+  .dark .estate-photo::before,
+  .dark.lights-on .estate-photo::before,
+  .night-sky .star { animation: none; }
 }

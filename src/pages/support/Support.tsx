@@ -134,7 +134,7 @@ function ChatPanel({ userName }: { userName: string }) {
     <div className="flex flex-col h-[560px] bg-[var(--card)] rounded-xl border border-[var(--border)] overflow-hidden">
       {/* Chat header */}
       <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-[var(--primary)] flex items-center justify-center text-white text-sm font-semibold">LV</div>
+        <div className="w-8 h-8 rounded-full bg-[var(--primary)] flex items-center justify-center text-[var(--primary-foreground)] text-sm font-semibold">LV</div>
         <div>
           <div className="text-sm font-semibold">HomeTrue Support</div>
           <div className="text-xs text-[var(--muted-foreground)]">
@@ -310,7 +310,7 @@ function DisputesPanel({ initialPlotId, tickets, ticketsTotal, hasMore, onLoadMo
       )}
 
       {submitted && (
-        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">
+        <div className="p-3 bg-[var(--success-surface)] border border-[var(--success-border)] rounded-lg text-sm text-[var(--success-text)]">
           ✓ Dispute submitted. You'll receive a reference number, and our team will review it as soon as possible.
         </div>
       )}
@@ -350,9 +350,9 @@ function DisputesPanel({ initialPlotId, tickets, ticketsTotal, hasMore, onLoadMo
 
 function TicketStatusBadge({ status }: { status: string }) {
   const s: Record<string, string> = {
-    open: "bg-blue-50 text-blue-700 border-blue-200",
-    in_review: "bg-amber-50 text-amber-700 border-amber-200",
-    resolved: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    open: "bg-[var(--info-surface)] text-[var(--info-text)] border-[var(--info-border)]",
+    in_review: "bg-[var(--warning-surface)] text-[var(--warning-text)] border-[var(--warning-border)]",
+    resolved: "bg-[var(--success-surface)] text-[var(--success-text)] border-[var(--success-border)]",
   };
   const labels: Record<string, string> = { open: "Open", in_review: "In review", resolved: "Resolved" };
   return (

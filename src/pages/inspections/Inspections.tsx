@@ -5,8 +5,8 @@ import InspectionForm, { type InspectionFormValue } from "../../components/inspe
 import { ListCard } from "../../components/ui/Card";
 
 const STATUS_STYLES: Record<Inspection["status"], string> = {
-  scheduled: "bg-blue-50 text-blue-700 border-blue-200",
-  completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  scheduled: "bg-[var(--info-surface)] text-[var(--info-text)] border-[var(--info-border)]",
+  completed: "bg-[var(--success-surface)] text-[var(--success-text)] border-[var(--success-border)]",
   cancelled: "bg-[var(--muted)] text-[var(--muted-foreground)] border-[var(--border)]",
 };
 
@@ -130,7 +130,7 @@ function InspectionRow({ insp, onCancel, onReschedule }: { insp: Inspection; onC
         {insp.status === "scheduled" && (
           <div className="flex gap-2">
             <button onClick={onReschedule} className="text-xs text-[var(--accent)] hover:underline">Reschedule</button>
-            <button onClick={onCancel} className="text-xs text-red-600 hover:underline">Cancel</button>
+            <button onClick={onCancel} className="text-xs text-[var(--error-text)] hover:underline">Cancel</button>
           </div>
         )}
       </div>

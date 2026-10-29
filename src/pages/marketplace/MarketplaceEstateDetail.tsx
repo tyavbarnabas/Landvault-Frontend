@@ -95,7 +95,7 @@ export default function MarketplaceEstateDetail() {
 
       <div className="mt-6">
         <EstateGallery key={listing.id} photos={listing.photos} estateName={listing.name}>
-          <WishlistButton listingId={listing.id} listingType="primary" className="w-10 h-10 flex items-center justify-center rounded-full bg-white/90 backdrop-blur hover:bg-white shadow-sm" />
+          <WishlistButton listingId={listing.id} listingType="primary" className="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--card)]/90 backdrop-blur hover:bg-[var(--card)] shadow-sm" />
         </EstateGallery>
       </div>
 
@@ -148,8 +148,8 @@ export default function MarketplaceEstateDetail() {
           {/* TODO: PostGIS radius query against real coordinates, not a same-state text match. */}
           {/* A swipeable row on a phone, a grid from sm up. */}
           <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory -mx-4 px-4 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:gap-6 sm:overflow-visible">
-            {similar.map((l) => (
-              <div key={l.id} className="snap-start shrink-0 w-[78%] sm:w-auto"><EstateCard listing={l} /></div>
+            {similar.map((l, i) => (
+              <div key={l.id} className="snap-start shrink-0 w-[78%] sm:w-auto"><EstateCard listing={l} index={i} /></div>
             ))}
           </div>
         </section>

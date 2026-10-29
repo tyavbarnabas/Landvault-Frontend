@@ -195,7 +195,7 @@ function SessionProblemBanner() {
   const { sessionProblem } = useApp();
   if (!sessionProblem) return null;
   return (
-    <div role="alert" className="px-4 py-2 text-sm bg-amber-50 text-amber-800 border-b border-amber-200">
+    <div role="alert" className="px-4 py-2 text-sm bg-[var(--warning-surface)] text-[var(--warning-text)] border-b border-[var(--warning-border)]">
       {sessionProblem === "origin_not_allowed"
         ? `Configuration problem: the backend doesn't accept requests from ${window.location.origin}. Add it to CORS_ALLOWED_ORIGINS (default http://localhost:8443) — this isn't an expired session.`
         : "Couldn't reach the server to renew your session. If you're online, check that this page's origin is in the backend's CORS_ALLOWED_ORIGINS — a refused origin looks exactly like this from the browser."}

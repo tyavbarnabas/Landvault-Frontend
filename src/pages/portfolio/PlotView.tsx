@@ -600,11 +600,11 @@ function HelpLink({ to, icon, head, sub }: { to: string; icon: React.ReactNode; 
 
 function PaymentStatusPill({ status }: { status: string }) {
   const styles: Record<string, string> = {
-    confirmed: "bg-emerald-50 text-emerald-700",
-    pending: "bg-amber-50 text-amber-700",
-    pending_verification: "bg-amber-50 text-amber-700",
-    rejected: "bg-red-50 text-red-700",
-    failed: "bg-red-50 text-red-700",
+    confirmed: "bg-[var(--success-surface)] text-[var(--success-text)]",
+    pending: "bg-[var(--warning-surface)] text-[var(--warning-text)]",
+    pending_verification: "bg-[var(--warning-surface)] text-[var(--warning-text)]",
+    rejected: "bg-[var(--error-surface)] text-[var(--error-text)]",
+    failed: "bg-[var(--error-surface)] text-[var(--error-text)]",
   };
   const labels: Record<string, string> = {
     confirmed: "Confirmed",
@@ -649,7 +649,7 @@ function ConstructionTab({ estateId }: { estateId: string }) {
                 <span className="font-medium" id={`milestone-${m.id}`}>{m.label}</span>
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-[var(--muted-foreground)] font-mono-data">{m.expectedOrCompletedDate}</span>
-                  <span className={`font-mono-data text-xs font-semibold ${m.percentComplete === 100 ? "text-emerald-700" : m.percentComplete > 0 ? "text-amber-700" : "text-[var(--muted-foreground)]"}`}>
+                  <span className={`font-mono-data text-xs font-semibold ${m.percentComplete === 100 ? "text-[var(--success-text)]" : m.percentComplete > 0 ? "text-[var(--warning-text)]" : "text-[var(--muted-foreground)]"}`}>
                     {m.percentComplete}%
                   </span>
                 </div>
@@ -663,7 +663,7 @@ function ConstructionTab({ estateId }: { estateId: string }) {
                 aria-valuemax={100}
               >
                 <div
-                  className={`h-full rounded-full transition-all ${m.percentComplete === 100 ? "bg-emerald-500" : m.percentComplete > 0 ? "bg-amber-500" : "bg-[var(--border)]"}`}
+                  className={`h-full rounded-full transition-all ${m.percentComplete === 100 ? "bg-[var(--success)]" : m.percentComplete > 0 ? "bg-[var(--warning)]" : "bg-[var(--border)]"}`}
                   style={{ width: `${m.percentComplete}%` }}
                 />
               </div>

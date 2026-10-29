@@ -63,7 +63,7 @@ export default function MakeOfferModal({ listing, currency, onClose }: { listing
             aria-describedby={error ? "offer-amount-error" : undefined}
             className="w-full px-3 py-2.5 border border-[var(--border)] rounded-md text-sm font-mono-data bg-[var(--card)]"
           />
-          {error && <p id="offer-amount-error" role="alert" className="text-red-600 text-xs mt-1">{error}</p>}
+          {error && <p id="offer-amount-error" role="alert" className="text-[var(--error-text)] text-xs mt-1">{error}</p>}
         </div>
         <p className="text-xs text-[var(--muted-foreground)]">
           If accepted, your payment is held in a developer-controlled account and released only once title has transferred to you — never sent directly to the seller. A {RESALE_POLICY.developerTransferFeePct}% developer transfer fee applies to the seller's proceeds.

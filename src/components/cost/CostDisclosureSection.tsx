@@ -72,7 +72,7 @@ export default function CostDisclosureSection({ disclosure, tier, loading }: Cos
               above is knowingly incomplete — say so rather than letting it
               read as the whole. The excluded fees still appear below. */}
           {tier.totalExcludesOtherCurrencyFees && (
-            <p className="text-xs text-amber-700 mt-3 pt-3 border-t border-[var(--border)]">
+            <p className="text-xs text-[var(--warning-text)] mt-3 pt-3 border-t border-[var(--border)]">
               This total leaves out at least one fee charged in another currency, because amounts in different currencies are not added
               together. Those charges are listed in the breakdown below.
             </p>

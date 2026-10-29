@@ -28,7 +28,7 @@ function FeeRow({ fee }: { fee: PublicFee }) {
         {/* The developer's own stated reason the figure may move. It belongs
             next to the number, not behind a tooltip. */}
         {!fee.isFixed && fee.variationBasis && (
-          <div className="text-xs text-amber-700 mt-0.5">{fee.variationBasis}</div>
+          <div className="text-xs text-[var(--warning-text)] mt-0.5">{fee.variationBasis}</div>
         )}
         {fee.notes && <div className="text-xs text-[var(--muted-foreground)] mt-0.5">{fee.notes}</div>}
         {/* A milestone fee is not one payment — the stages, with the
@@ -50,7 +50,7 @@ function FeeRow({ fee }: { fee: PublicFee }) {
       {/* No stated figure in the source document. Said plainly — never a
           zero, never an estimate. */}
       {fee.amount === null ? (
-        <span className="shrink-0 text-sm text-amber-700">Amount not stated</span>
+        <span className="shrink-0 text-sm text-[var(--warning-text)]">Amount not stated</span>
       ) : (
         <MoneyRangeDisplay money={fee.amount} currency={fee.currency} className="shrink-0 font-mono-data text-sm text-[var(--foreground)]" />
       )}

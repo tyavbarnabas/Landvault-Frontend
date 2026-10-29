@@ -14,44 +14,47 @@ import type { ResaleListing } from "../../services/resaleService";
 import EstateCard from "./EstateCard";
 import ListingTypeBadge from "./ListingTypeBadge";
 import WishlistButton from "./WishlistButton";
+import EstatePhoto from "./EstatePhoto";
 
 interface ListingCardProps {
   item: MarketplaceListing;
   // Only meaningful on the Wishlist page — see EstateCard's own note on this.
   priceChangeSinceSaved?: number;
   priceChangeCurrency?: Currency;
+  // Its place in the list (which corner its lamp is lit in at night).
+  index?: number;
 }
 
-export default function ListingCard({ item, priceChangeSinceSaved, priceChangeCurrency }: ListingCardProps) {
+export default function ListingCard({ item, priceChangeSinceSaved, priceChangeCurrency, index }: ListingCardProps) {
   if (item.listingType === "primary") {
-    return <EstateCard listing={item.data} priceChangeSinceSaved={priceChangeSinceSaved} priceChangeCurrency={priceChangeCurrency} />;
+    return <EstateCard listing={item.data} priceChangeSinceSaved={priceChangeSinceSaved} priceChangeCurrency={priceChangeCurrency} index={index} />;
   }
-  return <ResaleListingCard listing={item.data} priceChangeSinceSaved={priceChangeSinceSaved} priceChangeCurrency={priceChangeCurrency} />;
+  return <ResaleListingCard listing={item.data} priceChangeSinceSaved={priceChangeSinceSaved} priceChangeCurrency={priceChangeCurrency} index={index} />;
 }
 
-function ResaleListingCard({ listing, priceChangeSinceSaved, priceChangeCurrency }: { listing: ResaleListing; priceChangeSinceSaved?: number; priceChangeCurrency?: Currency }) {
+function ResaleListingCard({ listing, priceChangeSinceSaved, priceChangeCurrency, index }: { listing: ResaleListing; priceChangeSinceSaved?: number; priceChangeCurrency?: Currency; index?: number }) {
   const perSqm = listing.asking / listing.sqm;
 
   return (
     <Link
       to={`/marketplace/resale/${listing.id}`}
-      className="block bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden hover:border-[var(--accent)]/50 hover:shadow-sm transition-all"
+      className="block bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden hover:border-[var(--accent)]/50 hover:shadow-sm transition-all night-glow"
     >
-      <div className="relative aspect-[4/3] bg-[var(--muted)] flex items-center justify-center">
+      <EstatePhoto index={index} className="aspect-[4/3] bg-[var(--muted)] flex items-center justify-center">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-[var(--muted-foreground)]/40">
           <path d="M9 3L3 5v16l6-2 6 2 6-2V5l-6 2-6-2Z" />
           <path d="M9 3v16M15 5v16" />
         </svg>
-        <div className="absolute top-2.5 left-2.5">
+        <div className="absolute z-10 top-2.5 left-2.5">
           <ListingTypeBadge type="resale" />
         </div>
-        <div className="absolute top-2.5 right-2.5">
+        <div className="absolute z-10 top-2.5 right-2.5">
           <WishlistButton listingId={listing.id} listingType="resale" />
         </div>
         {listing.isCorner && (
-          <div className="absolute bottom-2.5 right-2.5 bg-[var(--accent)] text-white text-[11px] px-2 py-0.5 rounded-full">Corner ★</div>
+          <div className="absolute z-10 bottom-2.5 right-2.5 bg-[var(--accent)] text-[var(--accent-foreground)] text-[11px] px-2 py-0.5 rounded-full">Corner ★</div>
         )}
-      </div>
+      </EstatePhoto>
 
       <div className="p-4">
         <div className="font-semibold text-[var(--foreground)] mb-0.5">{listing.estateName} — {listing.plotLabel}</div>

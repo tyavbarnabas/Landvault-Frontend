@@ -14,6 +14,7 @@ import MoneyRangeDisplay from "../cost/MoneyRangeDisplay";
 import ListingTypeBadge from "./ListingTypeBadge";
 import SellerLine from "./SellerLine";
 import WishlistButton from "./WishlistButton";
+import EstatePhoto from "./EstatePhoto";
 import { BuildingIcon, FileTextIcon, MapPinIcon, RulerIcon } from "../icons";
 
 interface EstateCardProps {
@@ -22,6 +23,8 @@ interface EstateCardProps {
   priceChangeSinceSaved?: number;
   // The currency the change is in (the listing's own, not the display one).
   priceChangeCurrency?: Currency;
+  // Its place in the list: which corner its lamp is lit in at night.
+  index?: number;
 }
 
 function ImageIcon() {
@@ -39,7 +42,7 @@ export function titleChip(listing: Pick<Listing, "titleType" | "titleStatus">): 
   }
 }
 
-export default function EstateCard({ listing, priceChangeSinceSaved, priceChangeCurrency }: EstateCardProps) {
+export default function EstateCard({ listing, priceChangeSinceSaved, priceChangeCurrency, index }: EstateCardProps) {
   const from = fromPrice(listing);
   const { data: disclosure } = useFetch(() => fetchCostDisclosure(listing.id), [listing.id]);
   const commitment = tierCommitmentForLandPrice(disclosure, from);
@@ -52,9 +55,9 @@ export default function EstateCard({ listing, priceChangeSinceSaved, priceChange
   return (
     <Link
       to={`/marketplace/${listing.id}`}
-      className="group flex flex-col h-full bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden hover:border-[var(--accent)]/50 hover:shadow-md transition-all"
+      className="group flex flex-col h-full bg-[var(--card)] border border-[var(--border)] rounded-xl overflow-hidden hover:border-[var(--accent)]/50 hover:shadow-md transition-all night-glow"
     >
-      <div className="relative aspect-[3/2] bg-[var(--secondary)]">
+      <EstatePhoto index={index} className="aspect-[3/2] bg-[var(--secondary)]">
         {listing.imageUrl ? (
           <img src={listing.imageUrl} alt={listing.photos[0]?.caption ?? listing.name} loading="lazy" className="w-full h-full object-cover" />
         ) : (
@@ -63,9 +66,9 @@ export default function EstateCard({ listing, priceChangeSinceSaved, priceChange
             <span className="text-xs font-medium">No photos yet</span>
           </div>
         )}
-        <div className="absolute top-3 left-3"><ListingTypeBadge type="primary" /></div>
-        <div className="absolute top-3 right-3"><WishlistButton listingId={listing.id} listingType="primary" /></div>
-      </div>
+        <div className="absolute z-10 top-3 left-3"><ListingTypeBadge type="primary" /></div>
+        <div className="absolute z-10 top-3 right-3"><WishlistButton listingId={listing.id} listingType="primary" /></div>
+      </EstatePhoto>
 
       <div className="flex flex-col flex-1 p-4 gap-3">
         <div>

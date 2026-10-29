@@ -20,7 +20,7 @@ function ActivityItem({ entry }: { entry: AuditLogEntry }) {
         <div className="text-sm text-[var(--foreground)]">
           <span className="font-medium">{entry.actor}</span> {describeAuditEntry(entry)}
           {entry.privileged && (
-            <span className="ml-2 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 align-middle">Privileged</span>
+            <span className="ml-2 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[var(--warning-surface)] text-[var(--warning-text)] align-middle">Privileged</span>
           )}
         </div>
         {entry.detail && <div className="text-xs text-[var(--muted-foreground)] mt-0.5 truncate">{entry.detail}</div>}

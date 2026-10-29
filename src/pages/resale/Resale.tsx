@@ -147,7 +147,7 @@ export function MyListings() {
               <div key={listing.id} className="bg-[var(--card)] rounded-xl border border-[var(--border)] overflow-hidden">
                 <div className="px-5 py-3 bg-[var(--muted)] text-xs font-medium text-[var(--muted-foreground)] flex items-center justify-between">
                   <span>{listing.estateName}, {listing.plotLabel} — Asking {formatAmount(listing.asking, currency)}</span>
-                  {listing.status === "resale_pending" && <span className="text-amber-700 font-semibold">Pending transfer</span>}
+                  {listing.status === "resale_pending" && <span className="text-[var(--warning-text)] font-semibold">Pending transfer</span>}
                 </div>
                 {offers.length === 0 ? (
                   <div className="px-5 py-4 text-sm text-[var(--muted-foreground)]">No offers on this listing yet.</div>
@@ -167,20 +167,20 @@ export function MyListings() {
                               <button
                                 onClick={() => respond(offer, "accepted")}
                                 disabled={respondingId === offer.id}
-                                className="text-xs px-2.5 py-1 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors disabled:opacity-60"
+                                className="text-xs px-2.5 py-1 bg-[var(--success)] text-[var(--success-foreground)] rounded-md hover:opacity-90 transition-colors disabled:opacity-60"
                               >
                                 {respondingId === offer.id ? "Accepting…" : "Accept"}
                               </button>
                               <button
                                 onClick={() => respond(offer, "declined")}
                                 disabled={respondingId === offer.id}
-                                className="text-xs px-2.5 py-1 border border-[var(--border)] text-[var(--muted-foreground)] rounded-md hover:text-red-600 hover:border-red-300 transition-colors disabled:opacity-60"
+                                className="text-xs px-2.5 py-1 border border-[var(--border)] text-[var(--muted-foreground)] rounded-md hover:text-[var(--error-text)] hover:border-[var(--error-border)] transition-colors disabled:opacity-60"
                               >
                                 Decline
                               </button>
                             </div>
                           ) : (
-                            <span className={`text-xs font-medium capitalize ${offer.status === "accepted" ? "text-emerald-700" : "text-[var(--muted-foreground)]"}`}>
+                            <span className={`text-xs font-medium capitalize ${offer.status === "accepted" ? "text-[var(--success-text)]" : "text-[var(--muted-foreground)]"}`}>
                               {offer.status}
                             </span>
                           )}
@@ -200,11 +200,11 @@ export function MyListings() {
 
 function TransferStatusPill({ status }: { status: ResaleTransfer["status"] }) {
   const info: Record<ResaleTransfer["status"], { label: string; className: string }> = {
-    in_progress: { label: "In progress", className: "bg-blue-50 text-blue-700 border-blue-200" },
-    completed: { label: "Completed", className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-    developer_declined: { label: "Developer declined", className: "bg-red-50 text-red-700 border-red-200" },
-    payment_window_expired: { label: "Payment expired", className: "bg-amber-50 text-amber-700 border-amber-200" },
-    finance_rejected: { label: "Payment flagged", className: "bg-red-50 text-red-700 border-red-200" },
+    in_progress: { label: "In progress", className: "bg-[var(--info-surface)] text-[var(--info-text)] border-[var(--info-border)]" },
+    completed: { label: "Completed", className: "bg-[var(--success-surface)] text-[var(--success-text)] border-[var(--success-border)]" },
+    developer_declined: { label: "Developer declined", className: "bg-[var(--error-surface)] text-[var(--error-text)] border-[var(--error-border)]" },
+    payment_window_expired: { label: "Payment expired", className: "bg-[var(--warning-surface)] text-[var(--warning-text)] border-[var(--warning-border)]" },
+    finance_rejected: { label: "Payment flagged", className: "bg-[var(--error-surface)] text-[var(--error-text)] border-[var(--error-border)]" },
   };
   const s = info[status];
   return <span className={`text-xs font-medium px-2.5 py-1 rounded-full border shrink-0 ${s.className}`}>{s.label}</span>;
@@ -277,13 +277,13 @@ export function ListPlot() {
   if (!eligibility.eligible) {
     return (
       <div className="p-6 max-w-3xl mx-auto">
-        <div className="bg-red-50 border border-red-200 rounded-xl p-5">
-          <div className="text-sm font-semibold text-red-900 mb-1">This plot can't be listed</div>
-          <p className="text-xs text-red-800 mb-4">{eligibility.reason}</p>
+        <div className="bg-[var(--error-surface)] border border-[var(--error-border)] rounded-xl p-5">
+          <div className="text-sm font-semibold text-[var(--error-text)] mb-1">This plot can't be listed</div>
+          <p className="text-xs text-[var(--error-text)] mb-4">{eligibility.reason}</p>
           {plot.status === "in_arrears" ? (
-            <Link to={`/portfolio/${plot.id}`} className="text-xs font-medium text-red-800 hover:underline">Request restructuring →</Link>
+            <Link to={`/portfolio/${plot.id}`} className="text-xs font-medium text-[var(--error-text)] hover:underline">Request restructuring →</Link>
           ) : (
-            <Link to={`/portfolio/${plot.id}`} className="text-xs font-medium text-red-800 hover:underline">Back to plot →</Link>
+            <Link to={`/portfolio/${plot.id}`} className="text-xs font-medium text-[var(--error-text)] hover:underline">Back to plot →</Link>
           )}
         </div>
       </div>
@@ -355,12 +355,12 @@ export function ListPlot() {
       </div>
 
       {eligibility.outstandingBalance > 0 && (
-        <div className="mb-5 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-          <div className="text-sm font-semibold text-amber-900 mb-1">Outstanding balance: {formatAmount(eligibility.outstandingBalance, currency)}</div>
-          <p className="text-xs text-amber-800 mb-3">Choose how this is handled when the sale settles.</p>
+        <div className="mb-5 p-4 bg-[var(--warning-surface)] border border-[var(--warning-border)] rounded-xl">
+          <div className="text-sm font-semibold text-[var(--warning-text)] mb-1">Outstanding balance: {formatAmount(eligibility.outstandingBalance, currency)}</div>
+          <p className="text-xs text-[var(--warning-text)] mb-3">Choose how this is handled when the sale settles.</p>
           <div className="space-y-2" role="radiogroup" aria-label="Outstanding balance treatment">
             {RESALE_POLICY.allowedOutstandingTreatments.map((t) => (
-              <label key={t} className="flex items-start gap-2 text-xs text-amber-900 cursor-pointer">
+              <label key={t} className="flex items-start gap-2 text-xs text-[var(--warning-text)] cursor-pointer">
                 <input type="radio" name="outstanding-treatment" checked={outstandingTreatment === t} onChange={() => setOutstandingTreatment(t)} className="mt-0.5" />
                 {t === "deduct_from_proceeds" ? "Deduct from my proceeds at settlement" : "Transfers to the buyer along with the plot"}
               </label>
@@ -389,12 +389,12 @@ export function ListPlot() {
             For reference: you originally paid {formatAmount(plot.totalPrice, currency)}. There's no required minimum — a {RESALE_POLICY.developerTransferFeePct}% developer transfer fee is deducted from proceeds on sale.
           </p>
           {belowOriginal && (
-            <p id="asking-price-warning" className="text-xs text-amber-700 mt-1">This is below your original price — not blocked, just worth knowing before you publish.</p>
+            <p id="asking-price-warning" className="text-xs text-[var(--warning-text)] mt-1">This is below your original price — not blocked, just worth knowing before you publish.</p>
           )}
           {wouldNotCoverOutstanding && (
-            <p id="asking-price-outstanding-warning" role="alert" className="text-xs text-red-600 mt-1">At this price, proceeds after the fee wouldn't fully cover your outstanding balance.</p>
+            <p id="asking-price-outstanding-warning" role="alert" className="text-xs text-[var(--error-text)] mt-1">At this price, proceeds after the fee wouldn't fully cover your outstanding balance.</p>
           )}
-          {submitError && <p id="asking-price-error" role="alert" className="text-xs text-red-600 mt-1">{submitError}</p>}
+          {submitError && <p id="asking-price-error" role="alert" className="text-xs text-[var(--error-text)] mt-1">{submitError}</p>}
         </div>
         <div className="p-3 bg-[var(--muted)] rounded-lg text-xs text-[var(--muted-foreground)] leading-relaxed">
           Listing is public to all verified buyers on the platform. On an accepted offer, the buyer's payment is held until the developer approves and title formally transfers — only then are your proceeds released.

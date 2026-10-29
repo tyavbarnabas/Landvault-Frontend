@@ -144,7 +144,7 @@ export default function EstateDetail() {
             </div>
             <div>
               <div className="text-xs text-[var(--muted-foreground)]">Title verified</div>
-              <div className="text-xs font-mono-data mt-0.5 text-emerald-700">{estate.lastVerified}</div>
+              <div className="text-xs font-mono-data mt-0.5 text-[var(--success-text)]">{estate.lastVerified}</div>
             </div>
           </div>
         </div>
@@ -155,7 +155,7 @@ export default function EstateDetail() {
             alt={estate.name}
             className="w-full h-full object-cover"
           />
-          <button onClick={() => setShowInspection(true)} className="absolute bottom-4 right-4 bg-white/90 text-[var(--foreground)] text-xs font-medium px-3 py-1.5 rounded-md hover:bg-white transition-colors flex items-center gap-1.5">
+          <button onClick={() => setShowInspection(true)} className="absolute bottom-4 right-4 bg-[var(--card)]/90 text-[var(--foreground)] text-xs font-medium px-3 py-1.5 rounded-md hover:bg-white transition-colors flex items-center gap-1.5">
             <span aria-hidden="true">📅</span> Book inspection
           </button>
         </div>
@@ -258,7 +258,7 @@ function DetailSection({ title, items }: { title: string; items: string[] }) {
       <ul className="space-y-1.5">
         {items.map((item) => (
           <li key={item} className="flex items-start gap-2 text-sm text-[var(--muted-foreground)]">
-            <span className="text-emerald-600 mt-0.5 shrink-0" aria-hidden="true">✓</span>
+            <span className="text-[var(--success-text)] mt-0.5 shrink-0" aria-hidden="true">✓</span>
             {item}
           </li>
         ))}
@@ -273,10 +273,10 @@ function DetailSection({ title, items }: { title: string; items: string[] }) {
 // TODO (backend): backed by a real AGIS / state-registry integration once
 // one exists — see VerificationCheck in mockData.ts.
 const CHECK_STYLES: Record<VerificationCheck["status"], { icon: string; color: string; text: string }> = {
-  verified: { icon: "✓", color: "text-emerald-700", text: "verified" },
-  pending: { icon: "⏳", color: "text-amber-700", text: "verification pending" },
+  verified: { icon: "✓", color: "text-[var(--success-text)]", text: "verified" },
+  pending: { icon: "⏳", color: "text-[var(--warning-text)]", text: "verification pending" },
   not_checked: { icon: "○", color: "text-[var(--muted-foreground)]", text: "not yet checked" },
-  failed: { icon: "✗", color: "text-red-700", text: "verification failed" },
+  failed: { icon: "✗", color: "text-[var(--error-text)]", text: "verification failed" },
 };
 
 function VerificationSection({ estate }: { estate: Estate }) {
@@ -341,7 +341,7 @@ function ProjectionTable({ estate, currency }: { estate: Estate; currency: Curre
                 <td className="px-4 py-2.5 font-mono-data text-xs">{getPlotBlockLabel(estate, p).label}</td>
                 <td className="px-4 py-2.5 text-right text-xs font-mono-data">{p.sqm} m²</td>
                 <td className="px-4 py-2.5 text-right text-xs font-mono-data">{formatAmount(p.price, currency)}</td>
-                <td className="px-4 py-2.5 text-right text-xs font-mono-data text-emerald-700 font-medium">+{p.projectedROI}%</td>
+                <td className="px-4 py-2.5 text-right text-xs font-mono-data text-[var(--success-text)] font-medium">+{p.projectedROI}%</td>
                 <td className="px-4 py-2.5 text-right text-xs text-[var(--muted-foreground)]">{p.holdingYears}yr</td>
               </tr>
             ))}
@@ -406,12 +406,12 @@ function InspectionBooking({ onClose, estate }: { onClose: () => void; estate: E
         <button onClick={onClose} aria-label="Close" className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-lg leading-none">×</button>
       </div>
 
-      <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
+      <div className="mb-4 p-3 bg-[var(--info-surface)] border border-[var(--info-border)] rounded-lg text-xs text-[var(--info-text)]">
         Plots at {estate.name} are not held during your inspection — save any plot you like from the map, then return to reserve it once you've decided.
       </div>
 
       <InspectionForm onSubmit={handleSubmit} submitting={submitting} />
-      {error && <p role="alert" className="text-red-600 text-xs mt-2">{error}</p>}
+      {error && <p role="alert" className="text-[var(--error-text)] text-xs mt-2">{error}</p>}
     </div>
   );
 }
